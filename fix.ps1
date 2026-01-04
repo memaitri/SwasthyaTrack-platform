@@ -1,0 +1,1 @@
+(Get-Content 'client/src/components/health-card/HealthCardFormSections.tsx') -replace '\{">\}' , '>' | Set-Content 'client/src/components/health-card/HealthCardFormSections.tsx'

@@ -1,0 +1,88 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>PDF Worker</title>
+  <script src="https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <script src="https://unpkg.com/jspdf-autotable@3.5.25/dist/jspdf.plugin.autotable.js"></script>
+</head>
+<body>
+<script>
+  (function() {
+    const { jsPDF } = window.jspdf;
+
+    function addWatermark(doc, pageWidth, pageHeight) {
+      doc.setTextColor(200, 200, 200);
+      doc.setFontSize(42);
+      doc.setFont('helvetica', 'bold');
+      doc.text('SwasthyaTrack', pageWidth / 2, pageHeight / 2, { angle: 45, align: 'center' });
+      doc.setTextColor(0,0,0);
+    }
+
+    function simpleHeader(doc, title, pageWidth, margin, exportedBy) {
+      const logoSize = 14;
+      doc.setFillColor(23,115,102);
+      doc.roundedRect(margin, 12, logoSize, logoSize, 3, 3, 'F');
+      doc.setTextColor(255,255,255);
+      doc.setFontSize(9);
+      doc.setFont('helvetica','bold');
+      doc.text('ST', margin + logoSize/2, 12 + logoSize/2 + 3, { align: 'center'});
+
+      doc.setTextColor(23,115,102);
+      doc.setFontSize(18);
+      doc.setFont('helvetica','bold');
+      doc.text('SwasthyaTrack', margin + logoSize + 8, 20);
+
+      doc.setFontSize(14);
+      doc.setTextColor(0,0,0);
+      doc.setFont('helvetica','bold');
+      doc.text(title, pageWidth/2, 36, { align: 'center' });
+
+      doc.setDrawColor(23,115,102);
+      doc.setLineWidth(0.6);
+      doc.line(margin, 58, pageWidth - margin, 58);
+    }
+
+    window.generateReport = async function(data, type) {
+      const doc = new jsPDF('p','mm','a4');
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 15;
+
+      addWatermark(doc, pageWidth, pageHeight);
+      simpleHeader(doc, data.title || 'Report', pageWidth, margin, 'Headmaster');
+
+      // columns mode: generic table
+      if (type === 'columns') {
+        const headers = data.columns;
+        const body = (data.rows || []).map(r => Object.values(r));
+        doc.text(data.title || 'Report', margin, 70);
+        doc.autoTable({ startY: 75, head: [headers], body, theme: 'grid', headStyles: { fillColor: [23,115,102], textColor: [255,255,255], fontStyle: 'bold' }, bodyStyles: { fontSize: 9 }, alternateRowStyles: { fillColor: [245,250,249] }, margin: { left: margin, right: margin } });
+      }
+
+      // keyvalue mode: 2-column metrics
+      if (type === 'keyvalue') {
+        doc.text(data.title || 'Report', margin, 70);
+        const rows = data.rows || [];
+        const table = rows.map(r => [r.Metric || r.metric, String(r.Value || r.value)]);
+        doc.autoTable({ startY: 75, head: [['Metric','Value']], body: table, theme: 'grid', headStyles: { fillColor: [23,115,102], textColor: [255,255,255], fontStyle: 'bold' }, bodyStyles: { fontSize: 10 }, margin: { left: margin, right: margin } });
+      }
+
+      const totalPages = doc.getNumberOfPages();
+      for (let i = 1; i <= totalPages; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        doc.setTextColor(120,120,120);
+        doc.text(`Page ${i} of ${totalPages}`, pageWidth / 2, pageHeight - 10, { align: 'center' });
+        doc.text('SwasthyaTrack | Confidential Health Records', margin, pageHeight - 10);
+        doc.text('Do Not Distribute', pageWidth - margin, pageHeight - 10, { align: 'right' });
+      }
+
+      return doc.output('datauristring').split(',')[1];
+    };
+
+    window.workerReady = true;
+  })();
+</script>
+</body>
+</html>

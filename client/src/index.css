@@ -1,0 +1,271 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 200 20% 98%;
+    /* Primary text tokens (light surfaces) */
+    --text-primary: 221 47% 11%; /* #0F172A */
+    --text-muted: 217 25% 27%;  /* #334155 */
+
+    --foreground: var(--text-primary);
+
+    --card: 0 0% 100%;
+    --card-foreground: var(--foreground);
+
+    --popover: 0 0% 100%;
+    --popover-foreground: var(--foreground);
+
+    --primary: 174 72% 40%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 200 25% 94%;
+    --secondary-foreground: 200 50% 20%;
+
+    --muted: 200 20% 96%;
+    --muted-foreground: var(--text-muted);
+
+    --accent: 30 90% 55%;
+    --accent-foreground: 0 0% 100%;
+
+    --success: 152 69% 40%;
+    --success-foreground: 0 0% 100%;
+
+    --sidebar-foreground: var(--foreground);
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 10%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 200 20% 90%;
+    --input: 200 20% 90%;
+    --ring: 174 72% 40%;
+
+    --radius: 0.75rem;
+
+    --sidebar-background: 200 30% 12%;
+    --sidebar-foreground: var(--text-primary);
+    --sidebar-primary: 174 72% 50%;
+    /* For active sidebar items on light surfaces, use white foreground for contrast */
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 200 30% 18%;
+    /* Ensure accent text is white on accent backgrounds for contrast */
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 200 30% 20%;
+    --sidebar-ring: 174 72% 50%;
+
+    /* Custom tokens */
+    --gradient-primary: linear-gradient(135deg, hsl(174 72% 40%), hsl(174 72% 30%));
+    --gradient-accent: linear-gradient(135deg, hsl(30 90% 55%), hsl(30 90% 45%));
+    --gradient-success: linear-gradient(135deg, hsl(152 69% 40%), hsl(152 69% 30%));
+    --gradient-card: linear-gradient(180deg, hsl(0 0% 100%), hsl(200 20% 98%));
+    --gradient-hero: linear-gradient(135deg, hsl(200 30% 12%), hsl(200 40% 8%));
+    
+    --shadow-card: 0 1px 3px hsl(200 20% 10% / 0.08), 0 4px 12px hsl(200 20% 10% / 0.04);
+    --shadow-elevated: 0 4px 6px hsl(200 20% 10% / 0.1), 0 12px 24px hsl(200 20% 10% / 0.08);
+    --shadow-glow: 0 0 20px hsl(174 72% 40% / 0.2);
+  }
+
+  .dark {
+    --background: 200 30% 8%;
+
+    /* Dark-theme primary text tokens */
+    --text-primary: 0 0% 100%; /* #FFFFFF */
+    --text-muted: 210 7% 90%;  /* #E5E7EB */
+
+    --foreground: var(--text-primary);
+
+    --card: 200 30% 12%;
+    --card-foreground: var(--foreground);
+
+    --popover: 200 30% 12%;
+    --popover-foreground: var(--foreground);
+
+    --primary: 174 72% 50%;
+    --primary-foreground: 200 30% 8%;
+
+    --secondary: 200 30% 18%;
+    --secondary-foreground: 200 10% 90%;
+
+    --muted: 200 30% 15%;
+    --muted-foreground: var(--text-muted);
+
+    --sidebar-foreground: var(--foreground);
+    --accent-foreground: 200 30% 8%;
+
+    --success: 152 69% 45%;
+    --success-foreground: 200 30% 8%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 200 30% 8%;
+
+    --destructive: 0 72% 55%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 200 30% 20%;
+    --input: 200 30% 20%;
+    --ring: 174 72% 50%;
+
+    --sidebar-background: 200 35% 6%;
+    --sidebar-foreground: var(--text-primary);
+    --sidebar-primary: 174 72% 50%;
+    /* For active sidebar items on dark surfaces, use darker foreground so text stays legible */
+    --sidebar-primary-foreground: 200 30% 8%;
+    --sidebar-accent: 200 30% 12%;
+    /* Ensure accent text is white on accent backgrounds for contrast */
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 200 30% 15%;
+    --sidebar-ring: 174 72% 50%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: 'Inter', sans-serif;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    @apply font-semibold tracking-tight;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .glass-card {
+    @apply bg-card/80 backdrop-blur-sm border border-border/50;
+  }
+
+  .gradient-text {
+    @apply bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent;
+  }
+}
+
+@layer components {
+  .metric-card {
+    @apply relative overflow-hidden rounded-xl bg-card p-6 border border-border/50;
+    box-shadow: var(--shadow-card);
+    transition: all 0.2s ease;
+  }
+
+  .metric-card:hover {
+    box-shadow: var(--shadow-elevated);
+    transform: translateY(-2px);
+  }
+
+  .sidebar-item {
+    @apply flex items-center gap-3 px-3 py-2.5 rounded-lg text-sidebar-foreground/90 transition-all duration-200;
+  }
+
+  .sidebar-item:hover {
+    @apply bg-sidebar-accent text-sidebar-foreground;
+  }
+
+  .sidebar-item.active {
+    @apply bg-sidebar-primary/20 text-sidebar-primary-foreground font-medium;
+  }
+
+  /* Make icons inside active items follow the same contrast token */
+  .sidebar-item.active svg {
+    color: hsl(var(--sidebar-primary-foreground));
+  }
+
+  /* Make active menu-button text and icons use the accent foreground for strong contrast */
+  [data-sidebar="menu-button"][data-active="true"],
+  [data-sidebar="menu-button"][data-active="true"] svg {
+    color: hsl(var(--sidebar-accent-foreground)) !important;
+  }
+
+  .data-table {
+    @apply w-full border-collapse;
+  }
+
+  .data-table th {
+    @apply text-left text-xs font-medium text-muted-foreground uppercase tracking-wider px-4 py-3 bg-muted/50;
+  }
+
+  .data-table td {
+    @apply px-4 py-3 border-b border-border/50;
+  }
+
+  .status-badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  .status-badge-success {
+    @apply bg-success/10 text-success;
+  }
+
+  .status-badge-warning {
+    @apply bg-warning/10 text-warning;
+  }
+
+  .status-badge-danger {
+    @apply bg-destructive/10 text-destructive;
+  }
+
+  .status-badge-pending {
+    @apply bg-muted text-muted-foreground;
+  }
+
+  /* =======================================================
+     Fallback overrides to enforce robust contrast across
+     components (covers build caches, third-party libs, and
+     tooltip/canvas-rendered elements).
+     ======================================================= */
+
+  /* Active sidebar menu button: force white text/icons on accent */
+  [data-sidebar="menu-button"][data-active="true"] {
+    color: #FFFFFF !important;
+  }
+  [data-sidebar="menu-button"][data-active="true"] svg,
+  [data-sidebar="menu-button"][data-active="true"] path {
+    color: #FFFFFF !important;
+    fill: currentColor !important;
+  }
+
+  /* Ensure generic sidebar-item active state also contrasts */
+  .sidebar-item.active {
+    color: #FFFFFF !important;
+  }
+  .sidebar-item.active svg,
+  .sidebar-item.active path {
+    color: #FFFFFF !important;
+    fill: currentColor !important;
+  }
+
+  /* Chart / tooltip fallbacks: dark background + white primary / light secondary text */
+  .recharts-tooltip-wrapper,
+  .recharts-default-tooltip,
+  .chartjs-tooltip,
+  .chart-tooltip-fallback {
+    background: #0F172A !important;
+    color: #FFFFFF !important;
+    border: 1px solid #334155 !important;
+  }
+  .recharts-tooltip-wrapper .label,
+  .recharts-default-tooltip .label,
+  .chartjs-tooltip .label,
+  .chart-tooltip-fallback .label {
+    color: #E5E7EB !important;
+  }
+  .recharts-tooltip-wrapper .value,
+  .recharts-default-tooltip .value,
+  .chartjs-tooltip .value,
+  .chart-tooltip-fallback .value {
+    color: #FFFFFF !important;
+  }
+}

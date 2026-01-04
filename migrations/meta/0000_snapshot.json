@@ -1,0 +1,2114 @@
+{
+  "id": "78ef732b-b3ef-4481-9b30-d856760ace04",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.annual_health_cards": {
+      "name": "annual_health_cards",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "varchar",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "student_id": {
+          "name": "student_id",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "year": {
+          "name": "year",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "district": {
+          "name": "district",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "block": {
+          "name": "block",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "school_name": {
+          "name": "school_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "school_id": {
+          "name": "school_id",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mobile_health_team_id": {
+          "name": "mobile_health_team_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "name_of_child": {
+          "name": "name_of_child",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "age_years": {
+          "name": "age_years",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "age_months": {
+          "name": "age_months",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "gender": {
+          "name": "gender",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "class_section": {
+          "name": "class_section",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "aadhaar_no": {
+          "name": "aadhaar_no",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mcts_no": {
+          "name": "mcts_no",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "unique_id": {
+          "name": "unique_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "father_guardian_name": {
+          "name": "father_guardian_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "father_contact": {
+          "name": "father_contact",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mother_name": {
+          "name": "mother_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "teacher_name": {
+          "name": "teacher_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "teacher_contact": {
+          "name": "teacher_contact",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "weight_kg": {
+          "name": "weight_kg",
+          "type": "numeric(5, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "height_cm": {
+          "name": "height_cm",
+          "type": "numeric(5, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "bmi": {
+          "name": "bmi",
+          "type": "numeric(5, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "bmi_classification": {
+          "name": "bmi_classification",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "blood_pressure": {
+          "name": "blood_pressure",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "bp_category": {
+          "name": "bp_category",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sbp": {
+          "name": "sbp",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "dbp": {
+          "name": "dbp",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "bp_classification": {
+          "name": "bp_classification",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "vision_right": {
+          "name": "vision_right",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "vision_left": {
+          "name": "vision_left",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "visual_acuity_notes": {
+          "name": "visual_acuity_notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "defect_at_birth": {
+          "name": "defect_at_birth",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "defects_at_birth": {
+          "name": "defects_at_birth",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'[]'::jsonb"
+        },
+        "a1_visible_defect": {
+          "name": "a1_visible_defect",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "a1_visible_defect_notes": {
+          "name": "a1_visible_defect_notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deficiency_sam": {
+          "name": "deficiency_sam",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "deficiency_oedema": {
+          "name": "deficiency_oedema",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "deficiency_anemia": {
+          "name": "deficiency_anemia",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "deficiency_vitamin_a": {
+          "name": "deficiency_vitamin_a",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "deficiency_vitamin_d": {
+          "name": "deficiency_vitamin_d",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "deficiency_goitre": {
+          "name": "deficiency_goitre",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "deficiency_obesity": {
+          "name": "deficiency_obesity",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "deficiency_vitamin_b": {
+          "name": "deficiency_vitamin_b",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "deficiencies": {
+          "name": "deficiencies",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'[]'::jsonb"
+        },
+        "b1_severe_thinning": {
+          "name": "b1_severe_thinning",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "b1_referral_facility": {
+          "name": "b1_referral_facility",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "b1_referral_date": {
+          "name": "b1_referral_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "b2_bilateral_oedema": {
+          "name": "b2_bilateral_oedema",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "b2_referral_facility": {
+          "name": "b2_referral_facility",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "b2_referral_date": {
+          "name": "b2_referral_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "b3_severe_anemia": {
+          "name": "b3_severe_anemia",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "b3_referral_facility": {
+          "name": "b3_referral_facility",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "b3_referral_date": {
+          "name": "b3_referral_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "b4_vitamin_a": {
+          "name": "b4_vitamin_a",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "b4_referral_facility": {
+          "name": "b4_referral_facility",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "b4_referral_date": {
+          "name": "b4_referral_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "b5_vitamin_d": {
+          "name": "b5_vitamin_d",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "b5_referral_facility": {
+          "name": "b5_referral_facility",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "b5_referral_date": {
+          "name": "b5_referral_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "b6_goitre": {
+          "name": "b6_goitre",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "b6_referral_facility": {
+          "name": "b6_referral_facility",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "b6_referral_date": {
+          "name": "b6_referral_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "b7_obesity": {
+          "name": "b7_obesity",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "b7_referral_facility": {
+          "name": "b7_referral_facility",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "b7_referral_date": {
+          "name": "b7_referral_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "b8_vitb_deficiency": {
+          "name": "b8_vitb_deficiency",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "b8_referral_facility": {
+          "name": "b8_referral_facility",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "b8_referral_date": {
+          "name": "b8_referral_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "disease_convulsive": {
+          "name": "disease_convulsive",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "disease_otitis": {
+          "name": "disease_otitis",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "disease_dental": {
+          "name": "disease_dental",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "disease_skin": {
+          "name": "disease_skin",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "disease_asthma": {
+          "name": "disease_asthma",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "disease_rheumatic": {
+          "name": "disease_rheumatic",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "disease_leprosy": {
+          "name": "disease_leprosy",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "disease_tuberculosis": {
+          "name": "disease_tuberculosis",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "diseases_flags": {
+          "name": "diseases_flags",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'{}'::jsonb"
+        },
+        "c1": {
+          "name": "c1",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "c1_referral_facility": {
+          "name": "c1_referral_facility",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "c1_referral_date": {
+          "name": "c1_referral_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "c2": {
+          "name": "c2",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "c2_referral_facility": {
+          "name": "c2_referral_facility",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "c2_referral_date": {
+          "name": "c2_referral_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "c3": {
+          "name": "c3",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "c3_referral_facility": {
+          "name": "c3_referral_facility",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "c3_referral_date": {
+          "name": "c3_referral_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "c4": {
+          "name": "c4",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "c4_referral_facility": {
+          "name": "c4_referral_facility",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "c4_referral_date": {
+          "name": "c4_referral_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "c5": {
+          "name": "c5",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "c5_referral_facility": {
+          "name": "c5_referral_facility",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "c5_referral_date": {
+          "name": "c5_referral_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "c6": {
+          "name": "c6",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "c6_referral_facility": {
+          "name": "c6_referral_facility",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "c6_referral_date": {
+          "name": "c6_referral_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "c7": {
+          "name": "c7",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'{}'::jsonb"
+        },
+        "c7_referral_facility": {
+          "name": "c7_referral_facility",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "c7_referral_date": {
+          "name": "c7_referral_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "c8": {
+          "name": "c8",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'{}'::jsonb"
+        },
+        "c8_referral_facility": {
+          "name": "c8_referral_facility",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "c8_referral_date": {
+          "name": "c8_referral_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "development_seeing_difficulty": {
+          "name": "development_seeing_difficulty",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "development_walking_delay": {
+          "name": "development_walking_delay",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "development_reading_writing": {
+          "name": "development_reading_writing",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "development_muscle_stiffness": {
+          "name": "development_muscle_stiffness",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "development_hearing_difficulty": {
+          "name": "development_hearing_difficulty",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "development_speech_difficulty": {
+          "name": "development_speech_difficulty",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "development_learning_difficulty": {
+          "name": "development_learning_difficulty",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "development_inattention": {
+          "name": "development_inattention",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "development_behavioral_concerns": {
+          "name": "development_behavioral_concerns",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "developmental_flags": {
+          "name": "developmental_flags",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'[]'::jsonb"
+        },
+        "d1": {
+          "name": "d1",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "d1_referral_facility": {
+          "name": "d1_referral_facility",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "d1_referral_date": {
+          "name": "d1_referral_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "d2": {
+          "name": "d2",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "d2_referral_facility": {
+          "name": "d2_referral_facility",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "d2_referral_date": {
+          "name": "d2_referral_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "d3": {
+          "name": "d3",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "d3_referral_facility": {
+          "name": "d3_referral_facility",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "d3_referral_date": {
+          "name": "d3_referral_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "d4": {
+          "name": "d4",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "d4_referral_facility": {
+          "name": "d4_referral_facility",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "d4_referral_date": {
+          "name": "d4_referral_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "d5": {
+          "name": "d5",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "d5_referral_facility": {
+          "name": "d5_referral_facility",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "d5_referral_date": {
+          "name": "d5_referral_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "d6": {
+          "name": "d6",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "d6_referral_facility": {
+          "name": "d6_referral_facility",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "d6_referral_date": {
+          "name": "d6_referral_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "d7": {
+          "name": "d7",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "d7_referral_facility": {
+          "name": "d7_referral_facility",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "d7_referral_date": {
+          "name": "d7_referral_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "d8": {
+          "name": "d8",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "d8_referral_facility": {
+          "name": "d8_referral_facility",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "d8_referral_date": {
+          "name": "d8_referral_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "d9": {
+          "name": "d9",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "d9_referral_facility": {
+          "name": "d9_referral_facility",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "d9_referral_date": {
+          "name": "d9_referral_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "adolescent_life_events": {
+          "name": "adolescent_life_events",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "adolescent_peer_pressure": {
+          "name": "adolescent_peer_pressure",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "adolescent_sadness_fatigue": {
+          "name": "adolescent_sadness_fatigue",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "adolescent_menstruation": {
+          "name": "adolescent_menstruation",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "adolescent_burning_urination": {
+          "name": "adolescent_burning_urination",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "adolescent_discharge": {
+          "name": "adolescent_discharge",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "adolescent_menstrual_pain": {
+          "name": "adolescent_menstrual_pain",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "e1_difficulty_life_events": {
+          "name": "e1_difficulty_life_events",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "e1_referral_suggested": {
+          "name": "e1_referral_suggested",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "e1_referral_facility": {
+          "name": "e1_referral_facility",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "e1_referral_date": {
+          "name": "e1_referral_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "e2_peer_pressure": {
+          "name": "e2_peer_pressure",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "e2_referral_suggested": {
+          "name": "e2_referral_suggested",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "e2_referral_facility": {
+          "name": "e2_referral_facility",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "e2_referral_date": {
+          "name": "e2_referral_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "e3_persistent_sadness": {
+          "name": "e3_persistent_sadness",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "e3_referral_suggested": {
+          "name": "e3_referral_suggested",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "e3_referral_facility": {
+          "name": "e3_referral_facility",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "e3_referral_date": {
+          "name": "e3_referral_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "e4_menstruation_started": {
+          "name": "e4_menstruation_started",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "e4_referral_suggested": {
+          "name": "e4_referral_suggested",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "e4_referral_facility": {
+          "name": "e4_referral_facility",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "e4_referral_date": {
+          "name": "e4_referral_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "e5_pain_urination": {
+          "name": "e5_pain_urination",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "e5_referral_suggested": {
+          "name": "e5_referral_suggested",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "e5_referral_facility": {
+          "name": "e5_referral_facility",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "e5_referral_date": {
+          "name": "e5_referral_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "e6_foul_smell_discharge": {
+          "name": "e6_foul_smell_discharge",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "e6_referral_suggested": {
+          "name": "e6_referral_suggested",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "e6_referral_facility": {
+          "name": "e6_referral_facility",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "e6_referral_date": {
+          "name": "e6_referral_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "e7_severe_menstrual_pain": {
+          "name": "e7_severe_menstrual_pain",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "e7_referral_suggested": {
+          "name": "e7_referral_suggested",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "e7_referral_facility": {
+          "name": "e7_referral_facility",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "e7_referral_date": {
+          "name": "e7_referral_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "adolescent_flags": {
+          "name": "adolescent_flags",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'{}'::jsonb"
+        },
+        "referral_defect_at_birth": {
+          "name": "referral_defect_at_birth",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "referral_deficiency": {
+          "name": "referral_deficiency",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "referral_disease": {
+          "name": "referral_disease",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "referral_developmental": {
+          "name": "referral_developmental",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "referral_adolescent": {
+          "name": "referral_adolescent",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "referral_recommended": {
+          "name": "referral_recommended",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "referral_facility": {
+          "name": "referral_facility",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "referral_doctor": {
+          "name": "referral_doctor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "referral_date": {
+          "name": "referral_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "data_entry_by": {
+          "name": "data_entry_by",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "date_of_entry": {
+          "name": "date_of_entry",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'Pending'"
+        },
+        "approval_by": {
+          "name": "approval_by",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "approval_date": {
+          "name": "approval_date",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rejection_reason": {
+          "name": "rejection_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.audit_logs": {
+      "name": "audit_logs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "varchar",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "action": {
+          "name": "action",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "entity_type": {
+          "name": "entity_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "entity_id": {
+          "name": "entity_id",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "details": {
+          "name": "details",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'{}'::jsonb"
+        },
+        "ip_address": {
+          "name": "ip_address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.hostel_attendance": {
+      "name": "hostel_attendance",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "varchar",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "student_id": {
+          "name": "student_id",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "school_id": {
+          "name": "school_id",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "date": {
+          "name": "date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "event_index": {
+          "name": "event_index",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "check_in_time": {
+          "name": "check_in_time",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "check_out_time": {
+          "name": "check_out_time",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "check_in_image_url": {
+          "name": "check_in_image_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "check_out_image_url": {
+          "name": "check_out_image_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "check_in_reason": {
+          "name": "check_in_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "check_out_reason": {
+          "name": "check_out_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_vacation": {
+          "name": "is_vacation",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "vacation_start_date": {
+          "name": "vacation_start_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "vacation_end_date": {
+          "name": "vacation_end_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "vacation_reason": {
+          "name": "vacation_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "recorded_by": {
+          "name": "recorded_by",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "recorder_role": {
+          "name": "recorder_role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'Present'"
+        },
+        "morning_roll_call": {
+          "name": "morning_roll_call",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "night_roll_call": {
+          "name": "night_roll_call",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.meal_logs": {
+      "name": "meal_logs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "varchar",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "school_id": {
+          "name": "school_id",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "student_id": {
+          "name": "student_id",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "class_section": {
+          "name": "class_section",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "date": {
+          "name": "date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "meal_type": {
+          "name": "meal_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "menu_items": {
+          "name": "menu_items",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'[]'::jsonb"
+        },
+        "image_url": {
+          "name": "image_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "latitude": {
+          "name": "latitude",
+          "type": "numeric(10, 8)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "longitude": {
+          "name": "longitude",
+          "type": "numeric(11, 8)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "uploaded_by": {
+          "name": "uploaded_by",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.monthly_checkups": {
+      "name": "monthly_checkups",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "varchar",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "student_id": {
+          "name": "student_id",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "school_id": {
+          "name": "school_id",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "checkup_date": {
+          "name": "checkup_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "month": {
+          "name": "month",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "year": {
+          "name": "year",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "height_cm": {
+          "name": "height_cm",
+          "type": "numeric(5, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "weight_kg": {
+          "name": "weight_kg",
+          "type": "numeric(5, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "bmi": {
+          "name": "bmi",
+          "type": "numeric(5, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "symptoms": {
+          "name": "symptoms",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'[]'::jsonb"
+        },
+        "suggested_medicines": {
+          "name": "suggested_medicines",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'[]'::jsonb"
+        },
+        "treatment_type": {
+          "name": "treatment_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'Primary'"
+        },
+        "referred_to": {
+          "name": "referred_to",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "present": {
+          "name": "present",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": true
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "recorded_by": {
+          "name": "recorded_by",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.refresh_tokens": {
+      "name": "refresh_tokens",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "varchar",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token": {
+          "name": "token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "refresh_tokens_token_unique": {
+          "name": "refresh_tokens_token_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "token"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.schools": {
+      "name": "schools",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "varchar",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "region": {
+          "name": "region",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "district": {
+          "name": "district",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "block": {
+          "name": "block",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "address": {
+          "name": "address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "contact_phone": {
+          "name": "contact_phone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "contact_email": {
+          "name": "contact_email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "headmaster_id": {
+          "name": "headmaster_id",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "total_students": {
+          "name": "total_students",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "schools_code_unique": {
+          "name": "schools_code_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "code"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.students": {
+      "name": "students",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "varchar",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "school_id": {
+          "name": "school_id",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "unique_id": {
+          "name": "unique_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "aadhaar_no": {
+          "name": "aadhaar_no",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mcts_no": {
+          "name": "mcts_no",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "full_name": {
+          "name": "full_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "date_of_birth": {
+          "name": "date_of_birth",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "gender": {
+          "name": "gender",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "class_section": {
+          "name": "class_section",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "father_guardian_name": {
+          "name": "father_guardian_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "father_contact": {
+          "name": "father_contact",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mother_name": {
+          "name": "mother_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mother_contact": {
+          "name": "mother_contact",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "address": {
+          "name": "address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "enrollment_date": {
+          "name": "enrollment_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "students_unique_id_unique": {
+          "name": "students_unique_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "unique_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.users": {
+      "name": "users",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "varchar",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "username": {
+          "name": "username",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "password": {
+          "name": "password",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "full_name": {
+          "name": "full_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "school_id": {
+          "name": "school_id",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "class_section": {
+          "name": "class_section",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "district": {
+          "name": "district",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "block": {
+          "name": "block",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "users_username_unique": {
+          "name": "users_username_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "username"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}
