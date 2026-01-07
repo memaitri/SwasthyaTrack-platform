@@ -178,13 +178,13 @@ function Router() {
       </Route>
 
       <Route path="/meals">
-        <ProtectedRoute>
+        <ProtectedRoute allowedRoles={["Admin", "PO", "MedicalTeam", "HostelWarden"]}>
           <MealLogsPage />
         </ProtectedRoute>
       </Route>
 
       <Route path="/hostel">
-        <ProtectedRoute allowedRoles={["ClassTeacher", "Headmaster", "PO", "Admin", "HostelWarden"]}>
+        <ProtectedRoute allowedRoles={["PO", "Admin", "HostelWarden"]}>
           <HostelAttendancePage />
         </ProtectedRoute>
       </Route>
@@ -196,7 +196,7 @@ function Router() {
       </Route>
 
       <Route path="/hostel/attendance">
-        <ProtectedRoute allowedRoles={["HostelWarden", "ClassTeacher", "Admin"]}>
+        <ProtectedRoute allowedRoles={["HostelWarden", "Admin"]}>
           <HostelAttendancePage />
         </ProtectedRoute>
       </Route>

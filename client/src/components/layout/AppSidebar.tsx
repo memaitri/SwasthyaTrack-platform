@@ -51,7 +51,6 @@ const roleMenuItems = {
     { title: "Students", url: "/students", icon: Users },
     { title: "Health Cards", url: "/health-cards", icon: FileHeart },
     { title: "Approvals", url: "/approvals", icon: ClipboardList },
-    { title: "Hostel Attendance", url: "/hostel", icon: Home },
     { title: "Reports", url: "/reports", icon: FileText },
   ],
   ClassTeacher: [
@@ -59,8 +58,6 @@ const roleMenuItems = {
     { title: "My Students", url: "/students", icon: Users },
     { title: "Health Cards", url: "/health-cards", icon: FileHeart },
     { title: "Monthly Checkups", url: "/checkups", icon: Stethoscope },
-    { title: "Meal Logs", url: "/meals", icon: UtensilsCrossed },
-    { title: "Hostel Attendance", url: "/hostel", icon: Home },
   ],
   MedicalTeam: [
     { title: "Dashboard", url: "/", icon: LayoutDashboard },
