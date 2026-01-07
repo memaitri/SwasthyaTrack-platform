@@ -23,7 +23,7 @@ const registerSchema = z.object({
   email: z.string().email("Invalid email address"),
   password: z.string().min(6, "Password must be at least 6 characters"),
   confirmPassword: z.string(),
-  role: z.enum(["PO", "Headmaster", "ClassTeacher", "MedicalTeam", "HostelWarden"]),
+  role: z.enum(["PO", "Headmaster", "ClassTeacher", "MedicalTeam", "HostelWarden", "MealSuperintendent"]),
   schoolId: z.string().optional(),
   classSection: z.string().optional(), // For ClassTeacher
   district: z.string().optional(), // For PO
@@ -37,7 +37,7 @@ const registerSchema = z.object({
   })
   // Require school for roles that must be attached to a school in the app
   .refine((data) => {
-    if (["ClassTeacher", "Headmaster", "MedicalTeam", "HostelWarden"].includes(data.role)) {
+    if (["ClassTeacher", "Headmaster", "MedicalTeam", "HostelWarden", "MealSuperintendent"].includes(data.role)) {
       return !!data.schoolId;
     }
     return true;
@@ -101,7 +101,7 @@ export default function RegisterPage() {
       if (!res.ok) throw new Error("Failed to fetch schools");
       return res.json();
     },
-    enabled: role === "PO" || role === "ClassTeacher" || role === "Headmaster" || role === "MedicalTeam" || role === "HostelWarden",
+    enabled: role === "PO" || role === "ClassTeacher" || role === "Headmaster" || role === "MedicalTeam" || role === "HostelWarden" || role === "MealSuperintendent",
   });
 
   const schools = schoolsData?.schools || [];
@@ -175,7 +175,7 @@ export default function RegisterPage() {
       await refetchSchools();
 
       // Do NOT auto-select the newly created school unless it is already approved
-      if (newSchool && newSchool.approvalStatus === "Approved" && (role === "ClassTeacher" || role === "Headmaster" || role === "MedicalTeam")) {
+      if (newSchool && newSchool.approvalStatus === "Approved" && (role === "ClassTeacher" || role === "Headmaster" || role === "MedicalTeam" || role === "MealSuperintendent")) {
         form.setValue("schoolId", newSchool.id);
       }
     } catch (error) {
@@ -303,15 +303,16 @@ export default function RegisterPage() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="PO">Project Officer (PO)</SelectItem>
-                          <SelectItem value="Headmaster">Headmaster</SelectItem>
-                          <SelectItem value="ClassTeacher">Class Teacher</SelectItem>
-                          <SelectItem value="MedicalTeam">Medical Team</SelectItem>
-                          <SelectItem value="HostelWarden">Hostel Warden</SelectItem>
+                            <SelectItem value="PO">Project Officer (PO)</SelectItem>
+                            <SelectItem value="Headmaster">Headmaster</SelectItem>
+                            <SelectItem value="ClassTeacher">Class Teacher</SelectItem>
+                            <SelectItem value="MedicalTeam">Medical Team</SelectItem>
+                            <SelectItem value="HostelWarden">Hostel Warden</SelectItem>
+                            <SelectItem value="MealSuperintendent">Meal Superintendent</SelectItem>
                         </SelectContent>
                       </Select>
                       <FormMessage />
-                      {['ClassTeacher','MedicalTeam','HostelWarden'].includes(role) && (
+                      {['ClassTeacher','MedicalTeam','HostelWarden','MealSuperintendent'].includes(role) && (
                         <p className="text-xs text-muted-foreground mt-2">Accounts for this role require Headmaster approval and will be activated only after approval.</p>
                       )}
                     </FormItem>
@@ -437,7 +438,7 @@ export default function RegisterPage() {
                     )}
                   </>
                 )}
-                {(role === "ClassTeacher" || role === "Headmaster" || role === "MedicalTeam" || role === "HostelWarden") && (
+                {(role === "ClassTeacher" || role === "Headmaster" || role === "MedicalTeam" || role === "HostelWarden" || role === "MealSuperintendent") && (
                   <>
                     <div className="flex items-center justify-between">
                       <FormLabel>School *</FormLabel>

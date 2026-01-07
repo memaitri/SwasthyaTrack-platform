@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import MealMenuForm from "@/components/meal/MealMenuForm";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -93,18 +94,12 @@ export default function MealLogsPage() {
   const canFilterSchool = hasRole("Admin", "PO");
   const defaultSchoolFilter = canFilterSchool ? "all" : user?.schoolId || "self";
   const [selectedSchool, setSelectedSchool] = useState(defaultSchoolFilter);
-  const canManageMeals = hasRole("ClassTeacher", "Headmaster", "Admin", "PO");
+  const canManageMeals = hasRole("ClassTeacher", "Headmaster", "Admin", "PO", "MealSuperintendent");
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editingMeal, setEditingMeal] = useState<any | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
-  const classOptions = useMemo(() => {
-    if (user?.role === "ClassTeacher" && user?.classSection) {
-      return [user.classSection];
-    }
-    return defaultClassSections;
-  }, [user]);
-
-  const canSelectClass = userRole !== "ClassTeacher";
+  const today = new Date().toISOString().split("T")[0];
+  // No class-level selection: feature scoped to whole school only
   useEffect(() => {
     if (!canFilterSchool && user?.schoolId) {
       setSelectedSchool(user.schoolId);
@@ -170,7 +165,7 @@ export default function MealLogsPage() {
       mealType: "breakfast",
       menuItems: "",
       notes: "",
-      classSection: userClassSection || "",
+      // remove classSection: meals are school-level
     },
   });
 
@@ -181,7 +176,7 @@ export default function MealLogsPage() {
       mealType: "breakfast",
       menuItems: "",
       notes: "",
-      classSection: "",
+      // classSection omitted for edits
     },
   });
 
@@ -195,14 +190,17 @@ export default function MealLogsPage() {
   };
 
   useEffect(() => {
-    form.setValue("date", selectedDate);
+    // Ensure form date is synced but prevent future dates selection
+    const today = new Date().toISOString().split("T")[0];
+    if (selectedDate > today) {
+      setSelectedDate(today);
+      form.setValue("date", today);
+    } else {
+      form.setValue("date", selectedDate);
+    }
   }, [selectedDate, form]);
 
-  useEffect(() => {
-    if (userClassSection) {
-      form.setValue("classSection", userClassSection);
-    }
-  }, [userClassSection, form]);
+  // classSection is no longer used; meals are school-level
 
   const createMutation = useMutation({
     mutationFn: async (data: MealForm) => {
@@ -212,7 +210,6 @@ export default function MealLogsPage() {
         latitude: geoLocation?.lat,
         longitude: geoLocation?.lng,
         imageUrl: uploadedImageUrl,
-        classSection: data.classSection || userClassSection || undefined,
       };
       return apiRequest("POST", "/api/meals", payload);
     },
@@ -378,6 +375,53 @@ export default function MealLogsPage() {
   };
 
   const onSubmit = (data: MealForm) => {
+    // Prevent future-dated meal creation
+    const today = new Date().toISOString().split("T")[0];
+    if ((data.date || selectedDate) > today) {
+      toast({ title: "Validation", description: "Meal date cannot be in the future.", variant: "destructive" });
+      return;
+    }
+
+    // Require location and photo before allowing submit
+    if (!geoLocation) {
+      toast({ title: "Validation", description: "Please capture location before submitting.", variant: "destructive" });
+      return;
+    }
+    if (!uploadedImageUrl) {
+      toast({ title: "Validation", description: "Please upload a photo of the meal before submitting.", variant: "destructive" });
+      return;
+    }
+    // Validate mandatory groups based on mealType. `MealMenuForm` syncs selections to `menuItems` hidden field.
+    const menuStr = (data.menuItems || "").toLowerCase();
+    const items = menuStr.split(",").map((s) => s.trim()).filter(Boolean);
+
+    const contains = (keywords: string[]) => items.some((it) => keywords.some((k) => it.includes(k.toLowerCase())));
+
+    if (data.mealType === "breakfast") {
+      const cerealKeys = ["poha", "rava", "sooji", "wheat", "vari", "ragi", "little millet", "finger millet", "millet"];
+      const pulseKeys = ["moth", "matki", "chawli", "cowpea", "bengal gram", "harbara", "chickpea", "vatana", "dry peas"];
+      const eggKeys = ["egg"];
+      const fruitKeys = ["banana", "papaya", "apple", "guava", "orange", "mosambi", "sweet lime"];
+
+      if (!contains(cerealKeys) || !contains(pulseKeys) || !contains(eggKeys) || !contains(fruitKeys)) {
+        toast({ title: "Validation", description: "Breakfast must include at least one item from cereals, pulses, eggs and fruits.", variant: "destructive" });
+        return;
+      }
+    } else {
+      // lunch/dinner
+      const curryKeys = ["curry", "vegetable curry", "chicken curry", "mutton curry"];
+      const dalKeys = ["dal", "urad", "toor", "moong", "masoor", "bengal gram", "sprouted"];
+      const riceKeys = ["rice", "plain rice", "yellow rice", "masala rice"];
+      const breadKeys = ["chapati", "bhakri"];
+      const vegKeys = ["root", "leafy", "vegetable", "tuber"];
+      const saladKeys = ["yes"];
+
+      if (!contains(curryKeys) || !contains(dalKeys) || !contains(riceKeys) || !contains(breadKeys) || !contains(vegKeys) || !contains(saladKeys)) {
+        toast({ title: "Validation", description: "Lunch/Dinner must include curry, dal/pulses, rice, bread, vegetables and salad (Yes).", variant: "destructive" });
+        return;
+      }
+    }
+
     createMutation.mutate(data);
   };
 
@@ -392,7 +436,6 @@ export default function MealLogsPage() {
       mealType: meal.mealType,
       menuItems: Array.isArray(meal.menuItems) ? meal.menuItems.join(", ") : "",
       notes: meal.notes || "",
-      classSection: meal.classSection || "",
     });
     setIsEditDialogOpen(true);
   };
@@ -474,13 +517,43 @@ export default function MealLogsPage() {
               type="date"
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
+              max={today}
               className="w-40"
               data-testid="input-date"
             />
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Monthly Compliance Summary moved to top for quick access */}
+          <div className="grid grid-cols-1 gap-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Monthly Compliance Summary</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div className="p-4 rounded-lg bg-muted/50 text-center">
+                    <p className="text-3xl font-bold text-foreground">{complianceData?.overallCompliance || 0}%</p>
+                    <p className="text-sm text-muted-foreground">Overall Compliance</p>
+                  </div>
+                  <div className="p-4 rounded-lg bg-muted/50 text-center">
+                    <p className="text-3xl font-bold text-emerald-600">{complianceData?.daysLogged || 0}</p>
+                    <p className="text-sm text-muted-foreground">Days Logged</p>
+                  </div>
+                  <div className="p-4 rounded-lg bg-muted/50 text-center">
+                    <p className="text-3xl font-bold text-amber-600">{complianceData?.daysMissed || 0}</p>
+                    <p className="text-sm text-muted-foreground">Days Missed</p>
+                  </div>
+                  <div className="p-4 rounded-lg bg-muted/50 text-center">
+                    <p className="text-3xl font-bold text-blue-600">{complianceData?.totalMeals || 0}</p>
+                    <p className="text-sm text-muted-foreground">Total Meals</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2">
             <Card>
               <CardHeader>
@@ -606,37 +679,7 @@ export default function MealLogsPage() {
             <CardContent>
               <Form {...form}>
                 <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                  <FormField
-                    control={form.control}
-                    name="classSection"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Class *</FormLabel>
-                        {canSelectClass ? (
-                          <>
-                            <Select onValueChange={field.onChange} value={field.value || ""}>
-                              <FormControl>
-                                <SelectTrigger data-testid="select-classSection">
-                                  <SelectValue placeholder="Select class" />
-                                </SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                {classOptions.map((cls) => (
-                                  <SelectItem key={cls} value={cls}>
-                                    {cls}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            <FormDescription>Select the class served for this meal</FormDescription>
-                          </>
-                        ) : (
-                          <Input value={field.value || userClassSection} disabled />
-                        )}
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                  {/* Class selection removed — meals are school-level */}
 
                   <FormField
                     control={form.control}
@@ -661,26 +704,7 @@ export default function MealLogsPage() {
                     )}
                   />
 
-                  <FormField
-                    control={form.control}
-                    name="menuItems"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Menu Items *</FormLabel>
-                        <FormControl>
-                          <Textarea
-                            placeholder="Enter items (comma separated)"
-                            {...field}
-                            data-testid="input-menuItems"
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          e.g., Rice, Dal, Vegetable Curry
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                  <MealMenuForm form={form} />
 
                   <div>
                     <FormLabel>Photo</FormLabel>
@@ -802,31 +826,7 @@ export default function MealLogsPage() {
           </Card>
         </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Monthly Compliance Summary</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="p-4 rounded-lg bg-muted/50 text-center">
-                <p className="text-3xl font-bold text-foreground">{complianceData?.overallCompliance || 0}%</p>
-                <p className="text-sm text-muted-foreground">Overall Compliance</p>
-              </div>
-              <div className="p-4 rounded-lg bg-muted/50 text-center">
-                <p className="text-3xl font-bold text-emerald-600">{complianceData?.daysLogged || 0}</p>
-                <p className="text-sm text-muted-foreground">Days Logged</p>
-              </div>
-              <div className="p-4 rounded-lg bg-muted/50 text-center">
-                <p className="text-3xl font-bold text-amber-600">{complianceData?.daysMissed || 0}</p>
-                <p className="text-sm text-muted-foreground">Days Missed</p>
-              </div>
-              <div className="p-4 rounded-lg bg-muted/50 text-center">
-                <p className="text-3xl font-bold text-blue-600">{complianceData?.totalMeals || 0}</p>
-                <p className="text-sm text-muted-foreground">Total Meals</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        {/* Monthly Compliance Summary already shown at top */}
       </div>
 
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
@@ -843,40 +843,13 @@ export default function MealLogsPage() {
                   <FormItem>
                     <FormLabel>Date *</FormLabel>
                     <FormControl>
-                      <Input type="date" {...field} />
+                      <Input type="date" {...field} max={today} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-              <FormField
-                control={editForm.control}
-                name="classSection"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Class *</FormLabel>
-                    {canSelectClass ? (
-                      <Select onValueChange={field.onChange} value={field.value || ""}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select class" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {classOptions.map((cls) => (
-                            <SelectItem key={cls} value={cls}>
-                              {cls}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    ) : (
-                      <Input value={field.value || userClassSection} disabled />
-                    )}
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              {/* Class selection removed — meals are school-level */}
               <FormField
                 control={editForm.control}
                 name="mealType"
@@ -903,13 +876,7 @@ export default function MealLogsPage() {
                 control={editForm.control}
                 name="menuItems"
                 render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Menu Items *</FormLabel>
-                    <FormControl>
-                      <Textarea placeholder="Enter items (comma separated)" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
+                  <MealMenuForm form={editForm} />
                 )}
               />
               <FormField

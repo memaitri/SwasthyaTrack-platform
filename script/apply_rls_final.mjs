@@ -15,6 +15,20 @@ const { Client } = pkg;
 
     console.log('Enabling RLS and applying policies...');
 
+      // Make policy application idempotent: ignore "policy already exists" errors (42710)
+      const _origQuery = client.query.bind(client);
+      client.query = async (...args) => {
+        try {
+          return await _origQuery(...args);
+        } catch (err) {
+          if (err && err.code === '42710') {
+            console.log('Skipping existing policy/object:', err.message);
+            return;
+          }
+          throw err;
+        }
+      };
+
     // Enable RLS for all tables
     const tables = [
       'students',
@@ -179,14 +193,13 @@ const { Client } = pkg;
       USING (current_setting('request.jwt.claims.role') = 'PO');
     `);
 
-    // Policies for meal_logs
+    // Policies for meal_logs (school-level only; class_section removed)
     await client.query(`
       CREATE POLICY class_teacher_meals_policy
       ON meal_logs
       FOR ALL
       USING (
-        school_id::text = current_setting('request.jwt.claims.schoolId') AND
-        (class_section = current_setting('request.jwt.claims.class_section') OR class_section IS NULL)
+        school_id::text = current_setting('request.jwt.claims.schoolId')
       );
     `);
 
@@ -202,6 +215,16 @@ const { Client } = pkg;
       ON meal_logs
       FOR ALL
       USING (school_id::text = current_setting('request.jwt.claims.schoolId'));
+    `);
+
+    await client.query(`
+      CREATE POLICY meal_superintendent_meals_policy
+      ON meal_logs
+      FOR ALL
+      USING (
+        current_setting('request.jwt.claims.role') = 'MealSuperintendent' AND
+        school_id::text = current_setting('request.jwt.claims.schoolId')
+      );
     `);
 
     // PO: Read-only access (SELECT only) on meal logs - no Create/Update/Delete

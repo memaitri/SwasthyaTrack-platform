@@ -954,7 +954,7 @@ export async function registerRoutes(
       }
 
       // Validate schoolId for role-specific requirements
-      if ((data.role === "ClassTeacher" || data.role === "Headmaster" || data.role === "MedicalTeam" || data.role === "HostelWarden") && !data.schoolId) {
+      if ((data.role === "ClassTeacher" || data.role === "Headmaster" || data.role === "MedicalTeam" || data.role === "HostelWarden" || data.role === "MealSuperintendent") && !data.schoolId) {
         return res.status(400).json({ message: "School ID is required for this role" });
       }
 
@@ -969,7 +969,7 @@ export async function registerRoutes(
       const hashedPassword = await bcrypt.hash(data.password, 10);
 
       // Roles that require approval before activation
-      const approvalRoles = ["ClassTeacher", "MedicalTeam", "HostelWarden", "PO", "Headmaster"];
+      const approvalRoles = ["ClassTeacher", "MedicalTeam", "HostelWarden", "PO", "Headmaster", "MealSuperintendent"];
 
       if (approvalRoles.includes(data.role)) {
         // Create user in pending state (not active)
@@ -2748,7 +2748,7 @@ export async function registerRoutes(
           })
         );
         filteredMeals = mealsWithStudents
-          .filter(meal => meal.classSection === teacherClassSection || meal.student?.classSection === teacherClassSection)
+          .filter(meal => meal.student?.classSection === teacherClassSection)
           .map(({ student, ...meal }) => meal);
       }
 
@@ -2825,7 +2825,7 @@ export async function registerRoutes(
           })
         );
         filteredMeals = mealsWithStudents
-          .filter(meal => meal.classSection === teacherClassSection || meal.student?.classSection === teacherClassSection)
+          .filter(meal => meal.student?.classSection === teacherClassSection)
           .map(({ student, ...meal }) => meal);
       }
 
@@ -2848,10 +2848,17 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/meals", authenticateToken, denyAdmin, authorizeRoles("ClassTeacher", "Headmaster"), async (req: AuthRequest, res) => {
+  app.post("/api/meals", authenticateToken, denyAdmin, authorizeRoles("ClassTeacher", "Headmaster", "MealSuperintendent"), async (req: AuthRequest, res) => {
     try {
-      const { date: dateFromBody, mealType, menuItems, imageUrl, latitude, longitude, notes, studentId, classSection } = req.body;
+      const { date: dateFromBody, mealType, menuItems, imageUrl, latitude, longitude, notes, studentId } = req.body;
       const date = dateFromBody || new Date().toISOString().split("T")[0];
+      // Reject future dates
+      const today = new Date().toISOString().split("T")[0];
+      if (date > today) return res.status(400).json({ message: "Meal date cannot be in the future" });
+
+      // Require location and image for auditability
+      if (!latitude || !longitude) return res.status(400).json({ message: "Location (latitude/longitude) is required" });
+      if (!imageUrl) return res.status(400).json({ message: "Meal photo is required" });
       const schoolId = req.user?.schoolId || req.body.schoolId;
 
       if (!schoolId) {
@@ -2878,10 +2885,9 @@ export async function registerRoutes(
         notes: notes || null,
         uploadedBy: req.user?.id,
         studentId: studentId || null,
-        classSection: classSection || null,
       });
 
-      console.log('Meal created:', { id: meal.id, schoolId: meal.schoolId, classSection: meal.classSection, studentId: meal.studentId });
+      console.log('Meal created:', { id: meal.id, schoolId: meal.schoolId, studentId: meal.studentId });
 
       res.status(201).json(meal);
     } catch (error: any) {
@@ -2891,7 +2897,7 @@ export async function registerRoutes(
   });
 
   // Update a meal entry
-  app.put("/api/meals/:id", authenticateToken, denyAdmin, authorizeRoles("ClassTeacher", "Headmaster", "PO"), async (req: AuthRequest, res) => {
+  app.put("/api/meals/:id", authenticateToken, denyAdmin, authorizeRoles("ClassTeacher", "Headmaster", "PO", "MealSuperintendent"), async (req: AuthRequest, res) => {
     try {
       const mealId = req.params.id;
       const { date: dateFromBody, mealType, menuItems, imageUrl, latitude, longitude, notes, studentId, classSection } = req.body;
@@ -2903,19 +2909,13 @@ export async function registerRoutes(
       const role = req.user?.role;
       if (role === "ClassTeacher") {
         const teacher = await storage.getUser(req.user!.id);
-        // CT can only update meals from their school and class
+        // CT may manage meals only for their school (class-specific restrictions removed)
         if (!teacher) return res.status(403).json({ message: "Insufficient permissions to update this meal" });
         if (teacher.schoolId !== existing.schoolId) return res.status(403).json({ message: "Insufficient permissions to update this meal" });
-        if (teacher.classSection) {
-          // If meal has studentId, ensure student's class matches; otherwise check meal's recorded classSection
-          if (existing.studentId) {
-            const student = await storage.getStudent(existing.studentId);
-            if (!student || student.classSection !== teacher.classSection) return res.status(403).json({ message: "Insufficient permissions to update this meal" });
-          } else if (existing.classSection && existing.classSection !== teacher.classSection) {
-            return res.status(403).json({ message: "Insufficient permissions to update this meal" });
-          }
-        }
       } else if (role === "Headmaster") {
+        if (req.user?.schoolId && req.user.schoolId !== existing.schoolId) return res.status(403).json({ message: "Insufficient permissions to update this meal" });
+      } else if (role === "MealSuperintendent") {
+        // Meal Superintendents can only manage meals for their assigned school
         if (req.user?.schoolId && req.user.schoolId !== existing.schoolId) return res.status(403).json({ message: "Insufficient permissions to update this meal" });
       } else if (role === "PO") {
         const user = await storage.getUser(req.user!.id);
@@ -2937,16 +2937,21 @@ export async function registerRoutes(
         }
       }
 
+      // If update would remove image or location, block it (require image+location to exist)
+      const newImage = (imageUrl === undefined) ? existing.imageUrl : imageUrl;
+      const newLat = (latitude === undefined) ? existing.latitude : latitude;
+      const newLng = (longitude === undefined) ? existing.longitude : longitude;
+      if (!newImage || !newLat || !newLng) return res.status(400).json({ message: "Meal record must have photo and location" });
+
       const updated = await storage.updateMealLog(mealId, {
         date: dateFromBody || existing.date,
         mealType: normalizedMealType || existing.mealType,
         menuItems: menuItems ?? existing.menuItems,
-        imageUrl: imageUrl ?? existing.imageUrl,
-        latitude: latitude ?? existing.latitude,
-        longitude: longitude ?? existing.longitude,
+        imageUrl: newImage,
+        latitude: newLat,
+        longitude: newLng,
         notes: notes ?? existing.notes,
         studentId: studentId ?? existing.studentId,
-        classSection: classSection ?? existing.classSection,
       });
 
       if (!updated) return res.status(500).json({ message: "Failed to update meal" });
@@ -2958,7 +2963,7 @@ export async function registerRoutes(
   });
 
   // Delete a meal entry
-  app.delete("/api/meals/:id", authenticateToken, denyAdmin, authorizeRoles("ClassTeacher", "Headmaster", "PO"), async (req: AuthRequest, res) => {
+  app.delete("/api/meals/:id", authenticateToken, denyAdmin, authorizeRoles("ClassTeacher", "Headmaster", "PO", "MealSuperintendent"), async (req: AuthRequest, res) => {
     try {
       const mealId = req.params.id;
       const existing = await storage.getMealLog(mealId);
@@ -2968,16 +2973,11 @@ export async function registerRoutes(
       if (role === "ClassTeacher") {
         const teacher = await storage.getUser(req.user!.id);
         if (!teacher) return res.status(403).json({ message: "Insufficient permissions to delete this meal" });
+        // ClassTeachers can manage meals only for their school now (class-specific checks removed)
         if (teacher.schoolId !== existing.schoolId) return res.status(403).json({ message: "Insufficient permissions to delete this meal" });
-        if (teacher.classSection) {
-          if (existing.studentId) {
-            const student = await storage.getStudent(existing.studentId);
-            if (!student || student.classSection !== teacher.classSection) return res.status(403).json({ message: "Insufficient permissions to delete this meal" });
-          } else if (existing.classSection && existing.classSection !== teacher.classSection) {
-            return res.status(403).json({ message: "Insufficient permissions to delete this meal" });
-          }
-        }
       } else if (role === "Headmaster") {
+        if (req.user?.schoolId && req.user.schoolId !== existing.schoolId) return res.status(403).json({ message: "Insufficient permissions to delete this meal" });
+      } else if (role === "MealSuperintendent") {
         if (req.user?.schoolId && req.user.schoolId !== existing.schoolId) return res.status(403).json({ message: "Insufficient permissions to delete this meal" });
       } else if (role === "PO") {
         const user = await storage.getUser(req.user!.id);
@@ -5869,7 +5869,7 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
       let totalMeals = 0;
       let expectedMeals = 0;
       try {
-        const meals = await storage.getMealLogs({ schoolId: schoolId || undefined, classSection: classSection || undefined, startDate: monthStart, endDate: monthEnd });
+        const meals = await storage.getMealLogs({ schoolId: schoolId || undefined, startDate: monthStart, endDate: monthEnd });
         totalMeals = meals.length;
         const daysInMonth = new Date(nowYear, nowMonth, 0).getDate();
         expectedMeals = students.length > 0 ? students.length * daysInMonth : 0; // assume 1 meal per student per day for expected

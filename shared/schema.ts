@@ -4,7 +4,7 @@ import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-export const roleEnum = ["PO", "Headmaster", "ClassTeacher", "MedicalTeam", "Admin", "HostelWarden"] as const;
+export const roleEnum = ["PO", "Headmaster", "ClassTeacher", "MedicalTeam", "Admin", "HostelWarden", "MealSuperintendent"] as const;
 export type Role = typeof roleEnum[number];
 
 export const genderEnum = ["M", "F", "O"] as const;
@@ -581,7 +581,6 @@ export const mealLogs = pgTable("meal_logs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   schoolId: varchar("school_id").notNull(),
   studentId: varchar("student_id"),
-  classSection: text("class_section"),
   date: date("date").notNull(),
   mealType: text("meal_type").notNull().$type<MealType>(),
   menuItems: jsonb("menu_items").$type<string[]>().default([]),

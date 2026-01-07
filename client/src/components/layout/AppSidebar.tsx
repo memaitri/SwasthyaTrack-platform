@@ -68,6 +68,10 @@ const roleMenuItems = {
     { title: "Dashboard", url: "/", icon: LayoutDashboard },
     { title: "All Students", url: "/hostel/students", icon: Users },
   ],
+  MealSuperintendent: [
+    { title: "Dashboard", url: "/", icon: LayoutDashboard },
+    { title: "Meals", url: "/meals", icon: UtensilsCrossed },
+  ],
 };
 
 const roleBadgeColors = {
@@ -77,6 +81,7 @@ const roleBadgeColors = {
   ClassTeacher: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
   MedicalTeam: "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300",
   HostelWarden: "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300",
+  MealSuperintendent: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300",
 };
 
 export function AppSidebar() {

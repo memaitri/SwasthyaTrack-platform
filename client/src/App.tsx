@@ -18,6 +18,7 @@ import StudentFormPage from "@/pages/StudentFormPage";
 import HealthCardsPage from "@/pages/HealthCardsPage";
 import ApprovalsPage from "@/pages/ApprovalsPage";import PendingSchoolsPage from "./pages/PendingSchoolsPage";import MonthlyCheckupsPage from "@/pages/MonthlyCheckupsPage";
 import MealLogsPage from "@/pages/MealLogsPage";
+import MealOptionsPage from "@/pages/MealOptionsPage";
 import HostelAttendancePage from "@/pages/HostelAttendancePage";
 import ReportsPage from "@/pages/ReportsPage";
 import UsersPage from "@/pages/UsersPage";
@@ -75,6 +76,8 @@ function DashboardRouter() {
       return <MedicalTeamDashboard />;
     case "HostelWarden":
       return <HostelWardenDashboard />;
+    case "MealSuperintendent":
+      return <MealLogsPage />;
     default:
       return <NotFound />;
   }
@@ -178,8 +181,14 @@ function Router() {
       </Route>
 
       <Route path="/meals">
-        <ProtectedRoute allowedRoles={["Admin", "PO", "MedicalTeam", "HostelWarden"]}>
+        <ProtectedRoute allowedRoles={["Admin", "PO", "MedicalTeam", "HostelWarden", "MealSuperintendent"]}>
           <MealLogsPage />
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/meals/options">
+        <ProtectedRoute allowedRoles={["Admin", "PO"]}>
+          <MealOptionsPage />
         </ProtectedRoute>
       </Route>
 

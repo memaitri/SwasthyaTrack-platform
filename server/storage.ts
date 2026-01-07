@@ -502,21 +502,19 @@ export class DatabaseStorage implements IStorage {
   async getMealLogs(params?: {
     schoolId?: string;
     schoolIds?: string[];
-    classSection?: string;
     date?: string;
     startDate?: string;
     endDate?: string;
     mealType?: string;
     limit?: number;
   }): Promise<MealLog[]> {
-    const { schoolId, schoolIds, classSection, date, startDate, endDate, mealType, limit } = params || {};
+    const { schoolId, schoolIds, date, startDate, endDate, mealType, limit } = params || {};
 
     const conditions = [];
     if (schoolId) conditions.push(eq(mealLogs.schoolId, schoolId));
     if (!schoolId && schoolIds && schoolIds.length > 0) {
       conditions.push(inArray(mealLogs.schoolId, schoolIds));
     }
-    if (classSection) conditions.push(eq(mealLogs.classSection, classSection));
     if (date) conditions.push(eq(mealLogs.date, date));
     if (startDate) conditions.push(gte(mealLogs.date, startDate));
     if (endDate) conditions.push(lte(mealLogs.date, endDate));
