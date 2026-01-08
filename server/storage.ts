@@ -57,6 +57,7 @@ export interface IStorage {
     search?: string;
     page?: number;
     limit?: number;
+    gender?: string;
   }): Promise<{ students: Student[]; total: number }>;
   createStudent(student: InsertStudent): Promise<Student>;
   updateStudent(id: string, data: Partial<InsertStudent>): Promise<Student | undefined>;
@@ -69,7 +70,8 @@ export interface IStorage {
     year?: number;
     page?: number;
     limit?: number;
-  }): Promise<{ cards: AnnualHealthCard[]; total: number }>;
+    gender?: string;
+  }): Promise<{ cards: any[]; total: number }>;
   createAnnualHealthCard(card: InsertAnnualHealthCard): Promise<AnnualHealthCard>;
   updateAnnualHealthCard(id: string, data: Partial<InsertAnnualHealthCard>): Promise<AnnualHealthCard | undefined>;
 
@@ -392,8 +394,9 @@ export class DatabaseStorage implements IStorage {
     page?: number;
     limit?: number;
     createdBy?: string;
+    gender?: string;
   }): Promise<{ cards: AnnualHealthCard[]; total: number }> {
-    const { studentId, schoolId, classSection, status, year, page = 1, limit = 10, createdBy } = params || {};
+    const { studentId, schoolId, classSection, status, year, page = 1, limit = 10, createdBy, gender } = params || {};
     const offset = (page - 1) * limit;
 
     const conditions = [];
@@ -410,6 +413,13 @@ export class DatabaseStorage implements IStorage {
 
     let query = db.select().from(annualHealthCards);
     let countQuery = db.select({ count: count() }).from(annualHealthCards);
+
+    if (gender) {
+      // When filtering by gender, join with students table
+      query = db.select().from(annualHealthCards).innerJoin(students, eq(annualHealthCards.studentId, students.id)) as any;
+      countQuery = db.select({ count: count() }).from(annualHealthCards).innerJoin(students, eq(annualHealthCards.studentId, students.id)) as any;
+      conditions.push(eq(students.gender, gender as "M" | "F" | "O"));
+    }
 
     if (conditions.length > 0) {
       query = query.where(and(...conditions)) as any;

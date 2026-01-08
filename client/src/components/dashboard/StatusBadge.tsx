@@ -7,6 +7,7 @@ type StatusType = "Pending" | "Approved" | "Rejected" | "Active" | "Inactive" | 
 interface StatusBadgeProps {
   status: StatusType;
   size?: "sm" | "default";
+  text?: string;
 }
 
 const statusConfig = {
@@ -48,7 +49,7 @@ const statusConfig = {
   },
 };
 
-export function StatusBadge({ status, size = "default" }: StatusBadgeProps) {
+export function StatusBadge({ status, size = "default", text }: StatusBadgeProps) {
   const config = statusConfig[status] || statusConfig.Pending; // Default to Pending if status not found
   const Icon = config.icon;
 
@@ -62,7 +63,7 @@ export function StatusBadge({ status, size = "default" }: StatusBadgeProps) {
       )}
     >
       <Icon className={cn("shrink-0", size === "sm" ? "h-3 w-3" : "h-3.5 w-3.5")} />
-      <span>{status}</span>
+      <span>{text || status}</span>
     </Badge>
   );
 }

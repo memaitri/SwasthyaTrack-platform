@@ -14,15 +14,18 @@ interface HealthCardFormSectionsProps {
   form: UseFormReturn<any>;
   studentGender?: string;
   studentAge?: number;
+  userRole?: string;
 }
 
 export function HealthCardFormSections({
   form,
   studentGender,
   studentAge = 0,
+  userRole,
 }: HealthCardFormSectionsProps) {
   const showAdolescentSection = studentAge >= 10;
   const isFemale = studentGender === "F";
+  const canViewMenstrualHealth = userRole === "Lady Superintendent" || userRole === "Admin";
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Calculate BMI when weight or height changes
@@ -2870,7 +2873,7 @@ export function HealthCardFormSections({
             )}
 
             {/* Detailed Menstrual Cycle Tracking for Adolescent Females */}
-            {isFemale && showAdolescentSection && (
+            {isFemale && showAdolescentSection && canViewMenstrualHealth && (
               <Card className="mt-6">
                 <CardHeader>
                   <CardTitle className="text-lg text-pink-700">Detailed Menstrual Cycle Tracking</CardTitle>

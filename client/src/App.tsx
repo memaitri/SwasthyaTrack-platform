@@ -13,6 +13,7 @@ import ClassTeacherDashboard from "@/pages/ClassTeacherDashboard";
 import MedicalTeamDashboard from "@/pages/MedicalTeamDashboard";
 import AdminDashboard from "@/pages/AdminDashboard";
 import HostelWardenDashboard from "@/pages/HostelWardenDashboard";
+import LadySuperintendentDashboard from "@/pages/LadySuperintendentDashboard";
 import StudentsPage from "@/pages/StudentsPage";
 import StudentFormPage from "@/pages/StudentFormPage";
 import HealthCardsPage from "@/pages/HealthCardsPage";
@@ -78,6 +79,8 @@ function DashboardRouter() {
       return <HostelWardenDashboard />;
     case "MealSuperintendent":
       return <MealLogsPage />;
+    case "Lady Superintendent":
+      return <LadySuperintendentDashboard />;
     default:
       return <NotFound />;
   }

@@ -822,6 +822,7 @@ export default function StudentFormPage() {
                 form={healthCardForm}
                 studentGender={studentGender}
                 studentAge={studentAge}
+                userRole={user?.role}
               />
 
               <div className="flex justify-between gap-4 mt-6">

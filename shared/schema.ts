@@ -4,7 +4,7 @@ import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-export const roleEnum = ["PO", "Headmaster", "ClassTeacher", "MedicalTeam", "Admin", "HostelWarden", "MealSuperintendent"] as const;
+export const roleEnum = ["PO", "Headmaster", "ClassTeacher", "MedicalTeam", "Admin", "HostelWarden", "MealSuperintendent", "Lady Superintendent"] as const;
 export type Role = typeof roleEnum[number];
 
 export const genderEnum = ["M", "F", "O"] as const;

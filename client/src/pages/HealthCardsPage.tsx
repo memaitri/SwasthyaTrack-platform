@@ -763,6 +763,7 @@ export default function HealthCardsPage() {
                   form={editForm}
                   studentGender={editingCard.gender}
                   studentAge={editingCard.ageYears || 0}
+                  userRole={user?.role}
                 />
               </div>
               <DialogFooter>

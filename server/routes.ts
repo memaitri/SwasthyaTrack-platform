@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
-import { insertStudentSchema, insertSchoolSchema, insertAnnualHealthCardSchema, insertMonthlyCheckupSchema, insertMealLogSchema, loginSchema, registerSchema, roleEnum, hostelAttendance, annualHealthCards, users, schools, notifications, type Student } from "@shared/schema";
+import { insertStudentSchema, insertSchoolSchema, insertAnnualHealthCardSchema, insertMonthlyCheckupSchema, insertMealLogSchema, loginSchema, registerSchema, roleEnum, hostelAttendance, annualHealthCards, users, schools, students, notifications, type Student } from "@shared/schema";
 import { z } from "zod";
 import PDFDocument from "pdfkit";
 import ExcelJS from "exceljs";
@@ -2096,6 +2096,9 @@ export async function registerRoutes(
           filteredCards = enrichedCards.filter(card =>
             card.student?.classSection === teacherClassSection || card.classSection === teacherClassSection
           );
+        } else if (req.user?.role === "Lady Superintendent") {
+          // Lady Superintendent can only see female students
+          filteredCards = enrichedCards.filter(card => card.student?.gender === "F");
         }
 
         // Paginate the filtered results
@@ -2251,7 +2254,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/annual-cards/:id", authenticateToken, denyAdmin, async (req: AuthRequest, res) => {
+  app.get("/api/annual-cards/:id", authenticateToken, async (req: AuthRequest, res) => {
     try {
       const { id } = req.params;
       const card = await storage.getAnnualHealthCard(id);
@@ -2263,6 +2266,11 @@ export async function registerRoutes(
       // Get student details for the card
       const student = await storage.getStudent(card.studentId);
       const school = card.schoolId ? await storage.getSchool(card.schoolId as string) : null;
+
+      // Role-based access control
+      if (req.user?.role === "Lady Superintendent" && student?.gender !== "F") {
+        return res.status(403).json({ message: "Access denied: Lady Superintendent can only access female student records" });
+      }
 
       // Enforce that PO users can only access cards for schools in their district
       if (req.user?.role === "PO") {
@@ -6076,6 +6084,131 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
     } catch (error: any) {
       console.error("Warden students error:", error?.message || String(error));
       res.status(500).json({ message: error?.message || "Failed to fetch students" });
+    }
+  });
+
+  app.get("/api/lady-superintendent/dashboard", authenticateToken, authorizeRoles("Lady Superintendent", "Admin"), async (req: AuthRequest, res) => {
+    try {
+      const user = req.user!;
+      const schoolId = req.query.schoolId as string;
+
+      // Get all female students
+      let femaleStudentsQuery = db
+        .select({
+          id: students.id,
+          schoolId: students.schoolId,
+          fullName: students.fullName,
+          classSection: students.classSection,
+          gender: students.gender,
+        })
+        .from(students)
+        .where(eq(students.gender, "F"));
+
+      if (schoolId && schoolId !== "all") {
+        femaleStudentsQuery = db
+          .select({
+            id: students.id,
+            schoolId: students.schoolId,
+            fullName: students.fullName,
+            classSection: students.classSection,
+            gender: students.gender,
+          })
+          .from(students)
+          .where(and(eq(students.gender, "F"), eq(students.schoolId, schoolId)));
+      }
+
+      const femaleStudents = await femaleStudentsQuery;
+
+      // Get adolescent health records for female students (age >= 10)
+      const adolescentHealthRecords = await db
+        .select({
+          id: annualHealthCards.id,
+          studentId: annualHealthCards.studentId,
+          studentName: students.fullName,
+          schoolName: annualHealthCards.schoolName,
+          classSection: students.classSection,
+          dateOfVisit: annualHealthCards.date_of_visit,
+          menstrualCycleRegular: annualHealthCards.menstrual_cycle_regular,
+          menstrualLastPeriodDate: annualHealthCards.menstrual_last_period_date,
+          menstrualCycleLengthDays: annualHealthCards.menstrual_cycle_length_days,
+          menstrualPeriodDurationDays: annualHealthCards.menstrual_period_duration_days,
+        })
+        .from(annualHealthCards)
+        .innerJoin(students, eq(annualHealthCards.studentId, students.id))
+        .where(and(
+          eq(students.gender, "F"),
+          sql`EXTRACT(YEAR FROM AGE(CURRENT_DATE, ${students.dateOfBirth})) >= 10`
+        ));
+
+      // Calculate menstrual health statistics
+      const menstrualHealthTracked = adolescentHealthRecords.filter(record =>
+        record.menstrualCycleRegular !== null
+      ).length;
+
+      const regularCycles = adolescentHealthRecords.filter(record =>
+        record.menstrualCycleRegular === true
+      ).length;
+
+      const irregularCycles = adolescentHealthRecords.filter(record =>
+        record.menstrualCycleRegular === false
+      ).length;
+
+      // Get referred cases from adolescent health section
+      const referredCases = await db
+        .select({
+          id: annualHealthCards.id,
+          studentName: students.fullName,
+          referralReason: sql`CASE
+            WHEN ${annualHealthCards.referral_adolescent_yes} THEN 'Adolescent Health'
+            ELSE 'Other'
+          END`.as('referral_reason'),
+        })
+        .from(annualHealthCards)
+        .innerJoin(students, eq(annualHealthCards.studentId, students.id))
+        .where(and(
+          eq(students.gender, "F"),
+          or(
+            eq(annualHealthCards.referral_adolescent_yes, true)
+          )
+        ));
+
+      // Get schools for filter dropdown
+      const schoolList = await db
+        .select({
+          id: schools.id,
+          name: schools.name,
+        })
+        .from(schools)
+        .where(eq(schools.isActive, true));
+
+      // Calculate menstrual health stats
+      const painReported = adolescentHealthRecords.filter(record =>
+        record.menstrualPeriodDurationDays && record.menstrualPeriodDurationDays > 0
+      ).length;
+
+      const hygieneConcerns = adolescentHealthRecords.filter(record =>
+        record.menstrualLastPeriodDate !== null
+      ).length;
+
+      res.json({
+        metrics: {
+          totalFemaleStudents: femaleStudents.length,
+          adolescentHealthRecords: adolescentHealthRecords.length,
+          menstrualHealthTracked,
+          referredCases: referredCases.length,
+        },
+        schools: schoolList,
+        recentAdolescentCheckups: adolescentHealthRecords.slice(0, 10),
+        menstrualHealthStats: {
+          regularCycles,
+          irregularCycles,
+          painReported,
+          hygieneConcerns,
+        },
+      });
+    } catch (error) {
+      console.error("Lady Superintendent dashboard error:", error);
+      res.status(500).json({ message: "Failed to fetch dashboard data" });
     }
   });
 
