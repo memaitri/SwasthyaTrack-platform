@@ -2182,7 +2182,136 @@ export function HealthCardFormSections({
             )}
           </div>
 
-          {/* Summary checkboxes for Section C */}
+          {/* C9: Sickle Cell Anaemia */}
+          <div className="space-y-3 border-l-4 border-red-300 pl-4">
+            <FormField
+              control={form.control}
+              name="c9_suspected"
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                  <FormControl>
+                    <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                  </FormControl>
+                  <div>
+                    <FormLabel className="text-sm font-bold text-red-700">
+                      C9: Sickle Cell Anaemia - (If suspected - REFER)
+                    </FormLabel>
+                    <p className="text-xs text-red-600 mt-1">Screening for sickle cell disease and hemoglobin variants</p>
+                  </div>
+                </FormItem>
+              )}
+            />
+
+            {form.watch("c9_suspected") && (
+              <div className="ml-6 space-y-6 bg-white p-4 rounded border">
+                {/* C9.1 Clinical Features */}
+                <div className="border-l-2 border-red-300 pl-3">
+                  <FormLabel className="text-sm font-bold text-red-700">9.1 Clinical Features</FormLabel>
+                  <p className="text-xs text-gray-600 mt-1">Check all signs/symptoms present:</p>
+                  <div className="grid grid-cols-2 gap-2 mt-2">
+                    {[
+                      { key: "pain_crisis", label: "Vaso-occlusive pain crisis" },
+                      { key: "swelling_hands_feet", label: "Hand-foot swelling (dactylitis)" },
+                      { key: "shortness_breath", label: "Shortness of breath (acute chest syndrome)" },
+                      { key: "fatigue", label: "Severe fatigue/lethargy" },
+                      { key: "jaundice", label: "Jaundice (yellowing)" },
+                      { key: "delayed_growth", label: "Delayed growth/development" },
+                      { key: "severe_infections", label: "Recurrent severe infections" },
+                    ].map((feature) => (
+                      <FormField
+                        key={feature.key}
+                        control={form.control}
+                        name={`c9_clinical_features.${feature.key}` as any}
+                        render={({ field }) => (
+                          <FormItem className="flex flex-row items-center space-x-2 space-y-0">
+                            <FormControl>
+                              <Checkbox
+                                checked={field.value}
+                                onCheckedChange={(checked) => {
+                                  const current = form.getValues("c9_clinical_features") || {};
+                                  form.setValue("c9_clinical_features", { ...current, [feature.key]: checked });
+                                }}
+                              />
+                            </FormControl>
+                            <FormLabel className="text-xs">{feature.label}</FormLabel>
+                          </FormItem>
+                        )}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                {/* C9.2 Hemoglobin Type Classification */}
+                <div className="border-l-2 border-red-300 pl-3">
+                  <FormLabel className="text-sm font-bold text-red-700">9.2 Hemoglobin Type Classification</FormLabel>
+                  <p className="text-xs text-gray-600 mt-1">If sickle cell anaemia confirmed by tests, select type:</p>
+                  <div className="grid grid-cols-1 gap-2 mt-2">
+                    {[
+                      { key: "hbss", label: "Hemoglobin SS (HbSS) - Sickle Cell Disease" },
+                      { key: "hbsc", label: "Hemoglobin SC (HbSC) - SC Disease" },
+                      { key: "hbs_beta_thalassemia", label: "Hemoglobin S Beta-Thalassemia (HbS/β-Thalassemia)" },
+                      { key: "hbsd", label: "Rare Forms: Hemoglobin SD (HbSD)" },
+                      { key: "hbse", label: "Rare Forms: Hemoglobin SE (HbSE)" },
+                    ].map((type) => (
+                      <FormField
+                        key={type.key}
+                        control={form.control}
+                        name={`c9_hemoglobin_type.${type.key}` as any}
+                        render={({ field }) => (
+                          <FormItem className="flex flex-row items-center space-x-2 space-y-0">
+                            <FormControl>
+                              <Checkbox
+                                checked={field.value}
+                                onCheckedChange={(checked) => {
+                                  const current = form.getValues("c9_hemoglobin_type") || {};
+                                  form.setValue("c9_hemoglobin_type", { ...current, [type.key]: checked });
+                                }}
+                              />
+                            </FormControl>
+                            <FormLabel className="text-xs">{type.label}</FormLabel>
+                          </FormItem>
+                        )}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                {/* Note about referral */}
+                <div className="bg-red-50 p-3 rounded border border-red-200">
+                  <p className="text-xs text-red-700">
+                    <strong>Important:</strong> All children with confirmed sickle cell disease should be referred for specialized hematology care, genetic counseling, and comprehensive disease management.
+                  </p>
+                </div>
+
+                {/* Referral Facility */}
+                <FormField
+                  control={form.control}
+                  name="c9_referral_facility"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-sm font-bold text-red-700">Refer to facility: *</FormLabel>
+                      <Select value={field.value || ""} onValueChange={field.onChange}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select referral facility" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {["Medical College/Teaching Hospital", "District Hospital - Hemato-oncology", "Tertiary Care Center - Pediatric Hematology", "Blood Bank/Hemophilia Center", "PHC/CHC", "Pediatrician"].map((facility) => (
+                            <SelectItem key={facility} value={facility}>
+                              {facility}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Summary checkboxes for Section C */
+}
           <div className="mt-4 pt-4 border-t">
             <FormLabel className="text-sm font-semibold">Summary of Findings - Diseases</FormLabel>
             <div className="mt-2 grid grid-cols-3 gap-2">
@@ -2201,6 +2330,7 @@ export function HealthCardFormSections({
                 { key: "summary_disease_behavioral_disorder", label: "Behavioral disorder (Autism/ADHD)" },
                 { key: "summary_disease_tuberculosis", label: "Tuberculosis (Pulmonary/Extra-pulmonary)" },
                 { key: "summary_disease_leprosy", label: "Leprosy" },
+                { key: "summary_disease_sickle_cell_anaemia", label: "Sickle Cell Anaemia" },
               ].map((item) => (
                 <FormField
                   key={item.key}
@@ -3289,6 +3419,7 @@ export function HealthCardFormSections({
             { category: "Disease", yesField: "disease_any", facilityField: "disease_facility", defaultFacility: "PHC/CHC/DH/DEIC" },
             { category: "Leprosy", yesField: "c7_suspected", facilityField: "c7_referral_facility", defaultFacility: "PHC/CHC/DH/Leprosy Clinic" },
             { category: "TB", yesField: "c8_suspected", facilityField: "c8_referral_facility", defaultFacility: "PHC/DOTS centre/DH" },
+            { category: "Sickle Cell Anaemia", yesField: "c9_suspected", facilityField: "c9_referral_facility", defaultFacility: "Medical College/District Hospital" },
             { category: "Developmental Delay", yesField: "developmental_any", facilityField: "developmental_facility", defaultFacility: "DEIC" },
             { category: "Adolescent Health Concern", yesField: "adolescent_any", facilityField: "adolescent_facility", defaultFacility: "CHC/AFHC/Mental Health" },
           ].map((item) => (

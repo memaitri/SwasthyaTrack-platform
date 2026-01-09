@@ -30,7 +30,7 @@ function normalizeStatus(s?: string) {
   return s;
 }
 import { createClient } from "@supabase/supabase-js";
-import { isC7ReferralNeeded, isC8ReferralNeeded, generateC7ReferralIssue, generateC8ReferralIssue } from "./referralLogic";
+import { isC7ReferralNeeded, isC8ReferralNeeded, isC9ReferralNeeded, generateC7ReferralIssue, generateC8ReferralIssue, getC9ReferralDescription } from "./referralLogic";
 import { getBMIClassification } from "../lib/bmiColors";
 // @ts-ignore - pdfkit doesn't have type definitions
 const PDFDocumentAny = PDFDocument as any;
@@ -774,6 +774,13 @@ function buildHealthCardPayload(student: any, schoolId: string, healthCardData: 
     c8_referral_facility: parseOrNull(healthCardData.c8_referral_facility),
     c8_referral_date: parseOrNull(healthCardData.c8_referral_date),
 
+    // C9 (Sickle Cell Anaemia)
+    c9_suspected: !!healthCardData.c9_suspected,
+    c9_clinical_features: healthCardData.c9_clinical_features || {},
+    c9_hemoglobin_type: healthCardData.c9_hemoglobin_type || {},
+    c9_referral_facility: parseOrNull(healthCardData.c9_referral_facility),
+    c9_referral_date: parseOrNull(healthCardData.c9_referral_date),
+
     summary_disease_skin_conditions: !!healthCardData.summary_disease_skin_conditions,
     summary_disease_vision_impairment: !!healthCardData.summary_disease_vision_impairment,
     summary_disease_hearing_impairment: !!healthCardData.summary_disease_hearing_impairment,
@@ -788,6 +795,7 @@ function buildHealthCardPayload(student: any, schoolId: string, healthCardData: 
     summary_disease_behavioral_disorder: !!healthCardData.summary_disease_behavioral_disorder,
     summary_disease_tuberculosis: !!healthCardData.summary_disease_tuberculosis,
     summary_disease_leprosy: !!healthCardData.summary_disease_leprosy,
+    summary_disease_sickle_cell_anaemia: !!healthCardData.summary_disease_sickle_cell_anaemia,
     summary_disease_other: parseOrNull(healthCardData.summary_disease_other),
 
     // Section D
@@ -875,6 +883,7 @@ function buildHealthCardPayload(student: any, schoolId: string, healthCardData: 
       !!healthCardData.b3_referral_facility || !!healthCardData.b3_referral_date || !!healthCardData.b3_severe_anemia ||
       !!healthCardData.c7_referral_facility || !!healthCardData.c7_referral_date || !!healthCardData.c7_suspected ||
       !!healthCardData.c8_referral_facility || !!healthCardData.c8_referral_date || !!healthCardData.c8_suspected ||
+      !!healthCardData.c9_referral_facility || !!healthCardData.c9_referral_date || !!healthCardData.c9_suspected ||
       !!healthCardData.e1_referral_suggested || !!healthCardData.e1_referral_facility || !!healthCardData.e1_referral_date ||
       !!healthCardData.e2_referral_suggested || !!healthCardData.e3_referral_suggested || !!healthCardData.e4_referral_suggested || !!healthCardData.e5_referral_suggested || !!healthCardData.e6_referral_suggested || !!healthCardData.e7_referral_suggested ||
       false
@@ -1944,6 +1953,17 @@ export async function registerRoutes(
             });
           }
 
+          // Check C9 Sickle Cell Anaemia
+          if (isC9ReferralNeeded(healthCardData)) {
+            referralConditions.push({
+              condition: true,
+              type: "disease",
+              code: "C9",
+              issue: getC9ReferralDescription(healthCardData),
+              facility: healthCardData.c9_referral_facility || "Medical College/District Hospital"
+            });
+          }
+
           // Check other deficiencies and conditions
           referralConditions.push(
             {
@@ -2539,6 +2559,17 @@ export async function registerRoutes(
           code: "C8",
           issue: generateC8ReferralIssue(healthCardData),
           facility: healthCardData.c8_referral_facility || "District Hospital"
+        });
+      }
+
+      // Check C9 Sickle Cell Anaemia
+      if (isC9ReferralNeeded(healthCardData)) {
+        referralConditions.push({
+          condition: true,
+          type: "disease",
+          code: "C9",
+          issue: getC9ReferralDescription(healthCardData),
+          facility: healthCardData.c9_referral_facility || "Medical College/District Hospital"
         });
       }
 

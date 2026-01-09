@@ -131,6 +131,11 @@ const healthCardFormSchema = z.object({
   c8_relevant_history: z.record(z.boolean()).optional(),
   c8_extra_pulmonary: z.record(z.union([z.boolean(), z.string()])).optional(),
   c8_referral_facility: z.string().optional(),
+  c9_suspected: z.boolean().default(false),
+  c9_clinical_features: z.record(z.boolean()).optional(),
+  c9_hemoglobin_type: z.record(z.boolean()).optional(),
+  c9_referral_facility: z.string().optional(),
+  c9_referral_date: z.coerce.date().optional(),
   summary_disease_skin_conditions: z.boolean().default(false),
   summary_disease_vision_impairment: z.boolean().default(false),
   summary_disease_hearing_impairment: z.boolean().default(false),
@@ -367,6 +372,7 @@ export default function StudentFormPage() {
       c6_rheumatic_heart: false,
       c7_suspected: false,
       c8_suspected: false,
+      c9_suspected: false,
 
       /* Section D */
       d1_seeing_difficulty: false,

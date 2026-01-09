@@ -374,6 +374,33 @@ export const annualHealthCards = pgTable("annual_health_cards", {
   c8_referral_facility: text("c8_referral_facility"),
   c8_referral_date: date("c8_referral_date"),
 
+  /* Section C9: Sickle Cell Anaemia */
+  c9_suspected: boolean("c9_suspected").default(false),
+  
+  /* C9.1 Clinical Features */
+  c9_clinical_features: jsonb("c9_clinical_features").$type<{
+    pain_crisis?: boolean;
+    swelling_hands_feet?: boolean;
+    shortness_breath?: boolean;
+    fatigue?: boolean;
+    jaundice?: boolean;
+    delayed_growth?: boolean;
+    severe_infections?: boolean;
+  }>().default({}),
+  
+  /* C9.2 Hemoglobin Type Classification */
+  c9_hemoglobin_type: jsonb("c9_hemoglobin_type").$type<{
+    hbss?: boolean;
+    hbsc?: boolean;
+    hbs_beta_thalassemia?: boolean;
+    hbsd?: boolean;
+    hbse?: boolean;
+  }>().default({}),
+  
+  /* C9 Referral */
+  c9_referral_facility: text("c9_referral_facility"),
+  c9_referral_date: date("c9_referral_date"),
+
   /* Section C: Summary of Diseases */
   summary_disease_skin_conditions: boolean("summary_disease_skin_conditions").default(false),
   summary_disease_vision_impairment: boolean("summary_disease_vision_impairment").default(false),
@@ -389,6 +416,7 @@ export const annualHealthCards = pgTable("annual_health_cards", {
   summary_disease_behavioral_disorder: boolean("summary_disease_behavioral_disorder").default(false),
   summary_disease_tuberculosis: boolean("summary_disease_tuberculosis").default(false),
   summary_disease_leprosy: boolean("summary_disease_leprosy").default(false),
+  summary_disease_sickle_cell_anaemia: boolean("summary_disease_sickle_cell_anaemia").default(false),
   summary_disease_other: text("summary_disease_other"),
 
   /* Section D: Developmental Delay/Disability — D1 to D9 with detailed referral */
@@ -858,6 +886,7 @@ export const insertAnnualHealthCardSchema = createInsertSchema(annualHealthCards
    c5_referral_date: true,
    c6_referral_date: true,
    c8_referral_date: true,
+   c9_referral_date: true,
    d1_referral_date: true,
    d2_referral_date: true,
    d3_referral_date: true,
@@ -1074,6 +1103,11 @@ export const insertAnnualHealthCardSchema = createInsertSchema(annualHealthCards
   c6_referral_facility: z.string().nullable().optional(),
   c7_referral_facility: z.string().nullable().optional(),
   c8_referral_facility: z.string().nullable().optional(),
+  c9_suspected: z.boolean().optional(),
+  c9_clinical_features: z.record(z.boolean()).optional(),
+  c9_hemoglobin_type: z.record(z.boolean()).optional(),
+  c9_referral_facility: z.string().nullable().optional(),
+  c9_referral_date: z.coerce.date().nullable().optional(),
   d1_seeing_difficulty: z.boolean().optional(),
   d2_walking_delay: z.boolean().optional(),
   d3_reading_writing: z.boolean().optional(),
