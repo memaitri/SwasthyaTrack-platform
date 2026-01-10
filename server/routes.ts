@@ -4715,27 +4715,67 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
         mentalHealthConcerns: adolescentHealth.mentalHealthConcerns,
         utiSymptomsConcerns: adolescentHealth.utiSymptomsConcerns,
       });
-      console.log('========== RESPONSE READY TO SEND ==========');
 
-      res.json({
-        districtKPIs,
-        referralHeatmap,
-        anthropometryAnalytics,
-        deficienciesInsights,
-        deficienciesHeatmap,
-        diseasesInsights,
-        leprosyAnalytics,
-        tbAnalytics,
-        developmentalDelays,
-        adolescentHealth,
-        referralManagement,
-        complianceAnalytics,
-        alerts,
-        exportCapabilities,
-        metadata,
-        metrics,
-        schools: schoolsWithMetrics,
-      });
+        // Calculate meal tracking analytics
+        const monthStart = new Date(selectedYear, selectedMonth - 1, 1);
+        const monthEnd = new Date(selectedYear, selectedMonth, 0);
+        const allowedSchoolIds = schools.map(s => s.id);
+        const mealLogs = await storage.getMealLogs({
+          schoolIds: allowedSchoolIds,
+          startDate: monthStart.toISOString().split('T')[0],
+          endDate: monthEnd.toISOString().split('T')[0],
+        });
+        const totalMeals = mealLogs.length;
+        const uniqueDates = [...new Set(mealLogs.map(m => m.date))];
+        const daysLogged = uniqueDates.length;
+        const daysInMonth = new Date(selectedYear, selectedMonth, 0).getDate();
+        const daysMissed = daysInMonth - daysLogged;
+        const overallCompliance = daysInMonth > 0 ? Math.round((daysLogged / daysInMonth) * 100) : 0;
+
+        // Daily meals trend (last 30 days)
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        const recentMeals = mealLogs.filter(m => new Date(m.date) >= thirtyDaysAgo);
+        const dailyMealsTrend = [];
+        for (let i = 29; i >= 0; i--) {
+          const date = new Date();
+          date.setDate(date.getDate() - i);
+          const dateStr = date.toISOString().split('T')[0];
+          const mealsOnDate = recentMeals.filter(m => m.date === dateStr).length;
+          dailyMealsTrend.push({
+            date: dateStr,
+            meals: mealsOnDate,
+          });
+        }
+
+          const mealTrackingAnalytics = {
+            totalMeals,
+            daysLogged,
+            daysMissed,
+            overallCompliance,
+            dailyMealsTrend,
+          };
+
+        res.json({
+          districtKPIs,
+          referralHeatmap,
+          anthropometryAnalytics,
+          deficienciesInsights,
+          deficienciesHeatmap,
+          diseasesInsights,
+          leprosyAnalytics,
+          tbAnalytics,
+          developmentalDelays,
+          adolescentHealth,
+          mealTrackingAnalytics,
+          referralManagement,
+          complianceAnalytics,
+          alerts,
+          exportCapabilities,
+          metadata,
+          metrics,
+          schools: schoolsWithMetrics,
+        });
     } catch (error: any) {
       const errorMessage = (error && (error.message || String(error))) || "Failed to fetch dashboard data";
       console.error("PO dashboard error:", errorMessage);
