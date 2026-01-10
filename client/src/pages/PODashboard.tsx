@@ -96,7 +96,7 @@ const years = [
 export default function PODashboard() {
    const [selectedMonth, setSelectedMonth] = useState(String(new Date().getMonth() + 1));
    const [selectedYear, setSelectedYear] = useState(String(new Date().getFullYear()));
-   const [activeTab, setActiveTab] = useState("overview");
+   const [activeTab, setActiveTab] = useState("nutrition");
    const [, setLocation] = useLocation();
 
    // Export function for PO dashboard
@@ -219,6 +219,7 @@ export default function PODashboard() {
   const alerts = dashboardData?.alerts || {};
   const exportCapabilities = dashboardData?.exportCapabilities || {};
   const metadata = dashboardData?.metadata || {};
+  const mealTrackingAnalytics = dashboardData?.mealTrackingAnalytics || {};
 
   // Legacy computed values for backward compatibility (remove these gradually)
   const totalStudentsScreened = districtKPIs.totalStudentsScreened || 0;
@@ -273,7 +274,7 @@ export default function PODashboard() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-6">
+            <TabsList className="flex flex-wrap h-auto p-1">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="referrals">Referrals</TabsTrigger>
             <TabsTrigger value="nutrition">Nutrition</TabsTrigger>
@@ -797,6 +798,85 @@ export default function PODashboard() {
                 </div>
               </CardContent>
             </Card>
+
+              {/* Meal Tracking Analytics */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>District Meal Compliance & Nutrition Monitoring</CardTitle>
+                  <p className="text-sm text-muted-foreground">Meal tracking data and compliance metrics for the district</p>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  {/* Metrics Cards */}
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div className="text-center p-4 border rounded-lg bg-green-50 dark:bg-green-950/20">
+                      <div className="text-2xl font-bold text-green-700 dark:text-green-400">{mealTrackingAnalytics.totalMeals || 0}</div>
+                      <div className="text-sm text-muted-foreground">Total Meals Served</div>
+                      <div className="text-xs text-muted-foreground">this month</div>
+                    </div>
+                    <div className="text-center p-4 border rounded-lg bg-blue-50 dark:bg-blue-950/20">
+                      <div className="text-2xl font-bold text-blue-700 dark:text-blue-400">{mealTrackingAnalytics.daysLogged || 0}</div>
+                      <div className="text-sm text-muted-foreground">Days Logged</div>
+                      <div className="text-xs text-muted-foreground">meals recorded</div>
+                    </div>
+                    <div className="text-center p-4 border rounded-lg bg-orange-50 dark:bg-orange-950/20">
+                      <div className="text-2xl font-bold text-orange-700 dark:text-orange-400">{mealTrackingAnalytics.daysMissed || 0}</div>
+                      <div className="text-sm text-muted-foreground">Days Missed</div>
+                      <div className="text-xs text-muted-foreground">no records</div>
+                    </div>
+                    <div className="text-center p-4 border rounded-lg bg-purple-50 dark:bg-purple-950/20">
+                      <div className="text-2xl font-bold text-purple-700 dark:text-purple-400">{mealTrackingAnalytics.overallCompliance || 0}%</div>     
+                      <div className="text-sm text-muted-foreground">Compliance Rate</div>
+                      <div className="text-xs text-muted-foreground">meals logged</div>
+                    </div>
+                  </div>
+
+                  {/* Charts */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <ChartContainer title="Daily Meals Trend (Last 30 Days)" isLoading={isLoading}>
+                      <LineChart
+                        labels={mealTrackingAnalytics.dailyMealsTrend?.map((d: any) => d.date) || []}
+                        datasets={[{
+                          label: "Meals Served",
+                          data: mealTrackingAnalytics.dailyMealsTrend?.map((d: any) => d.meals) || [],
+                          borderColor: "hsl(142, 76%, 36%)",
+                          backgroundColor: "hsl(142, 76%, 36%, 0.1)",
+                        }]}
+                      />
+                    </ChartContainer>
+
+                    <ChartContainer title="Logged vs Missed Days" isLoading={isLoading}>
+                      <PieChart
+                        labels={["Days Logged", "Days Missed"]}
+                        data={[
+                          mealTrackingAnalytics.daysLogged || 0,
+                          mealTrackingAnalytics.daysMissed || 0
+                        ]}
+                        backgroundColor={[
+                          "hsl(142, 76%, 36%)", // Logged - green
+                          "hsl(0, 84%, 60%)",   // Missed - red
+                        ]}
+                      />
+                    </ChartContainer>
+                  </div>
+
+                  {/* Compliance Progress */}
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span>Monthly Compliance Progress</span>
+                      <span>{mealTrackingAnalytics.overallCompliance || 0}%</span>
+                    </div>
+                    <Progress value={mealTrackingAnalytics.overallCompliance || 0} className="h-2" />
+                  </div>
+
+                  {/* No Data State */}
+                  {(!mealTrackingAnalytics.totalMeals || mealTrackingAnalytics.totalMeals === 0) && (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <p>No meal tracking data available for the selected period.</p>
+                      <p className="text-sm">Meal logs will appear here once data is recorded.</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
           </TabsContent>
 
           <TabsContent value="diseases" className="space-y-6">
@@ -1089,16 +1169,18 @@ export default function PODashboard() {
                 </div>
               </CardContent>
             </Card>
-          </TabsContent>
 
-          <TabsContent value="reports" className="space-y-6">
-            {/* Exportable Reports */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <FileText className="h-5 w-5" />
-                  Exportable Reports for District, State & National Level
-                </CardTitle>
+
+            </TabsContent>
+
+            <TabsContent value="reports" className="space-y-6">
+              {/* Exportable Reports */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <FileText className="h-5 w-5" />
+                    Exportable Reports for District, State & National Level
+                  </CardTitle>
                 <p className="text-sm text-muted-foreground">PO can export comprehensive health reports</p>
               </CardHeader>
               <CardContent>
