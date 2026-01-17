@@ -9,7 +9,8 @@ import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, School, Users, FileHeart, Stethoscope } from "lucide-react";
+import { formatGenderDisplay, formatGenderWithIcon } from "@/lib/genderUtils";
+import { ArrowLeft, Users, FileHeart, Stethoscope } from "lucide-react";
 import { Link } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
 import { exportToCSV } from "@/lib/csvExport";
@@ -158,7 +159,21 @@ export default function POSchoolDetailPage() {
               ),
             },
             { key: "uniqueId", header: "Unique ID" },
-            { key: "gender", header: "Gender" },
+            { 
+              key: "gender", 
+              header: "Gender",
+              render: (item: any) => {
+                const genderInfo = formatGenderWithIcon(item.gender);
+                return (
+                  <div className="flex items-center gap-1">
+                    <span className="text-sm">{genderInfo.icon}</span>
+                    <span className={`text-sm ${genderInfo.colorClass}`}>
+                      {genderInfo.label}
+                    </span>
+                  </div>
+                );
+              }
+            },
             { key: "weight", header: "Weight (kg)", render: (item: any) => <span className="text-sm">{item.weight ?? "N/A"}</span> },
             { key: "height", header: "Height (cm)", render: (item: any) => <span className="text-sm">{item.height ?? "N/A"}</span> },
             { key: "bmi", header: "BMI", render: (item: any) => <span className="text-sm">{item.bmi ?? "N/A"}</span> },
@@ -176,8 +191,12 @@ export default function POSchoolDetailPage() {
           onExport={async (type) => {
             const fmt = type || exportFormat;
             if (fmt === "csv") {
+              const studentsWithFormattedGender = students.map((student: any) => ({
+                ...student,
+                gender: formatGenderDisplay(student.gender)
+              }));
               exportToCSV(
-                students,
+                studentsWithFormattedGender,
                 [
                   { key: "fullName", header: "Full Name" },
                   { key: "uniqueId", header: "Unique ID" },

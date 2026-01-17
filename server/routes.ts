@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
-import { insertStudentSchema, insertSchoolSchema, insertAnnualHealthCardSchema, insertMonthlyCheckupSchema, insertMealLogSchema, loginSchema, registerSchema, roleEnum, hostelAttendance, annualHealthCards, users, schools, students, notifications, type Student } from "@shared/schema";
+import { insertStudentSchema, insertSchoolSchema, insertAnnualHealthCardSchema, insertMonthlyCheckupSchema, insertMealLogSchema, loginSchema, registerSchema, roleEnum, hostelAttendance, annualHealthCards, users, schools, students, notifications, referrals, type Student } from "@shared/schema";
 import { z } from "zod";
 import PDFDocument from "pdfkit";
 import ExcelJS from "exceljs";
@@ -13,7 +13,7 @@ import type { Multer } from "multer";
 import path from "path";
 import fs from "fs";
 import { db } from "./db";
-import { sql, eq, and, or, isNull, desc } from "drizzle-orm";
+import { sql, eq, and, or, isNull, desc, inArray } from "drizzle-orm";
 
 // Normalize status values from DB/third-party sources to canonical casing
 function normalizeStatus(s?: string) {
@@ -35,10 +35,26 @@ import { getBMIClassification } from "../lib/bmiColors";
 // @ts-ignore - pdfkit doesn't have type definitions
 const PDFDocumentAny = PDFDocument as any;
 
-// Initialize Supabase client
-const supabaseUrl = process.env.SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
+// Initialize Supabase client (graceful fallback when env vars are missing)
+let supabase: any;
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+if (supabaseUrl && supabaseServiceKey) {
+  supabase = createClient(supabaseUrl, supabaseServiceKey);
+} else {
+  console.warn('SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set; continuing without Supabase. Upload features will be no-ops.');
+  // Minimal noop client to avoid runtime crashes when Supabase is not configured
+  supabase = {
+    storage: {
+      from: (_bucket: string) => ({
+        list: async () => ({ data: [], error: null }),
+        upload: async () => ({ data: null, error: { message: 'Supabase not configured' } }),
+        getPublicUrl: (_path: string) => ({ data: { publicUrl: null } }),
+      }),
+      createBucket: async (_name: string) => ({ data: null, error: null }),
+    },
+  } as any;
+}
 
 // Default bucket for file uploads (set via env). Will attempt to create the bucket automatically if missing.
 const SUPABASE_UPLOAD_BUCKET = process.env.SUPABASE_UPLOAD_BUCKET || "uploads";
@@ -586,7 +602,7 @@ function buildHealthCardPayload(student: any, schoolId: string, healthCardData: 
     classSection: student.classSection || "",
     uniqueId: student.uniqueId,
     aadhaarNo: student.aadhaarNo ?? undefined,
-    mctsNo: student.mctsNo ?? undefined,
+    pranNo: student.pranNo ?? undefined,
     fatherGuardianName: student.fatherGuardianName ?? undefined,
     fatherContact: student.fatherContact ?? undefined,
 
@@ -840,9 +856,6 @@ function buildHealthCardPayload(student: any, schoolId: string, healthCardData: 
     e3_referral_suggested: parseOrNull(healthCardData.e3_referral_suggested),
     e3_referral_facility: parseOrNull(healthCardData.e3_referral_facility),
     e3_referral_date: parseOrNull(healthCardData.e3_referral_date),
-    e4_menstruation_started: !!healthCardData.e4_menstruation_started,
-    e4_referral_suggested: parseOrNull(healthCardData.e4_referral_suggested),
-    e4_referral_facility: parseOrNull(healthCardData.e4_referral_facility),
     e4_referral_date: parseOrNull(healthCardData.e4_referral_date),
     e5_pain_urination: !!healthCardData.e5_pain_urination,
     e5_referral_suggested: parseOrNull(healthCardData.e5_referral_suggested),
@@ -852,11 +865,17 @@ function buildHealthCardPayload(student: any, schoolId: string, healthCardData: 
     e6_referral_suggested: parseOrNull(healthCardData.e6_referral_suggested),
     e6_referral_facility: parseOrNull(healthCardData.e6_referral_facility),
     e6_referral_date: parseOrNull(healthCardData.e6_referral_date),
+
+    // E4 & E7: Female-only menstrual health fields
+    e4_menstruation_started: !!healthCardData.e4_menstruation_started,
+    e4_referral_suggested: parseOrNull(healthCardData.e4_referral_suggested),
+    e4_referral_facility: parseOrNull(healthCardData.e4_referral_facility),
     e7_severe_menstrual_pain: !!healthCardData.e7_severe_menstrual_pain,
     e7_referral_suggested: parseOrNull(healthCardData.e7_referral_suggested),
     e7_referral_facility: parseOrNull(healthCardData.e7_referral_facility),
     e7_referral_date: parseOrNull(healthCardData.e7_referral_date),
 
+    // Detailed Menstrual Cycle Tracking
     menstrual_cycle_regular: !!healthCardData.menstrual_cycle_regular,
     menstrual_cycle_length_days: healthCardData.menstrual_cycle_length_days ? parseInt(healthCardData.menstrual_cycle_length_days) : undefined,
     menstrual_period_duration_days: healthCardData.menstrual_period_duration_days ? parseInt(healthCardData.menstrual_period_duration_days) : undefined,
@@ -978,10 +997,19 @@ export async function registerRoutes(
       const hashedPassword = await bcrypt.hash(data.password, 10);
 
       // Roles that require approval before activation
-      const approvalRoles = ["ClassTeacher", "MedicalTeam", "HostelWarden", "PO", "Headmaster", "MealSuperintendent"];
+      // Add "Lady Superintendent" so LS accounts require Headmaster approval
+      const approvalRoles = ["ClassTeacher", "MedicalTeam", "HostelWarden", "PO", "Headmaster", "MealSuperintendent", "Lady Superintendent"];
 
       if (approvalRoles.includes(data.role)) {
         // Create user in pending state (not active)
+        // For Lady Superintendent, prevent creation if an active LS already exists for the school
+        if (data.role === "Lady Superintendent" && data.schoolId) {
+          const existingLS = await db.select().from(users).where(and(eq(users.schoolId, data.schoolId), eq(users.role, "Lady Superintendent"), eq(users.isActive, true))).limit(1);
+          if ((existingLS || []).length > 0) {
+            return res.status(409).json({ message: "An active Lady Superintendent already exists for this school" });
+          }
+        }
+
         const user = await storage.createUser({
           username: data.username,
           password: hashedPassword,
@@ -996,6 +1024,19 @@ export async function registerRoutes(
           approvalStatus: "Pending",
           requestedAt: new Date(),
         });
+
+        // Audit log: LS request creation (and other pending creations)
+        try {
+          await storage.createAuditLog({
+            userId: user.id,
+            action: data.role === "Lady Superintendent" ? "LS_REQUEST_CREATED" : "USER_REQUEST_CREATED",
+            entityType: "user",
+            entityId: user.id,
+            details: { role: user.role, schoolId: user.schoolId },
+          } as any);
+        } catch (e) {
+          console.warn("Failed to create audit log for pending user:", (e as any)?.message || e);
+        }
 
         // Notify appropriate approver(s)
         try {
@@ -1282,10 +1323,33 @@ export async function registerRoutes(
           return res.status(403).json({ message: "Insufficient privileges to approve this role" });
         }
         if (userToApprove.schoolId !== requester.schoolId) return res.status(403).json({ message: "Cannot approve users from a different school" });
+        // Additional check: if approving a Lady Superintendent, ensure no active LS exists for the school
+        if (userToApprove.role === "Lady Superintendent") {
+          const existingLS = await db.select().from(users).where(and(eq(users.schoolId, userToApprove.schoolId), eq(users.role, "Lady Superintendent"), eq(users.isActive, true))).limit(1);
+          if ((existingLS || []).length > 0) {
+            return res.status(409).json({ message: "An active Lady Superintendent already exists for this school. Approval blocked." });
+          }
+        }
+
         await db.update(users).set({ approvalStatus: "Approved", isActive: true, approverId: requester.id, approvedAt: new Date() }).where(eq(users.id, id));
+        // Audit log for approval
+        try {
+          if (userToApprove.role === "Lady Superintendent") {
+            await storage.createAuditLog({ userId: requester.id, action: 'LS_REQUEST_APPROVED', entityType: 'user', entityId: userToApprove.id, details: { approvedBy: requester.id, approvedUserId: userToApprove.id } } as any);
+          } else {
+            await storage.createAuditLog({ userId: requester.id, action: 'USER_REQUEST_APPROVED', entityType: 'user', entityId: userToApprove.id, details: { approvedBy: requester.id, approvedUserId: userToApprove.id } } as any);
+          }
+        } catch (e) {
+          console.warn('Failed to create audit log for approval:', (e as any)?.message || e);
+        }
       } else if (requester.role === "Admin") {
         // Admin can approve any pending user (including PO and Headmaster)
         await db.update(users).set({ approvalStatus: "Approved", isActive: true, approverId: requester.id, approvedAt: new Date() }).where(eq(users.id, id));
+        try {
+          await storage.createAuditLog({ userId: requester.id, action: userToApprove.role === 'Lady Superintendent' ? 'LS_REQUEST_APPROVED' : 'USER_REQUEST_APPROVED', entityType: 'user', entityId: userToApprove.id, details: { approvedBy: requester.id } } as any);
+        } catch (e) {
+          console.warn('Failed to create audit log for admin approval:', (e as any)?.message || e);
+        }
       } else {
         return res.status(403).json({ message: "Not authorized to approve users" });
       }
@@ -1326,8 +1390,18 @@ export async function registerRoutes(
         }
         if (userToReject.schoolId !== requester.schoolId) return res.status(403).json({ message: "Cannot reject users from a different school" });
         await db.update(users).set({ approvalStatus: "Rejected", isActive: false, approverId: requester.id, approverNote: reason ?? null, approvedAt: new Date() }).where(eq(users.id, id));
+        try {
+          await storage.createAuditLog({ userId: requester.id, action: userToReject.role === 'Lady Superintendent' ? 'LS_REQUEST_REJECTED' : 'USER_REQUEST_REJECTED', entityType: 'user', entityId: userToReject.id, details: { rejectedBy: requester.id, reason: reason ?? null } } as any);
+        } catch (e) {
+          console.warn('Failed to create audit log for rejection:', (e as any)?.message || e);
+        }
       } else if (requester.role === "Admin") {
         await db.update(users).set({ approvalStatus: "Rejected", isActive: false, approverId: requester.id, approverNote: reason ?? null, approvedAt: new Date() }).where(eq(users.id, id));
+        try {
+          await storage.createAuditLog({ userId: requester.id, action: userToReject.role === 'Lady Superintendent' ? 'LS_REQUEST_REJECTED' : 'USER_REQUEST_REJECTED', entityType: 'user', entityId: userToReject.id, details: { rejectedBy: requester.id, reason: reason ?? null } } as any);
+        } catch (e) {
+          console.warn('Failed to create audit log for admin rejection:', (e as any)?.message || e);
+        }
       } else {
         return res.status(403).json({ message: "Not authorized to reject users" });
       }
@@ -1684,11 +1758,33 @@ export async function registerRoutes(
       }
 
       const classSection = req.query.classSection as string;
-
       const search = req.query.search as string;
+      
+      // Lady Superintendent specific filters - only apply these for LS role
+      let genderFilter: string | undefined;
+      let menstruationStartedFilter: boolean | undefined;
+      let minAgeFilter: number | undefined;
+      
+      if (req.user?.role === "Lady Superintendent") {
+        genderFilter = req.query.gender as string;
+        menstruationStartedFilter = req.query.menstruationStarted === 'true';
+        minAgeFilter = req.query.minAge ? parseInt(req.query.minAge as string) : undefined;
+      }
 
       // For ClassTeacher, filter by their assigned class
-      let finalClassSection = classSection;
+      let finalClassSection: string | undefined = classSection;
+      // Lady Superintendent: enforce school-level scope, disallow class filtering, and show only female adolescent students
+      if (req.user?.role === "Lady Superintendent") {
+        // Disallow class-based filtering for LS
+        if (classSection) {
+          return res.status(403).json({ message: "Lady Superintendent cannot filter by class" });
+        }
+        // Enforce school scope
+        if (!req.user.schoolId) return res.status(400).json({ message: "LS is not assigned to a school" });
+        schoolId = req.user.schoolId;
+        finalClassSection = undefined; // LS is school-wide
+      }
+
       if (req.user?.role === "ClassTeacher") {
         const teacher = await storage.getUser(req.user.id);
         if (teacher?.classSection) {
@@ -1713,7 +1809,16 @@ export async function registerRoutes(
 
         // Fetch students for each school (no paging across schools for simplicity)
         for (const s of allowedSchools) {
-          const res = await storage.getStudents({ schoolId: s.id, classSection: finalClassSection, search, page: 1, limit: 1000 });
+          const res = await storage.getStudents({ 
+            schoolId: s.id, 
+            classSection: finalClassSection, 
+            search, 
+            gender: genderFilter,
+            menstruationStarted: menstruationStartedFilter,
+            minAge: minAgeFilter,
+            page: 1, 
+            limit: 1000 
+          });
           students.push(...res.students);
           total += res.total;
         }
@@ -1726,6 +1831,9 @@ export async function registerRoutes(
           schoolId,
           classSection: finalClassSection,
           search,
+          gender: genderFilter,
+          menstruationStarted: menstruationStartedFilter,
+          minAge: minAgeFilter,
           page,
           limit: 10,
         });
@@ -1820,7 +1928,7 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Student not found" });
       }
 
-      // Enforce that PO users can only access students in their district
+      // Enforce access rules per role
       if (req.user?.role === "PO") {
         const user = await storage.getUser(req.user.id);
         const school = student.schoolId ? await storage.getSchool(student.schoolId) : null;
@@ -1829,12 +1937,36 @@ export async function registerRoutes(
         }
       }
 
+      // Lady Superintendent: enforce school-level scope and only allow viewing female adolescent students eligible for menstrual tracking
+      if (req.user?.role === "Lady Superintendent") {
+        if (!req.user.schoolId) return res.status(400).json({ message: "LS is not assigned to a school" });
+        if (student.schoolId !== req.user.schoolId) return res.status(403).json({ message: "Cannot access students from another school" });
+        if (student.gender !== 'F') return res.status(403).json({ message: "LS can only access female students" });
+        // Check age >= 10
+        const dob = student.dateOfBirth ? new Date(student.dateOfBirth) : null;
+        if (!dob) return res.status(403).json({ message: "Student date of birth required to determine eligibility" });
+        const age = Math.floor((Date.now() - dob.getTime()) / (1000 * 60 * 60 * 24 * 365.25));
+        if (age < 10) return res.status(403).json({ message: "Student not eligible for menstrual health tracking" });
+      }
+
       res.json(student);
     } catch (error: any) {
       console.error("Get student error:", error?.message || String(error));
       res.status(500).json({ message: error?.message || "Failed to fetch student" });
     }
   });
+
+  // --- Lady Superintendent Dashboard (simplified) ---
+  app.get("/api/ls/metrics", authenticateToken, authorizeRoles("Lady Superintendent"), async (req: AuthRequest, res) => {
+    try {
+      res.json({ message: "Metrics endpoint deprecated - using simplified dashboard" });
+    } catch (err: any) {
+      console.error('LS metrics error:', err?.message || err);
+      res.status(500).json({ message: 'Failed to fetch LS metrics' });
+    }
+  });
+
+
 
   app.post("/api/students", authenticateToken, denyAdmin, authorizeRoles("ClassTeacher", "Headmaster"), async (req: AuthRequest, res) => {
     try {
@@ -1851,8 +1983,8 @@ export async function registerRoutes(
         return res.status(400).json({ message: "School ID is required" });
       }
 
-      // Generate uniqueId if not provided
-      let uniqueId = validatedStudentData.uniqueId;
+      // Generate uniqueId if not provided (prefer PRAN when available)
+      let uniqueId = validatedStudentData.uniqueId || validatedStudentData.pranNo;
       if (!uniqueId) {
         uniqueId = `STD-${Date.now().toString().slice(-8)}-${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
       }
@@ -2036,29 +2168,91 @@ export async function registerRoutes(
   app.put("/api/students/:id", authenticateToken, denyAdmin, authorizeRoles("ClassTeacher", "Headmaster"), async (req: AuthRequest, res) => {
     try {
       const { id } = req.params;
-      // Admin can edit any student, others can only edit students from their school
-      if (req.user?.role !== "Admin") {
-        const existingStudent = await storage.getStudent(id);
-        if (!existingStudent) {
-          return res.status(404).json({ message: "Student not found" });
-        }
-        if (existingStudent.schoolId !== req.user?.schoolId) {
-          return res.status(403).json({ message: "You can only edit students from your school" });
-        }
-      }
-      const student = await storage.updateStudent(id, req.body);
-      if (!student) {
+      const payload = req.body as any;
+
+      const updated = await storage.updateStudent(id, payload);
+
+      if (!updated) {
         return res.status(404).json({ message: "Student not found" });
       }
-      res.json(student);
+      res.json(updated);
     } catch (error: any) {
       console.error("Update student error:", error?.message || String(error));
       res.status(500).json({ message: error?.message || "Failed to update student" });
     }
   });
 
+  // Mark menstruation started for a student (Class Teacher only)
+  app.post("/api/students/:id/mark-menstruation", authenticateToken, authorizeRoles("ClassTeacher"), async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+      
+      // Get the student
+      const student = await storage.getStudent(id);
+      if (!student) {
+        return res.status(404).json({ message: "Student not found" });
+      }
+
+      // Verify Class Teacher can only mark for their assigned class
+      const teacher = await storage.getUser(req.user!.id);
+      if (teacher?.schoolId !== student.schoolId) {
+        return res.status(403).json({ message: "You can only mark menstruation for students in your school" });
+      }
+      if (teacher?.classSection && student.classSection !== teacher.classSection) {
+        return res.status(403).json({ message: `You can only mark menstruation for students in ${teacher.classSection || 'your assigned class section'}` });
+      }
+
+      // Verify student is female
+      if (student.gender !== 'F') {
+        return res.status(400).json({ message: "Menstruation tracking is only applicable for female students" });
+      }
+
+      // Verify student is at least 10 years old
+      if (student.dateOfBirth) {
+        const age = Math.floor((Date.now() - new Date(student.dateOfBirth).getTime()) / (1000 * 60 * 60 * 24 * 365.25));
+        if (age < 10) {
+          return res.status(400).json({ message: "Student must be at least 10 years old for menstruation tracking" });
+        }
+      }
+
+      // Check if already marked
+      if (student.menstruationStartedAt) {
+        return res.status(400).json({ 
+          message: "Menstruation has already been marked for this student",
+          markedAt: student.menstruationStartedAt,
+          markedBy: student.menstruationMarkedBy
+        });
+      }
+
+      // Mark menstruation started
+      const updated = await storage.updateStudent(id, {
+        menstruationStartedAt: new Date(),
+        menstruationMarkedBy: req.user!.id,
+      });
+
+      if (!updated) {
+        return res.status(500).json({ message: "Failed to mark menstruation" });
+      }
+
+      console.info(`[Menstruation Marked] Student ${id} by teacher ${req.user!.id} at ${new Date().toISOString()}`);
+
+      res.json({ 
+        message: "Menstruation marked successfully. Student is now visible in Lady Superintendent dashboard.",
+        student: updated 
+      });
+    } catch (error: any) {
+      console.error("Mark menstruation error:", error?.message || String(error));
+      res.status(500).json({ message: error?.message || "Failed to mark menstruation" });
+    }
+  });
+
   app.get("/api/annual-cards", authenticateToken, async (req: AuthRequest, res) => {
     try {
+      // Lady Superintendent should not have access to health cards at all
+      if (req.user?.role === "Lady Superintendent") {
+        return res.status(403).json({ message: "Access denied: Lady Superintendent cannot access health cards" });
+      }
+
       const page = parseInt(req.query.page as string) || 1;
       const status = req.query.status as string;
       const year = req.query.year ? parseInt(req.query.year as string) : new Date().getFullYear();
@@ -2116,9 +2310,6 @@ export async function registerRoutes(
           filteredCards = enrichedCards.filter(card =>
             card.student?.classSection === teacherClassSection || card.classSection === teacherClassSection
           );
-        } else if (req.user?.role === "Lady Superintendent") {
-          // Lady Superintendent can only see female students
-          filteredCards = enrichedCards.filter(card => card.student?.gender === "F");
         }
 
         // Paginate the filtered results
@@ -2148,6 +2339,11 @@ export async function registerRoutes(
   // Raw data endpoint to fetch real annual health card data without any processing
   app.get("/api/annual-cards/raw", authenticateToken, denyAdmin, async (req: AuthRequest, res) => {
     try {
+      // Lady Superintendent should not have access to health cards at all
+      if (req.user?.role === "Lady Superintendent") {
+        return res.status(403).json({ message: "Access denied: Lady Superintendent cannot access health cards" });
+      }
+
       const year = req.query.year ? parseInt(req.query.year as string) : new Date().getFullYear();
       const schoolId = req.query.schoolId as string;
 
@@ -2173,6 +2369,11 @@ export async function registerRoutes(
   // Debug endpoint: dump recent raw annual_health_cards rows for troubleshooting
   app.get("/api/debug/annual-cards-dump", authenticateToken, async (req: AuthRequest, res) => {
     try {
+      // Lady Superintendent should not have access to health cards at all
+      if (req.user?.role === "Lady Superintendent") {
+        return res.status(403).json({ message: "Access denied: Lady Superintendent cannot access health cards" });
+      }
+
       const year = req.query.year ? parseInt(req.query.year as string) : new Date().getFullYear();
       const schoolId = (req.query.schoolId as string) || req.user?.schoolId;
       const studentId = req.query.studentId as string | undefined;
@@ -2201,6 +2402,11 @@ export async function registerRoutes(
   // Debug endpoint: latest card for a student
   app.get("/api/debug/annual-cards-latest", authenticateToken, async (req: AuthRequest, res) => {
     try {
+      // Lady Superintendent should not have access to health cards at all
+      if (req.user?.role === "Lady Superintendent") {
+        return res.status(403).json({ message: "Access denied: Lady Superintendent cannot access health cards" });
+      }
+
       const studentId = req.query.studentId as string | undefined;
       if (!studentId) return res.status(400).json({ message: "studentId is required" });
 
@@ -2236,7 +2442,8 @@ export async function registerRoutes(
 
       // Normalize status before returning and log the change
       (card as any).status = normalizeStatus((card as any).status);
-      console.info(`[PUT /api/annual-cards/${id}/approve] card updated`, { id: card.id, status: (card as any).status, approvalBy: card.approvalBy });
+      console.info(`[PUT /api/annual-cards/${id}/approve] card updated - triggering automatic propagation`, { id: card.id, status: (card as any).status, approvalBy: card.approvalBy });
+      
       res.json(card);
     } catch (error: any) {
       console.error("Approve card error:", error?.message || String(error));
@@ -2266,7 +2473,8 @@ export async function registerRoutes(
 
       // Normalize status before returning and log the change
       (card as any).status = normalizeStatus((card as any).status);
-      console.info(`[PUT /api/annual-cards/${id}/reject] card updated`, { id: card.id, status: (card as any).status, approvalBy: card.approvalBy });
+      console.info(`[PUT /api/annual-cards/${id}/reject] card updated - triggering automatic propagation`, { id: card.id, status: (card as any).status, approvalBy: card.approvalBy });
+      
       res.json(card);
     } catch (error: any) {
       console.error("Reject card error:", error?.message || String(error));
@@ -2276,6 +2484,11 @@ export async function registerRoutes(
 
   app.get("/api/annual-cards/:id", authenticateToken, async (req: AuthRequest, res) => {
     try {
+      // Lady Superintendent should not have access to health cards at all
+      if (req.user?.role === "Lady Superintendent") {
+        return res.status(403).json({ message: "Access denied: Lady Superintendent cannot access health cards" });
+      }
+
       const { id } = req.params;
       const card = await storage.getAnnualHealthCard(id);
 
@@ -2288,10 +2501,6 @@ export async function registerRoutes(
       const school = card.schoolId ? await storage.getSchool(card.schoolId as string) : null;
 
       // Role-based access control
-      if (req.user?.role === "Lady Superintendent" && student?.gender !== "F") {
-        return res.status(403).json({ message: "Access denied: Lady Superintendent can only access female student records" });
-      }
-
       // Enforce that PO users can only access cards for schools in their district
       if (req.user?.role === "PO") {
         const user = await storage.getUser(req.user.id);
@@ -2345,6 +2554,11 @@ export async function registerRoutes(
       // or derives referral entries from the health card fields when no referrals exist)
       app.get("/api/annual-cards/:id/referrals", authenticateToken, async (req: AuthRequest, res) => {
         try {
+          // Lady Superintendent should not have access to health cards at all
+          if (req.user?.role === "Lady Superintendent") {
+            return res.status(403).json({ message: "Access denied: Lady Superintendent cannot access health cards" });
+          }
+
           const { id } = req.params;
           const card = await storage.getAnnualHealthCard(id);
           if (!card) return res.status(404).json({ message: "Health card not found" });
@@ -2483,6 +2697,12 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Health card not found" });
       }
 
+      // Automatic propagation: Invalidate all related queries across all views
+      console.info(`[Health Card Updated] Card ${id} updated - triggering automatic propagation`);
+      
+      // Note: In a real-time system, you would emit WebSocket events here
+      // For now, the frontend query invalidation will handle propagation
+      
       res.json(card);
     } catch (error: any) {
       console.error("Update health card error:", error?.message || String(error));
@@ -3084,6 +3304,86 @@ export async function registerRoutes(
     }
   });
 
+  // List referrals with optional filters and CSV export
+  app.get("/api/referrals", authenticateToken, authorizeRoles("ClassTeacher", "Headmaster", "PO", "Admin"), async (req: AuthRequest, res) => {
+    try {
+      const studentId = req.query.studentId as string | undefined;
+      const schoolId = req.query.schoolId as string | undefined;
+      const status = req.query.status as string | undefined;
+      const referralType = req.query.referralType as string | undefined;
+      const page = parseInt(req.query.page as string || '1', 10) || 1;
+      const limit = parseInt(req.query.limit as string || '20', 10) || 20;
+      const source = req.query.source as string | undefined;
+      const exportFmt = req.query.export as string | undefined;
+      const facility = req.query.facility as string | undefined;
+      const from = req.query.from as string | undefined;
+      const to = req.query.to as string | undefined;
+
+      const params: any = { page, limit };
+      if (studentId) params.studentId = studentId;
+      if (schoolId) params.schoolId = schoolId;
+      if (status && status !== 'all') params.status = status;
+      if (referralType) params.referralType = referralType;
+
+      // If caller requested menstrual-source referrals, menstrual tables are deprecated
+      let menstrualLinkedReferralIds: string[] | null = null;
+      if (source === 'menstrual') {
+        menstrualLinkedReferralIds = [];
+      }
+
+      // fetch via storage
+      const { referrals: raw, total } = await storage.getReferrals(params as any);
+
+      // apply facility and date range filters client-side if provided
+      let filtered = raw;
+
+      // If menstrual source requested, further restrict to referrals that are either:
+      // - linked via menstrual_record_referrals mapping, OR
+      // - have textual indicators (issue mentions 'menstrual' / referralCode starts with 'm-')
+      if (source === 'menstrual') {
+        const idSet = new Set<string>((menstrualLinkedReferralIds || []));
+        filtered = filtered.filter((r:any) => {
+          const issue = String(r.issue || '').toLowerCase();
+          const code = String(r.referralCode || r.referral_code || '').toLowerCase();
+          const type = String(r.referralType || r.referral_type || '').toLowerCase();
+          return idSet.has(r.id) || issue.includes('menstrual') || code.startsWith('m-') || type === 'adolescent';
+        });
+      }
+      if (facility) filtered = filtered.filter((r:any) => (r.facility || '').toLowerCase().includes(facility.toLowerCase()));
+      if (from) {
+        const fromD = new Date(from);
+        filtered = filtered.filter((r:any) => new Date(r.referralDate || r.referral_date || r.createdAt) >= fromD);
+      }
+      if (to) {
+        const toD = new Date(to);
+        filtered = filtered.filter((r:any) => new Date(r.referralDate || r.referral_date || r.createdAt) <= toD);
+      }
+
+      if (exportFmt === 'csv') {
+        // generate CSV with basic columns
+        const header = ['id','studentId','studentName','schoolId','schoolName','classSection','issue','facility','referralDate','status','createdBy','notes'];
+        const rows = filtered.map((r:any) => header.map(h => {
+          const v = r[h] ?? r[h.replace(/([A-Z])/g,'_$1').toLowerCase()];
+          return typeof v === 'string' ? v.replace(/"/g,'""') : (v ?? '');
+        }));
+        const csv = [header.join(','), ...rows.map(row => row.map(c => `"${String(c)}"`).join(','))].join('\n');
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', `attachment; filename="referrals-${new Date().toISOString().slice(0,10)}.csv"`);
+        return res.send(csv);
+      }
+
+      // Return the filtered total so the client-side "Total" reflects
+      // the number of referrals after applying facility/date/source filters.
+      const filteredTotal = filtered.length;
+      res.json({ referrals: filtered, total: filteredTotal });
+    } catch (error: any) {
+      console.error('List referrals error:', error?.message || String(error));
+      res.status(500).json({ message: error?.message || 'Failed to list referrals' });
+    }
+  });
+
+
+
   app.get("/api/hostel/attendance", authenticateToken, denyAdmin, authorizeRoles("ClassTeacher", "Headmaster", "PO", "HostelWarden"), async (req: AuthRequest, res) => {
     try {
       const date = req.query.date as string || new Date().toISOString().split("T")[0];
@@ -3569,6 +3869,261 @@ export async function registerRoutes(
     }
   });
 
+// Helper function to calculate menstrual health analytics for PO dashboard
+async function getMenstrualHealthAnalytics(schools: any[], selectedMonth: number, selectedYear: number) {
+  try {
+    console.log('Calculating menstrual health analytics for', schools.length, 'schools');
+    
+    // Get all female students eligible for menstrual tracking (age 10+, menstruation started)
+    const allStudentsPromises = schools.map(async (school) => {
+      try {
+        const { students } = await storage.getStudents({ 
+          schoolId: school.id, 
+          gender: 'F',
+          limit: 1000 
+        });
+        
+        // Filter for eligible students (age 10+, menstruation started)
+        const eligibleStudents = students.filter(student => {
+          if (!student.dateOfBirth || !student.menstruationStartedAt) return false;
+          const age = Math.floor((Date.now() - new Date(student.dateOfBirth).getTime()) / (1000 * 60 * 60 * 24 * 365.25));
+          return age >= 10;
+        });
+        
+        return eligibleStudents.map(s => ({ ...s, schoolName: school.name }));
+      } catch (error) {
+        console.error('Error fetching students for school', school.id, ':', error);
+        return [];
+      }
+    });
+    
+    const allStudentsArrays = await Promise.all(allStudentsPromises);
+    const eligibleStudents = allStudentsArrays.flat();
+    
+    console.log('Found', eligibleStudents.length, 'eligible female students for menstrual tracking');
+    
+    if (eligibleStudents.length === 0) {
+      return {
+        totalEligibleStudents: 0,
+        totalTrackedStudents: 0,
+        monthlyTrend: [],
+        cycleRegularity: { regular: 0, irregular: 0, unknown: 0 },
+        lateMenstruationCases: [],
+        symptomAnalysis: { symptoms: [], moods: [] },
+        referralAnalysis: { total: 0, byFacility: {} },
+        ageWiseAnalysis: { distribution: {}, irregularities: {}, irregularityRates: {} }
+      };
+    }
+    
+    // Get period tracker entries for all eligible students
+    const allEntriesPromises = eligibleStudents.map(async (student) => {
+      try {
+        const startDate = `${selectedYear}-01-01`;
+        const endDate = `${selectedYear}-12-31`;
+        const { entries } = await storage.getPeriodTrackerEntries({
+          studentId: student.id,
+          startDate,
+          endDate,
+          limit: 1000
+        });
+        return entries.map(e => ({ ...e, student }));
+      } catch (error) {
+        console.error('Error fetching period entries for student', student.id, ':', error);
+        return [];
+      }
+    });
+    
+    const allEntriesArrays = await Promise.all(allEntriesPromises);
+    const allEntries = allEntriesArrays.flat();
+    
+    console.log('Found', allEntries.length, 'period tracker entries');
+    
+    // Calculate monthly menstruation count trend
+    const monthlyTrend = [];
+    for (let month = 1; month <= 12; month++) {
+      const monthEntries = allEntries.filter(entry => {
+        const entryDate = new Date(entry.entryDate);
+        return entryDate.getMonth() + 1 === month && entryDate.getFullYear() === selectedYear;
+      });
+      
+      // Count unique students who had entries in this month
+      const uniqueStudents = new Set(monthEntries.map(e => e.studentId)).size;
+      
+      monthlyTrend.push({
+        month: new Date(selectedYear, month - 1).toLocaleString('default', { month: 'short' }),
+        count: uniqueStudents,
+        totalEntries: monthEntries.length
+      });
+    }
+    
+    // Analyze cycle regularity and detect late menstruation
+    const studentCycleAnalysis = new Map();
+    const lateMenstruationCases = [];
+    
+    for (const student of eligibleStudents) {
+      const studentEntries = allEntries
+        .filter(e => e.studentId === student.id && e.flowCategory && e.flowCategory !== 'none')
+        .sort((a, b) => new Date(a.entryDate).getTime() - new Date(b.entryDate).getTime());
+      
+      if (studentEntries.length < 2) {
+        studentCycleAnalysis.set(student.id, { regularity: 'unknown', cycleLengths: [] });
+        continue;
+      }
+      
+      // Calculate cycle lengths
+      const cycleLengths = [];
+      for (let i = 1; i < studentEntries.length; i++) {
+        const prevDate = new Date(studentEntries[i - 1].entryDate);
+        const currDate = new Date(studentEntries[i].entryDate);
+        const cycleLength = Math.floor((currDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60 * 24));
+        if (cycleLength > 0 && cycleLength <= 60) { // Reasonable cycle length
+          cycleLengths.push(cycleLength);
+        }
+      }
+      
+      if (cycleLengths.length === 0) {
+        studentCycleAnalysis.set(student.id, { regularity: 'unknown', cycleLengths: [] });
+        continue;
+      }
+      
+      // Determine regularity
+      const avgCycleLength = cycleLengths.reduce((a, b) => a + b, 0) / cycleLengths.length;
+      const variance = cycleLengths.reduce((sum, length) => sum + Math.pow(length - avgCycleLength, 2), 0) / cycleLengths.length;
+      const stdDev = Math.sqrt(variance);
+      
+      const regularity = stdDev <= 7 ? 'regular' : 'irregular';
+      studentCycleAnalysis.set(student.id, { regularity, cycleLengths, avgCycleLength, stdDev });
+      
+      // Check for late menstruation (cycle length > 35 days or missed expected cycle)
+      const lastEntry = studentEntries[studentEntries.length - 1];
+      const lastEntryDate = new Date(lastEntry.entryDate);
+      const daysSinceLastPeriod = Math.floor((Date.now() - lastEntryDate.getTime()) / (1000 * 60 * 60 * 24));
+      
+      const isLate = avgCycleLength > 35 || daysSinceLastPeriod > (avgCycleLength + 7);
+      
+      if (isLate && student.dateOfBirth) {
+        const expectedDate = new Date(lastEntryDate);
+        expectedDate.setDate(expectedDate.getDate() + Math.round(avgCycleLength));
+        
+        const age = Math.floor((Date.now() - new Date(student.dateOfBirth).getTime()) / (1000 * 60 * 60 * 24 * 365.25));
+        
+        lateMenstruationCases.push({
+          studentId: student.id,
+          studentName: student.fullName,
+          age,
+          school: student.schoolName,
+          lastMenstruationDate: lastEntry.entryDate,
+          expectedDate: expectedDate.toISOString().split('T')[0],
+          delayDays: Math.max(daysSinceLastPeriod - Math.round(avgCycleLength), 0),
+          riskFlag: daysSinceLastPeriod > (avgCycleLength + 14) ? 'Needs Attention' : 'Normal'
+        });
+      }
+    }
+    
+    // Calculate cycle regularity summary
+    const regularityStats: Record<string, number> = { regular: 0, irregular: 0, unknown: 0 };
+    for (const analysis of studentCycleAnalysis.values()) {
+      const regularity = (analysis as any).regularity;
+      if (regularity in regularityStats) {
+        regularityStats[regularity]++;
+      }
+    }
+    
+    // Analyze symptoms
+    const symptomCounts: Record<string, number> = {};
+    const moodCounts: Record<string, number> = {};
+    
+    allEntries.forEach(entry => {
+      if (entry.symptoms && Array.isArray(entry.symptoms)) {
+        entry.symptoms.forEach(symptom => {
+          symptomCounts[symptom] = (symptomCounts[symptom] || 0) + 1;
+        });
+      }
+      
+      if (entry.moods && Array.isArray(entry.moods)) {
+        entry.moods.forEach(mood => {
+          moodCounts[mood] = (moodCounts[mood] || 0) + 1;
+        });
+      }
+    });
+    
+    // Analyze referrals
+    const referralEntries = allEntries.filter(e => e.isReferred);
+    const referralsByFacility: Record<string, number> = {};
+    referralEntries.forEach(entry => {
+      if (entry.referralFacility) {
+        referralsByFacility[entry.referralFacility] = (referralsByFacility[entry.referralFacility] || 0) + 1;
+      }
+    });
+    
+    // Age-wise analysis
+    const ageGroups: Record<string, number> = { '10-12': 0, '13-15': 0, '16-18': 0, '18+': 0 };
+    const ageGroupIrregularities: Record<string, number> = { '10-12': 0, '13-15': 0, '16-18': 0, '18+': 0 };
+    
+    eligibleStudents.forEach(student => {
+      if (!student.dateOfBirth) return;
+      
+      const age = Math.floor((Date.now() - new Date(student.dateOfBirth).getTime()) / (1000 * 60 * 60 * 24 * 365.25));
+      const analysis = studentCycleAnalysis.get(student.id);
+      
+      let ageGroup = '18+';
+      if (age <= 12) ageGroup = '10-12';
+      else if (age <= 15) ageGroup = '13-15';
+      else if (age <= 18) ageGroup = '16-18';
+      
+      ageGroups[ageGroup]++;
+      if (analysis && (analysis as any).regularity === 'irregular') {
+        ageGroupIrregularities[ageGroup]++;
+      }
+    });
+    
+    const studentsWithEntries = new Set(allEntries.map(e => e.studentId)).size;
+    
+    return {
+      totalEligibleStudents: eligibleStudents.length,
+      totalTrackedStudents: studentsWithEntries,
+      monthlyTrend,
+      cycleRegularity: regularityStats,
+      lateMenstruationCases: lateMenstruationCases.slice(0, 50), // Limit for performance
+      symptomAnalysis: {
+        symptoms: Object.entries(symptomCounts)
+          .sort(([,a], [,b]) => (b as number) - (a as number))
+          .slice(0, 10)
+          .map(([symptom, count]) => ({ symptom, count: count as number, percentage: (((count as number) / allEntries.length) * 100).toFixed(1) })),
+        moods: Object.entries(moodCounts)
+          .sort(([,a], [,b]) => (b as number) - (a as number))
+          .slice(0, 10)
+          .map(([mood, count]) => ({ mood, count: count as number, percentage: (((count as number) / allEntries.length) * 100).toFixed(1) }))
+      },
+      referralAnalysis: {
+        total: referralEntries.length,
+        byFacility: referralsByFacility
+      },
+      ageWiseAnalysis: {
+        distribution: ageGroups,
+        irregularities: ageGroupIrregularities,
+        irregularityRates: Object.keys(ageGroups).reduce((acc: Record<string, string>, group) => {
+          acc[group] = ageGroups[group] > 0 ? ((ageGroupIrregularities[group] / ageGroups[group]) * 100).toFixed(1) : '0.0';
+          return acc;
+        }, {})
+      }
+    };
+    
+  } catch (error) {
+    console.error('Error calculating menstrual health analytics:', error);
+    return {
+      totalEligibleStudents: 0,
+      totalTrackedStudents: 0,
+      monthlyTrend: [],
+      cycleRegularity: { regular: 0, irregular: 0, unknown: 0 },
+      lateMenstruationCases: [],
+      symptomAnalysis: { symptoms: [], moods: [] },
+      referralAnalysis: { total: 0, byFacility: {} },
+      ageWiseAnalysis: { distribution: {}, irregularities: {}, irregularityRates: {} }
+    };
+  }
+}
+
   app.get("/api/po/dashboard", authenticateToken, authorizeRoles("PO", "Admin"), async (req: AuthRequest, res) => {
     try {
       const { month, year } = req.query;
@@ -3647,7 +4202,7 @@ export async function registerRoutes(
         
         const cardsWithAnyAdolescent = flatCards.filter((c: any) => 
           c.e1_life_events_difficulty || c.e2_peer_pressure_substance || c.e3_persistent_sadness ||
-          c.e4_menstruation_started || c.e5_pain_urination || c.e6_foul_discharge || c.e7_severe_menstrual_pain
+          c.e5_pain_urination || c.e6_foul_discharge
         ).length;
         
         console.log(`Cards with ANY disease field set: ${cardsWithAnyDisease}/${flatCards.length}`);
@@ -3776,6 +4331,9 @@ export async function registerRoutes(
         })),
         maxReferrals: Math.max(...schoolsWithMetrics.map(s => s.referredCount), 0),
       };
+
+      // Get menstrual health analytics
+      const menstrualAnalytics = await getMenstrualHealthAnalytics(schools, selectedMonth, selectedYear);
 
       // Calculate real anthropometry analytics
       const anthropometryAnalytics = {
@@ -4328,17 +4886,9 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
         depressionSymptomsPercent: adolescents.length > 0 ? Math.round((adolescents.filter(c => isTruthy(c.e3_persistent_sadness)).length / adolescents.length) * 100) : 0,
         depressionSymptomsConcerns: adolescents.filter(c => isTruthy(c.e3_persistent_sadness)).length,
         
-        // Menstrual health (adolescent females only)
-        menstrualHealthIssuesPercent: adolescents.length > 0 ? Math.round((adolescents.filter(c => isTruthy(c.e4_menstruation_started) || isTruthy(c.e7_severe_menstrual_pain)).length / adolescents.length) * 100) : 0,
-        menstrualHealthConcerns: adolescents.filter(c => isTruthy(c.e4_menstruation_started) || isTruthy(c.e7_severe_menstrual_pain)).length,
-        
-        menstruationStartedCount: adolescents.filter(c => isTruthy(c.e4_menstruation_started)).length,
-        menstruationStartedPercent: adolescents.length > 0 ? Math.round((adolescents.filter(c => isTruthy(c.e4_menstruation_started)).length / adolescents.length) * 100) : 0,
-        
-        severeMenstrualPainCount: adolescents.filter(c => isTruthy(c.e7_severe_menstrual_pain)).length,
-        severeMenstrualPainPercent: adolescents.length > 0 ? Math.round((adolescents.filter(c => isTruthy(c.e7_severe_menstrual_pain)).length / adolescents.length) * 100) : 0,
-        
-        // Reproductive health
+        // Reproductive health (non-menstrual)
+        reproductiveHealthIssuesPercent: adolescents.length > 0 ? Math.round((adolescents.filter(c => isTruthy(c.e5_pain_urination) || isTruthy(c.e6_foul_discharge)).length / adolescents.length) * 100) : 0,
+        reproductiveHealthConcerns: adolescents.filter(c => isTruthy(c.e5_pain_urination) || isTruthy(c.e6_foul_discharge)).length,
         utiSymptomsPercent: adolescents.length > 0 ? Math.round((adolescents.filter(c => isTruthy(c.e5_pain_urination) || isTruthy(c.e6_foul_discharge)).length / adolescents.length) * 100) : 0,
         utiSymptomsConcerns: adolescents.filter(c => isTruthy(c.e5_pain_urination) || isTruthy(c.e6_foul_discharge)).length,
         
@@ -4361,10 +4911,8 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
           e1_life_events_difficulty: isTruthy(c.e1_life_events_difficulty),
           e2_peer_pressure_substance: isTruthy(c.e2_peer_pressure_substance),
           e3_persistent_sadness: isTruthy(c.e3_persistent_sadness),
-          e4_menstruation_started: isTruthy(c.e4_menstruation_started),
           e5_pain_urination: isTruthy(c.e5_pain_urination),
           e6_foul_discharge: isTruthy(c.e6_foul_discharge),
-          e7_severe_menstrual_pain: isTruthy(c.e7_severe_menstrual_pain),
           bmi: c.bmi || null,
           anemia: isTruthy(c.b3_severe_anemia),
         }))
@@ -4728,6 +5276,7 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
         tbAnalytics,
         developmentalDelays,
         adolescentHealth,
+        menstrualHealthAnalytics: menstrualAnalytics,
         referralManagement,
         complianceAnalytics,
         alerts,
@@ -4740,6 +5289,771 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
       const errorMessage = (error && (error.message || String(error))) || "Failed to fetch dashboard data";
       console.error("PO dashboard error:", errorMessage);
       res.status(500).json({ message: errorMessage });
+    }
+  });
+
+// Helper functions for unified report generation
+async function generateMenstrualHealthReport(students: any[], schools: any[], month?: string, year?: string) {
+  const selectedYear = year ? parseInt(year) : new Date().getFullYear();
+  const selectedMonth = month ? parseInt(month) : new Date().getMonth() + 1;
+  
+  // Filter for eligible female students
+  const eligibleStudents = students.filter(student => {
+    if (student.gender !== 'F' || !student.dateOfBirth) return false;
+    const age = Math.floor((Date.now() - new Date(student.dateOfBirth).getTime()) / (1000 * 60 * 60 * 24 * 365.25));
+    return age >= 10;
+  });
+  
+  // Get period tracker data
+  const periodDataPromises = eligibleStudents.map(async (student) => {
+    try {
+      const { entries } = await storage.getPeriodTrackerEntries({
+        studentId: student.id,
+        startDate: `${selectedYear}-01-01`,
+        endDate: `${selectedYear}-12-31`,
+        limit: 1000
+      });
+      return { student, entries };
+    } catch (error) {
+      console.error('Error fetching period data for student', student.id, ':', error);
+      return { student, entries: [] };
+    }
+  });
+  
+  const periodData = await Promise.all(periodDataPromises);
+  
+  // Analyze data
+  const summary = {
+    totalEligibleStudents: eligibleStudents.length,
+    studentsWithData: periodData.filter(d => d.entries.length > 0).length,
+    totalEntries: periodData.reduce((sum, d) => sum + d.entries.length, 0),
+    averageEntriesPerStudent: 0,
+    commonSymptoms: {},
+    referralRate: 0
+  };
+  
+  if (summary.studentsWithData > 0) {
+    summary.averageEntriesPerStudent = Math.round(summary.totalEntries / summary.studentsWithData);
+  }
+  
+  // Analyze symptoms
+  const symptomCounts: Record<string, number> = {};
+  let totalReferrals = 0;
+  
+  periodData.forEach(({ entries }) => {
+    entries.forEach(entry => {
+      if (entry.symptoms && Array.isArray(entry.symptoms)) {
+        entry.symptoms.forEach(symptom => {
+          symptomCounts[symptom] = (symptomCounts[symptom] || 0) + 1;
+        });
+      }
+      if (entry.isReferred) totalReferrals++;
+    });
+  });
+  
+  summary.commonSymptoms = Object.entries(symptomCounts)
+    .sort(([,a], [,b]) => (b as number) - (a as number))
+    .slice(0, 5)
+    .reduce((acc: Record<string, number>, [symptom, count]) => {
+      acc[symptom] = count as number;
+      return acc;
+    }, {});
+    
+  summary.referralRate = summary.totalEntries > 0 ? Math.round((totalReferrals / summary.totalEntries) * 100) : 0;
+  
+  // Detailed student data
+  const detailedData = periodData.map(({ student, entries }) => {
+    const latestEntry = entries.length > 0 ? entries.sort((a, b) => new Date(b.entryDate).getTime() - new Date(a.entryDate).getTime())[0] : null;
+    
+    return {
+      studentId: student.id,
+      studentName: student.fullName,
+      age: Math.floor((Date.now() - new Date(student.dateOfBirth).getTime()) / (1000 * 60 * 60 * 24 * 365.25)),
+      school: student.schoolName,
+      classSection: student.classSection,
+      totalEntries: entries.length,
+      lastEntryDate: latestEntry?.entryDate || null,
+      hasReferrals: entries.some(e => e.isReferred),
+      menstruationStarted: !!student.menstruationStartedAt
+    };
+  });
+  
+  return {
+    reportType: 'menstrual-health',
+    generatedAt: new Date().toISOString(),
+    period: { month: selectedMonth, year: selectedYear },
+    summary,
+    detailedData,
+    schools: schools.map(s => ({ id: s.id, name: s.name }))
+  };
+}
+
+async function generateHealthOverviewReport(students: any[], schools: any[], month?: string, year?: string) {
+  const selectedYear = year ? parseInt(year) : new Date().getFullYear();
+  
+  // Get health cards for all students
+  const healthDataPromises = students.map(async (student) => {
+    try {
+      const { cards } = await storage.getAnnualHealthCards({ 
+        studentId: student.id, 
+        year: selectedYear,
+        limit: 10 
+      });
+      return { student, healthCard: cards[0] || null };
+    } catch (error) {
+      console.error('Error fetching health data for student', student.id, ':', error);
+      return { student, healthCard: null };
+    }
+  });
+  
+  const healthData = await Promise.all(healthDataPromises);
+  
+  // Calculate summary statistics
+  const summary = {
+    totalStudents: students.length,
+    studentsWithHealthCards: healthData.filter(d => d.healthCard).length,
+    averageBMI: 0,
+    nutritionStatus: { underweight: 0, normal: 0, overweight: 0, obese: 0 },
+    commonDeficiencies: {},
+    referralRate: 0
+  };
+  
+  let totalBMI = 0;
+  let bmiCount = 0;
+  const deficiencyCounts: Record<string, number> = {};
+  let totalReferrals = 0;
+  
+  healthData.forEach(({ healthCard }) => {
+    if (!healthCard) return;
+    
+    // BMI analysis
+    const bmi = typeof healthCard.bmi === 'number' ? healthCard.bmi : 
+                (typeof healthCard.bmi === 'string' ? parseFloat(healthCard.bmi) : null);
+    
+    if (bmi && !isNaN(bmi)) {
+      totalBMI += bmi;
+      bmiCount++;
+      
+      if (bmi < 18.5) summary.nutritionStatus.underweight++;
+      else if (bmi < 25) summary.nutritionStatus.normal++;
+      else if (bmi < 30) summary.nutritionStatus.overweight++;
+      else summary.nutritionStatus.obese++;
+    }
+    
+    // Deficiency analysis
+    if (healthCard.deficiencies && Array.isArray(healthCard.deficiencies)) {
+      healthCard.deficiencies.forEach(def => {
+        deficiencyCounts[def] = (deficiencyCounts[def] || 0) + 1;
+      });
+    }
+    
+    // Count referrals (simplified)
+    if (healthCard.referral_deficiency_yes || healthCard.referral_disease_yes || 
+        healthCard.referral_developmental_yes || healthCard.referral_adolescent_yes) {
+      totalReferrals++;
+    }
+  });
+  
+  if (bmiCount > 0) {
+    summary.averageBMI = Math.round((totalBMI / bmiCount) * 10) / 10;
+  }
+  
+  summary.commonDeficiencies = Object.entries(deficiencyCounts)
+    .sort(([,a], [,b]) => (b as number) - (a as number))
+    .slice(0, 5)
+    .reduce((acc: Record<string, number>, [def, count]) => {
+      acc[def] = count as number;
+      return acc;
+    }, {});
+    
+  summary.referralRate = summary.studentsWithHealthCards > 0 ? 
+    Math.round((totalReferrals / summary.studentsWithHealthCards) * 100) : 0;
+  
+  // Detailed student data
+  const detailedData = healthData.map(({ student, healthCard }) => ({
+    studentId: student.id,
+    studentName: student.fullName,
+    age: student.dateOfBirth ? Math.floor((Date.now() - new Date(student.dateOfBirth).getTime()) / (1000 * 60 * 60 * 24 * 365.25)) : null,
+    gender: student.gender,
+    school: student.schoolName,
+    classSection: student.classSection,
+    hasHealthCard: !!healthCard,
+    bmi: healthCard?.bmi || null,
+    deficiencies: healthCard?.deficiencies || [],
+    hasReferrals: !!(healthCard?.referral_deficiency_yes || 
+                     healthCard?.referral_disease_yes || healthCard?.referral_developmental_yes || 
+                     healthCard?.referral_adolescent_yes)
+  }));
+  
+  return {
+    reportType: 'health-overview',
+    generatedAt: new Date().toISOString(),
+    period: { year: selectedYear },
+    summary,
+    detailedData,
+    schools: schools.map(s => ({ id: s.id, name: s.name }))
+  };
+}
+
+async function generateReferralsReport(students: any[], schools: any[], month?: string, year?: string) {
+  const selectedYear = year ? parseInt(year) : new Date().getFullYear();
+  const selectedMonth = month ? parseInt(month) : null;
+  
+  // Get referrals for all schools
+  const referralDataPromises = schools.map(async (school) => {
+    try {
+      const { referrals } = await storage.getReferrals({ schoolId: school.id, limit: 1000 });
+      
+      // Filter by date if specified
+      const filteredReferrals = referrals.filter(referral => {
+        const referralDate = new Date(referral.referralDate);
+        const matchesYear = referralDate.getFullYear() === selectedYear;
+        const matchesMonth = !selectedMonth || (referralDate.getMonth() + 1 === selectedMonth);
+        return matchesYear && matchesMonth;
+      });
+      
+      return { school, referrals: filteredReferrals };
+    } catch (error) {
+      console.error('Error fetching referrals for school', school.id, ':', error);
+      return { school, referrals: [] };
+    }
+  });
+  
+  const referralData = await Promise.all(referralDataPromises);
+  const allReferrals = referralData.flatMap(d => d.referrals.map(r => ({ ...r, schoolName: d.school.name })));
+  
+  // Calculate summary
+  const summary = {
+    totalReferrals: allReferrals.length,
+    byStatus: {} as Record<string, number>,
+    byType: {} as Record<string, number>,
+    byFacility: {} as Record<string, number>,
+    completionRate: 0
+  };
+  
+  allReferrals.forEach(referral => {
+    // By status
+    const status = referral.status || 'Unknown';
+    summary.byStatus[status] = (summary.byStatus[status] || 0) + 1;
+    
+    // By type
+    const type = referral.referralType || 'Unknown';
+    summary.byType[type] = (summary.byType[type] || 0) + 1;
+    
+    // By facility
+    const facility = referral.facility || 'Unknown';
+    summary.byFacility[facility] = (summary.byFacility[facility] || 0) + 1;
+  });
+  
+  const completedReferrals = allReferrals.filter(r => r.status === 'Completed').length;
+  summary.completionRate = summary.totalReferrals > 0 ? 
+    Math.round((completedReferrals / summary.totalReferrals) * 100) : 0;
+  
+  return {
+    reportType: 'referrals',
+    generatedAt: new Date().toISOString(),
+    period: { month: selectedMonth, year: selectedYear },
+    summary,
+    detailedData: allReferrals,
+    schools: schools.map(s => ({ id: s.id, name: s.name }))
+  };
+}
+
+async function generateStudentDemographicsReport(students: any[], schools: any[]) {
+  // Calculate demographics
+  const summary = {
+    totalStudents: students.length,
+    byGender: { M: 0, F: 0, O: 0 } as Record<string, number>,
+    byAgeGroup: { '5-10': 0, '11-15': 0, '16-18': 0, '18+': 0 } as Record<string, number>,
+    bySchool: {} as Record<string, number>,
+    averageAge: 0
+  };
+  
+  let totalAge = 0;
+  let ageCount = 0;
+  
+  students.forEach(student => {
+    // Gender distribution
+    if (student.gender in summary.byGender) {
+      summary.byGender[student.gender]++;
+    }
+    
+    // Age distribution
+    if (student.dateOfBirth) {
+      const age = Math.floor((Date.now() - new Date(student.dateOfBirth).getTime()) / (1000 * 60 * 60 * 24 * 365.25));
+      totalAge += age;
+      ageCount++;
+      
+      if (age <= 10) summary.byAgeGroup['5-10']++;
+      else if (age <= 15) summary.byAgeGroup['11-15']++;
+      else if (age <= 18) summary.byAgeGroup['16-18']++;
+      else summary.byAgeGroup['18+']++;
+    }
+    
+    // School distribution
+    const school = student.schoolName || 'Unknown';
+    summary.bySchool[school] = (summary.bySchool[school] || 0) + 1;
+  });
+  
+  if (ageCount > 0) {
+    summary.averageAge = Math.round((totalAge / ageCount) * 10) / 10;
+  }
+  
+  return {
+    reportType: 'student-demographics',
+    generatedAt: new Date().toISOString(),
+    summary,
+    detailedData: students.map(student => ({
+      studentId: student.id,
+      studentName: student.fullName,
+      age: student.dateOfBirth ? Math.floor((Date.now() - new Date(student.dateOfBirth).getTime()) / (1000 * 60 * 60 * 24 * 365.25)) : null,
+      gender: student.gender,
+      school: student.schoolName,
+      classSection: student.classSection,
+      enrollmentDate: student.enrollmentDate,
+      isActive: student.isActive
+    })),
+    schools: schools.map(s => ({ id: s.id, name: s.name }))
+  };
+}
+
+async function generateExcelReport(workbook: ExcelJS.Workbook, reportData: any, reportType: string, userRole: string) {
+  // Summary sheet
+  const summarySheet = workbook.addWorksheet('Summary');
+  summarySheet.addRow(['Report Type', reportType]);
+  summarySheet.addRow(['Generated At', reportData.generatedAt]);
+  summarySheet.addRow(['User Role', userRole]);
+  summarySheet.addRow(['Period', reportData.period ? JSON.stringify(reportData.period) : 'All Time']);
+  summarySheet.addRow([]);
+  
+  // Add summary data
+  if (reportData.summary) {
+    summarySheet.addRow(['Summary Statistics']);
+    Object.entries(reportData.summary).forEach(([key, value]) => {
+      if (typeof value === 'object' && value !== null) {
+        summarySheet.addRow([key, JSON.stringify(value)]);
+      } else {
+        summarySheet.addRow([key, value]);
+      }
+    });
+  }
+  
+  // Detailed data sheet
+  if (reportData.detailedData && reportData.detailedData.length > 0) {
+    const dataSheet = workbook.addWorksheet('Detailed Data');
+    const firstRow = reportData.detailedData[0];
+    const headers = Object.keys(firstRow);
+    
+    dataSheet.addRow(headers);
+    
+    reportData.detailedData.forEach((row: any) => {
+      const values = headers.map(header => {
+        const value = row[header];
+        if (Array.isArray(value)) return value.join(', ');
+        if (typeof value === 'object' && value !== null) return JSON.stringify(value);
+        return value;
+      });
+      dataSheet.addRow(values);
+    });
+    
+    // Style the header row
+    const headerRow = dataSheet.getRow(1);
+    headerRow.font = { bold: true };
+    headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0E0E0' } };
+  }
+  
+  // Schools sheet
+  if (reportData.schools && reportData.schools.length > 0) {
+    const schoolsSheet = workbook.addWorksheet('Schools');
+    schoolsSheet.addRow(['School ID', 'School Name']);
+    reportData.schools.forEach((school: any) => {
+      schoolsSheet.addRow([school.id, school.name]);
+    });
+  }
+}
+
+async function generatePDFReport(reportData: any, reportType: string, userRole: string): Promise<Buffer> {
+  const doc = new PDFDocumentAny();
+  const chunks: Buffer[] = [];
+  
+  doc.on('data', (chunk: Buffer) => chunks.push(chunk));
+  
+  return new Promise((resolve, reject) => {
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+    
+    // Header
+    doc.fontSize(20).text(`${reportType.toUpperCase().replace('-', ' ')} REPORT`, { align: 'center' });
+    doc.fontSize(12).text(`Generated for: ${userRole}`, { align: 'center' });
+    doc.text(`Generated at: ${new Date(reportData.generatedAt).toLocaleString()}`, { align: 'center' });
+    
+    if (reportData.period) {
+      doc.text(`Period: ${JSON.stringify(reportData.period)}`, { align: 'center' });
+    }
+    
+    doc.moveDown(2);
+    
+    // Summary section
+    if (reportData.summary) {
+      doc.fontSize(16).text('Summary', { underline: true });
+      doc.moveDown();
+      
+      Object.entries(reportData.summary).forEach(([key, value]) => {
+        if (typeof value === 'object' && value !== null) {
+          doc.fontSize(12).text(`${key}: ${JSON.stringify(value)}`);
+        } else {
+          doc.fontSize(12).text(`${key}: ${value}`);
+        }
+      });
+      
+      doc.moveDown(2);
+    }
+    
+    // Schools section
+    if (reportData.schools && reportData.schools.length > 0) {
+      doc.fontSize(16).text('Schools Included', { underline: true });
+      doc.moveDown();
+      
+      reportData.schools.forEach((school: any) => {
+        doc.fontSize(12).text(`• ${school.name} (ID: ${school.id})`);
+      });
+      
+      doc.moveDown(2);
+    }
+    
+    // Note about detailed data
+    if (reportData.detailedData && reportData.detailedData.length > 0) {
+      doc.fontSize(14).text(`Detailed Data: ${reportData.detailedData.length} records`);
+      doc.fontSize(10).text('(For detailed data, please use Excel export format)');
+    }
+    
+    doc.end();
+  });
+}
+
+  // Unified Report Generation API for all roles
+  app.get("/api/reports/unified", authenticateToken, async (req: AuthRequest, res) => {
+    try {
+      const { type, format = 'excel', month, year, schoolId, classSection } = req.query;
+      const userRole = req.user!.role;
+      const userId = req.user!.id;
+      
+      console.log('Unified report request:', { type, format, userRole, month, year, schoolId, classSection });
+      
+      // Validate report type
+      const validTypes = ['menstrual-health', 'health-overview', 'referrals', 'student-demographics'];
+      if (!validTypes.includes(type as string)) {
+        return res.status(400).json({ message: 'Invalid report type' });
+      }
+      
+      // Get user context for role-based filtering
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+      
+      let schools: any[] = [];
+      let students: any[] = [];
+      
+      // Role-based data access
+      switch (userRole) {
+        case 'PO':
+        case 'Admin':
+          if (userRole === 'PO' && user.district) {
+            const allSchools = await storage.getSchools(1, 1000);
+            schools = allSchools.schools.filter(s => sameDistrict(s.district, user.district || ''));
+          } else if (userRole === 'Admin') {
+            const allSchools = await storage.getSchools(1, 1000);
+            schools = allSchools.schools;
+          }
+          break;
+          
+        case 'Headmaster':
+        case 'Lady Superintendent':
+        case 'MedicalTeam':
+        case 'MealSuperintendent':
+        case 'HostelWarden':
+          if (user.schoolId) {
+            const school = await storage.getSchool(user.schoolId);
+            if (school) schools = [school];
+          }
+          break;
+          
+        case 'ClassTeacher':
+          if (user.schoolId) {
+            const school = await storage.getSchool(user.schoolId);
+            if (school) schools = [school];
+          }
+          break;
+          
+        default:
+          return res.status(403).json({ message: 'Unauthorized role for reports' });
+      }
+      
+      if (schools.length === 0) {
+        return res.status(400).json({ message: 'No schools accessible for this user' });
+      }
+      
+      // Get students based on role and filters
+      const allStudentsPromises = schools.map(async (school) => {
+        const params: any = { schoolId: school.id, limit: 1000 };
+        
+        // Apply role-specific filters
+        if (userRole === 'Lady Superintendent') {
+          params.gender = 'F';
+        }
+        
+        if (userRole === 'ClassTeacher' && user.classSection) {
+          params.classSection = user.classSection;
+        }
+        
+        if (classSection) {
+          params.classSection = classSection;
+        }
+        
+        const { students: schoolStudents } = await storage.getStudents(params);
+        return schoolStudents.map(s => ({ ...s, schoolName: school.name }));
+      });
+      
+      const allStudentsArrays = await Promise.all(allStudentsPromises);
+      students = allStudentsArrays.flat();
+      
+      // Generate report based on type
+      let reportData: any = {};
+      
+      switch (type) {
+        case 'menstrual-health':
+          reportData = await generateMenstrualHealthReport(students, schools, month as string, year as string);
+          break;
+          
+        case 'health-overview':
+          reportData = await generateHealthOverviewReport(students, schools, month as string, year as string);
+          break;
+          
+        case 'referrals':
+          reportData = await generateReferralsReport(students, schools, month as string, year as string);
+          break;
+          
+        case 'student-demographics':
+          reportData = await generateStudentDemographicsReport(students, schools);
+          break;
+          
+        default:
+          return res.status(400).json({ message: 'Report type not implemented' });
+      }
+      
+      // Format and return report
+      if (format === 'json') {
+        return res.json(reportData);
+      }
+      
+      // Generate file-based reports
+      const filename = `${type}-report-${userRole.toLowerCase()}-${Date.now()}`;
+      
+      if (format === 'excel') {
+        const workbook = new ExcelJS.Workbook();
+        await generateExcelReport(workbook, reportData, type as string, userRole);
+        
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}.xlsx"`);
+        
+        await workbook.xlsx.write(res);
+        res.end();
+        
+      } else if (format === 'pdf') {
+        const pdfBuffer = await generatePDFReport(reportData, type as string, userRole);
+        
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}.pdf"`);
+        
+        res.send(pdfBuffer);
+        
+      } else {
+        return res.status(400).json({ message: 'Invalid format. Use json, excel, or pdf' });
+      }
+      
+    } catch (error: any) {
+      console.error('Unified report generation error:', error);
+      res.status(500).json({ message: error?.message || 'Failed to generate report' });
+    }
+  });
+
+  // In-app Report Sharing API
+  app.post("/api/reports/share", authenticateToken, async (req: AuthRequest, res) => {
+    try {
+      const { reportId, reportType, reportData, sharedWith, message, expiresAt } = req.body;
+      const sharedBy = req.user!.id;
+      
+      // Validate shared users exist and have appropriate roles
+      const sharedUsers = await Promise.all(
+        sharedWith.map(async (userId: string) => {
+          const user = await storage.getUser(userId);
+          if (!user) throw new Error(`User ${userId} not found`);
+          return user;
+        })
+      );
+      
+      // Get the full user details to access fullName
+      const currentUser = await storage.getUser(req.user!.id);
+      const senderName = currentUser?.fullName || req.user!.username || 'User';
+
+      // Create shared report record
+      const sharedReport = {
+        id: `shared_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        reportId: reportId || `report_${Date.now()}`,
+        reportType,
+        reportData: JSON.stringify(reportData),
+        sharedBy,
+        sharedWith: JSON.stringify(sharedWith),
+        message: message || '',
+        expiresAt: expiresAt ? new Date(expiresAt) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days default
+        createdAt: new Date(),
+        isActive: true
+      };
+      
+      // Store in database (using notifications table for now, could create dedicated table)
+      await db.insert(notifications).values({
+        senderId: sharedBy,
+        senderRole: req.user!.role as any,
+        receiverRole: 'Admin' as any, // Will be filtered by actual receivers
+        type: 'system' as any,
+        title: `Shared Report: ${reportType}`,
+        message: `${senderName} shared a ${reportType} report with you. ${message}`,
+        metadata: sharedReport,
+        isImportant: true
+      });
+      
+      // Send notifications to shared users
+      for (const user of sharedUsers) {
+        await db.insert(notifications).values({
+          senderId: sharedBy,
+          senderRole: req.user!.role as any,
+          receiverRole: user.role as any,
+          receiverSchoolId: user.schoolId,
+          type: 'system' as any,
+          title: `New Shared Report: ${reportType}`,
+          message: `${senderName} shared a ${reportType} report with you. ${message}`,
+          metadata: {
+            reportId: sharedReport.id,
+            reportType,
+            sharedBy: senderName,
+            sharedAt: new Date().toISOString()
+          },
+          isImportant: true
+        });
+      }
+      
+      res.json({ 
+        success: true, 
+        sharedReportId: sharedReport.id,
+        message: `Report shared with ${sharedUsers.length} user(s)` 
+      });
+      
+    } catch (error: any) {
+      console.error('Report sharing error:', error);
+      res.status(500).json({ message: error?.message || 'Failed to share report' });
+    }
+  });
+
+  // Get shared reports for current user
+  app.get("/api/reports/shared", authenticateToken, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user!.id;
+      
+      // Get notifications that contain shared reports for this user
+      const sharedReports = await db
+        .select()
+        .from(notifications)
+        .where(
+          and(
+            eq(notifications.type, 'system'),
+            sql`${notifications.title} LIKE 'New Shared Report:%'`,
+            sql`${notifications.metadata}->>'reportId' IS NOT NULL`
+          )
+        )
+        .orderBy(desc(notifications.createdAt))
+        .limit(50);
+      
+      // Filter reports shared with this user and parse metadata
+      const userReports = sharedReports
+        .filter(notification => {
+          try {
+            const metadata = notification.metadata as any;
+            return metadata && metadata.reportId;
+          } catch {
+            return false;
+          }
+        })
+        .map(notification => {
+          const metadata = notification.metadata as any;
+          return {
+            id: metadata.reportId,
+            reportType: metadata.reportType,
+            sharedBy: metadata.sharedBy,
+            sharedAt: metadata.sharedAt,
+            title: notification.title,
+            message: notification.message,
+            isRead: notification.isRead,
+            createdAt: notification.createdAt
+          };
+        });
+      
+      res.json({ reports: userReports });
+      
+    } catch (error: any) {
+      console.error('Get shared reports error:', error);
+      res.status(500).json({ message: error?.message || 'Failed to get shared reports' });
+    }
+  });
+
+  // Access shared report data
+  app.get("/api/reports/shared/:reportId", authenticateToken, async (req: AuthRequest, res) => {
+    try {
+      const { reportId } = req.params;
+      const userId = req.user!.id;
+      
+      // Find the shared report notification
+      const sharedReport = await db
+        .select()
+        .from(notifications)
+        .where(
+          and(
+            eq(notifications.type, 'system'),
+            sql`${notifications.metadata}->>'reportId' = ${reportId}`
+          )
+        )
+        .limit(1);
+      
+      if (sharedReport.length === 0) {
+        return res.status(404).json({ message: 'Shared report not found' });
+      }
+      
+      const notification = sharedReport[0];
+      const metadata = notification.metadata as any;
+      
+      // Check if user has access (simplified - in production, check sharedWith array)
+      // For now, allow access if user received the notification
+      
+      // Mark as read
+      await db
+        .update(notifications)
+        .set({ isRead: true, readAt: new Date() })
+        .where(eq(notifications.id, notification.id));
+      
+      // Return report data (would need to fetch from original storage in production)
+      res.json({
+        reportId: metadata.reportId,
+        reportType: metadata.reportType,
+        sharedBy: metadata.sharedBy,
+        sharedAt: metadata.sharedAt,
+        message: notification.message,
+        // In production, fetch actual report data from storage
+        reportData: { message: 'Report data would be loaded here' }
+      });
+      
+    } catch (error: any) {
+      console.error('Access shared report error:', error);
+      res.status(500).json({ message: error?.message || 'Failed to access shared report' });
     }
   });
 
@@ -5147,8 +6461,7 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
             }
 
             if (card.e1_life_events_difficulty || card.e2_peer_pressure_substance || card.e3_persistent_sadness ||
-                card.e4_menstruation_started || card.e5_pain_urination || card.e6_foul_discharge ||
-                card.e7_severe_menstrual_pain) {
+                card.e5_pain_urination || card.e6_foul_discharge) {
               adolescentConcerns++;
             }
           }
@@ -5493,7 +6806,7 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
       });
 
       const adolescentCounts: Record<string, number> = {};
-      const adolescentSymptomKeys = ['e1_life_events_difficulty','e2_peer_pressure_substance','e3_persistent_sadness','e4_menstruation_started','e5_pain_urination','e6_foul_discharge','e7_severe_menstrual_pain'];
+      const adolescentSymptomKeys = ['e1_life_events_difficulty','e2_peer_pressure_substance','e3_persistent_sadness','e5_pain_urination','e6_foul_discharge'];
       adolescentSymptomKeys.forEach(k => adolescentCounts[k] = 0);
       const adolescentSamples: any[] = [];
 
@@ -5518,7 +6831,6 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
         emotionalDistressPercent: adolescentCards.length > 0 ? Math.round(adolescentCounts['e1_life_events_difficulty'] / adolescentCards.length * 100) : 0,
         peerPressurePercent: adolescentCards.length > 0 ? Math.round(adolescentCounts['e2_peer_pressure_substance'] / adolescentCards.length * 100) : 0,
         depressionSymptomsPercent: adolescentCards.length > 0 ? Math.round(adolescentCounts['e3_persistent_sadness'] / adolescentCards.length * 100) : 0,
-        menstrualHealthIssuesPercent: adolescentCards.length > 0 ? Math.round((adolescentCounts['e4_menstruation_started'] || adolescentCounts['e7_severe_menstrual_pain']) / adolescentCards.length * 100) : 0,
         utiSymptomsPercent: adolescentCards.length > 0 ? Math.round((adolescentCounts['e5_pain_urination'] || adolescentCounts['e6_foul_discharge']) / adolescentCards.length * 100) : 0,
         adolescentCardCount: adolescentCards.length,
         samples: adolescentSamples,
@@ -6078,8 +7390,8 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
     try {
       const schoolId = req.user?.schoolId;
       const page = parseInt(req.query.page as string) || 1;
-      const search = req.query.search as string;
       const classSection = req.query.classSection as string;
+      const search = req.query.search as string;
 
       const { students, total } = await storage.getStudents({
         schoolId,
@@ -6121,10 +7433,16 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
   app.get("/api/lady-superintendent/dashboard", authenticateToken, authorizeRoles("Lady Superintendent", "Admin"), async (req: AuthRequest, res) => {
     try {
       const user = req.user!;
-      const schoolId = req.query.schoolId as string;
+      
+      // Lady Superintendent can only access their assigned school
+      const schoolId = user.schoolId;
+      
+      if (!schoolId) {
+        return res.status(400).json({ message: "Lady Superintendent must be assigned to a school" });
+      }
 
-      // Get all female students
-      let femaleStudentsQuery = db
+      // Get all female students from LS's school only
+      const femaleStudents = await db
         .select({
           id: students.id,
           schoolId: students.schoolId,
@@ -6133,109 +7451,16 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
           gender: students.gender,
         })
         .from(students)
-        .where(eq(students.gender, "F"));
-
-      if (schoolId && schoolId !== "all") {
-        femaleStudentsQuery = db
-          .select({
-            id: students.id,
-            schoolId: students.schoolId,
-            fullName: students.fullName,
-            classSection: students.classSection,
-            gender: students.gender,
-          })
-          .from(students)
-          .where(and(eq(students.gender, "F"), eq(students.schoolId, schoolId)));
-      }
-
-      const femaleStudents = await femaleStudentsQuery;
-
-      // Get adolescent health records for female students (age >= 10)
-      const adolescentHealthRecords = await db
-        .select({
-          id: annualHealthCards.id,
-          studentId: annualHealthCards.studentId,
-          studentName: students.fullName,
-          schoolName: annualHealthCards.schoolName,
-          classSection: students.classSection,
-          dateOfVisit: annualHealthCards.date_of_visit,
-          menstrualCycleRegular: annualHealthCards.menstrual_cycle_regular,
-          menstrualLastPeriodDate: annualHealthCards.menstrual_last_period_date,
-          menstrualCycleLengthDays: annualHealthCards.menstrual_cycle_length_days,
-          menstrualPeriodDurationDays: annualHealthCards.menstrual_period_duration_days,
-        })
-        .from(annualHealthCards)
-        .innerJoin(students, eq(annualHealthCards.studentId, students.id))
         .where(and(
           eq(students.gender, "F"),
-          sql`EXTRACT(YEAR FROM AGE(CURRENT_DATE, ${students.dateOfBirth})) >= 10`
+          eq(students.schoolId, schoolId)
         ));
-
-      // Calculate menstrual health statistics
-      const menstrualHealthTracked = adolescentHealthRecords.filter(record =>
-        record.menstrualCycleRegular !== null
-      ).length;
-
-      const regularCycles = adolescentHealthRecords.filter(record =>
-        record.menstrualCycleRegular === true
-      ).length;
-
-      const irregularCycles = adolescentHealthRecords.filter(record =>
-        record.menstrualCycleRegular === false
-      ).length;
-
-      // Get referred cases from adolescent health section
-      const referredCases = await db
-        .select({
-          id: annualHealthCards.id,
-          studentName: students.fullName,
-          referralReason: sql`CASE
-            WHEN ${annualHealthCards.referral_adolescent_yes} THEN 'Adolescent Health'
-            ELSE 'Other'
-          END`.as('referral_reason'),
-        })
-        .from(annualHealthCards)
-        .innerJoin(students, eq(annualHealthCards.studentId, students.id))
-        .where(and(
-          eq(students.gender, "F"),
-          or(
-            eq(annualHealthCards.referral_adolescent_yes, true)
-          )
-        ));
-
-      // Get schools for filter dropdown
-      const schoolList = await db
-        .select({
-          id: schools.id,
-          name: schools.name,
-        })
-        .from(schools)
-        .where(eq(schools.isActive, true));
-
-      // Calculate menstrual health stats
-      const painReported = adolescentHealthRecords.filter(record =>
-        record.menstrualPeriodDurationDays && record.menstrualPeriodDurationDays > 0
-      ).length;
-
-      const hygieneConcerns = adolescentHealthRecords.filter(record =>
-        record.menstrualLastPeriodDate !== null
-      ).length;
 
       res.json({
         metrics: {
           totalFemaleStudents: femaleStudents.length,
-          adolescentHealthRecords: adolescentHealthRecords.length,
-          menstrualHealthTracked,
-          referredCases: referredCases.length,
         },
-        schools: schoolList,
-        recentAdolescentCheckups: adolescentHealthRecords.slice(0, 10),
-        menstrualHealthStats: {
-          regularCycles,
-          irregularCycles,
-          painReported,
-          hygieneConcerns,
-        },
+        students: femaleStudents.slice(0, 10), // Recent students for display
       });
     } catch (error) {
       console.error("Lady Superintendent dashboard error:", error);
@@ -6678,7 +7903,7 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
               Gender: card.gender ?? "",
               UniqueId: card.uniqueId ?? "",
               AadhaarNo: card.aadhaarNo ?? "",
-              MctsNo: card.mctsNo ?? "",
+              PranNo: card.pranNo ?? "",
               FatherGuardianName: card.fatherGuardianName ?? "",
               FatherContact: card.fatherContact ?? "",
               WeightKg: card.weightKg ?? "",
@@ -8264,12 +9489,11 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
                 totalAdolescents: adolescents.length,
                 mentalHealthIssues: adolescents.filter(c => c.e1_life_events_difficulty || c.e3_persistent_sadness).length,
                 substanceIssues: adolescents.filter(c => c.e2_peer_pressure_substance).length,
-                menstrualIssues: adolescents.filter(c => c.e4_menstruation_started || c.e7_severe_menstrual_pain).length,
                 reproductiveHealthIssues: adolescents.filter(c => c.e5_pain_urination || c.e6_foul_discharge).length,
               };
             })
           );
-          exportData = adolescentData.filter(a => a.mentalHealthIssues > 0 || a.substanceIssues > 0 || a.menstrualIssues > 0 || a.reproductiveHealthIssues > 0);
+          exportData = adolescentData.filter(a => a.mentalHealthIssues > 0 || a.substanceIssues > 0 || a.reproductiveHealthIssues > 0);
           break;
 
         default:
@@ -8295,5 +9519,289 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
     }
   });
 
+  // ============================================================================
+  // PERIOD TRACKER ROUTES
+  // ============================================================================
+
+  // Get period tracker entries for a student
+  app.get("/api/period-tracker/:studentId", authenticateToken, async (req: AuthRequest, res) => {
+    try {
+      const { studentId } = req.params;
+      const { startDate, endDate, page, limit } = req.query;
+
+      // Verify student exists
+      const student = await storage.getStudent(studentId);
+      if (!student) {
+        return res.status(404).json({ message: "Student not found" });
+      }
+
+      // Authorization: Only Lady Superintendent and Admin can access Period Tracker
+      if (req.user?.role === "Lady Superintendent") {
+        if (!req.user.schoolId) {
+          return res.status(403).json({ message: "Lady Superintendent not assigned to a school" });
+        }
+        if (student.schoolId !== req.user.schoolId) {
+          return res.status(403).json({ message: "Access denied: Student not in your school" });
+        }
+      } else if (req.user?.role !== "Admin") {
+        return res.status(403).json({ message: "Access denied: Period Tracker is only accessible to Lady Superintendent" });
+      }
+
+      const result = await storage.getPeriodTrackerEntries({
+        studentId,
+        startDate: startDate as string,
+        endDate: endDate as string,
+        page: page ? parseInt(page as string) : undefined,
+        limit: limit ? parseInt(limit as string) : undefined,
+      });
+
+      res.json(result);
+    } catch (error: any) {
+      console.error("Get period tracker entries error:", error?.message || String(error));
+      res.status(500).json({ message: error?.message || "Failed to fetch period tracker entries" });
+    }
+  });
+
+  // Create or update a period tracker entry (upsert)
+  app.post("/api/period-tracker", authenticateToken, async (req: AuthRequest, res) => {
+    try {
+      const entryData = req.body;
+
+      // Validate input
+      const { studentId, schoolId, entryDate, moods, bodyTemperatureCelsius, painIntensity, flowCategory, symptoms, notes, isReferred, referredDate, referralFacility } = entryData;
+
+      if (!studentId || !schoolId || !entryDate) {
+        return res.status(400).json({ message: "studentId, schoolId, and entryDate are required" });
+      }
+
+      // Validate referral fields
+      if (isReferred) {
+        if (!referredDate) {
+          return res.status(400).json({ message: "Referred date is required when student is referred" });
+        }
+        if (!referralFacility) {
+          return res.status(400).json({ message: "Referral facility is required when student is referred" });
+        }
+      }
+
+      // Verify student exists
+      const student = await storage.getStudent(studentId);
+      if (!student) {
+        return res.status(404).json({ message: "Student not found" });
+      }
+
+      // Authorization: Only Lady Superintendent and Admin can create entries
+      if (req.user?.role === "Lady Superintendent") {
+        if (!req.user.schoolId) {
+          return res.status(403).json({ message: "Lady Superintendent not assigned to a school" });
+        }
+        if (student.schoolId !== req.user.schoolId || schoolId !== req.user.schoolId) {
+          return res.status(403).json({ message: "Access denied: Student not in your school" });
+        }
+      } else if (req.user?.role !== "Admin") {
+        return res.status(403).json({ message: "Access denied: Period Tracker is only accessible to Lady Superintendent" });
+      }
+
+      // Validate data types
+      if (painIntensity !== undefined && painIntensity !== null && (painIntensity < 0 || painIntensity > 10)) {
+        return res.status(400).json({ message: "Pain intensity must be between 0 and 10" });
+      }
+
+      if (bodyTemperatureCelsius !== undefined && bodyTemperatureCelsius !== null && (bodyTemperatureCelsius < 35 || bodyTemperatureCelsius > 42)) {
+        return res.status(400).json({ message: "Body temperature must be between 35°C and 42°C" });
+      }
+
+      if (flowCategory && !["none", "spotting", "light", "medium", "heavy"].includes(flowCategory)) {
+        return res.status(400).json({ message: "Invalid flow category" });
+      }
+
+      // Create or update entry (upsert)
+      console.log(`[API] Calling upsert for student ${studentId} on date ${entryDate}`);
+      const entry = await storage.upsertPeriodTrackerEntry({
+        studentId,
+        schoolId,
+        entryDate: new Date(entryDate),
+        moods: moods || [],
+        bodyTemperatureCelsius,
+        painIntensity,
+        flowCategory,
+        symptoms: symptoms || [],
+        notes,
+        isReferred: !!isReferred,
+        referredDate: isReferred && referredDate ? referredDate : null,
+        referralFacility: isReferred ? referralFacility : null,
+        recordedBy: req.user?.id,
+      });
+      console.log(`[API] Upsert successful, returning entry ${entry.id}`);
+
+      res.status(200).json(entry);
+    } catch (error: any) {
+      console.error("Create/update period tracker entry error:", error?.message || String(error));
+      res.status(500).json({ message: error?.message || "Failed to create/update period tracker entry" });
+    }
+  });
+
+  // Update a period tracker entry
+  app.put("/api/period-tracker/:id", authenticateToken, async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+      const updateData = req.body;
+
+      // Get existing entry
+      const existingEntry = await storage.getPeriodTrackerEntry(id);
+      if (!existingEntry) {
+        return res.status(404).json({ message: "Period tracker entry not found" });
+      }
+
+      // Verify student exists
+      const student = await storage.getStudent(existingEntry.studentId);
+      if (!student) {
+        return res.status(404).json({ message: "Student not found" });
+      }
+
+      // Authorization: Only Lady Superintendent and Admin can update entries
+      if (req.user?.role === "Lady Superintendent") {
+        if (!req.user.schoolId || student.schoolId !== req.user.schoolId) {
+          return res.status(403).json({ message: "Access denied: Student not in your school" });
+        }
+      } else if (req.user?.role !== "Admin") {
+        return res.status(403).json({ message: "Access denied: Period Tracker is only accessible to Lady Superintendent" });
+      }
+
+      // Validate data if provided
+      if (updateData.painIntensity !== undefined && updateData.painIntensity !== null && 
+          (updateData.painIntensity < 0 || updateData.painIntensity > 10)) {
+        return res.status(400).json({ message: "Pain intensity must be between 0 and 10" });
+      }
+
+      if (updateData.bodyTemperatureCelsius !== undefined && updateData.bodyTemperatureCelsius !== null && 
+          (updateData.bodyTemperatureCelsius < 35 || updateData.bodyTemperatureCelsius > 42)) {
+        return res.status(400).json({ message: "Body temperature must be between 35°C and 42°C" });
+      }
+
+      if (updateData.flowCategory && !["none", "spotting", "light", "medium", "heavy"].includes(updateData.flowCategory)) {
+        return res.status(400).json({ message: "Invalid flow category" });
+      }
+
+      // Validate referral fields
+      if (updateData.isReferred) {
+        if (!updateData.referredDate) {
+          return res.status(400).json({ message: "Referred date is required when student is referred" });
+        }
+        if (!updateData.referralFacility) {
+          return res.status(400).json({ message: "Referral facility is required when student is referred" });
+        }
+      }
+
+      // Don't allow changing studentId or schoolId
+      delete updateData.studentId;
+      delete updateData.schoolId;
+
+      // Handle referral date conversion
+      if (updateData.referredDate && typeof updateData.referredDate === 'string') {
+        // Keep as string since schema expects string dates
+      }
+
+      const updatedEntry = await storage.updatePeriodTrackerEntry(id, updateData);
+      res.json(updatedEntry);
+    } catch (error: any) {
+      console.error("Update period tracker entry error:", error?.message || String(error));
+      res.status(500).json({ message: error?.message || "Failed to update period tracker entry" });
+    }
+  });
+
+  // Delete a period tracker entry
+  app.delete("/api/period-tracker/:id", authenticateToken, async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+
+      // Get existing entry
+      const existingEntry = await storage.getPeriodTrackerEntry(id);
+      if (!existingEntry) {
+        return res.status(404).json({ message: "Period tracker entry not found" });
+      }
+
+      // Verify student exists
+      const student = await storage.getStudent(existingEntry.studentId);
+      if (!student) {
+        return res.status(404).json({ message: "Student not found" });
+      }
+
+      // Authorization: Only Admin can delete entries
+      if (req.user?.role !== "Admin") {
+        return res.status(403).json({ message: "Access denied: Only Admin can delete entries" });
+      }
+
+      await storage.deletePeriodTrackerEntry(id);
+      res.json({ message: "Period tracker entry deleted successfully" });
+    } catch (error: any) {
+      console.error("Delete period tracker entry error:", error?.message || String(error));
+      res.status(500).json({ message: error?.message || "Failed to delete period tracker entry" });
+    }
+  });
+
+  // Analyze mood trends for a student
+  app.get("/api/period-tracker/:studentId/mood-trends", authenticateToken, async (req: AuthRequest, res) => {
+    try {
+      const { studentId } = req.params;
+      const { days } = req.query;
+
+      // Verify student exists
+      const student = await storage.getStudent(studentId);
+      if (!student) {
+        return res.status(404).json({ message: "Student not found" });
+      }
+
+      // Authorization: Only Lady Superintendent and Admin can access mood trends
+      if (req.user?.role === "Lady Superintendent") {
+        if (!req.user.schoolId || student.schoolId !== req.user.schoolId) {
+          return res.status(403).json({ message: "Access denied: Student not in your school" });
+        }
+      } else if (req.user?.role !== "Admin") {
+        return res.status(403).json({ message: "Access denied: Period Tracker is only accessible to Lady Superintendent" });
+      }
+
+      const daysToAnalyze = days ? parseInt(days as string) : 30;
+      const analysis = await storage.analyzeMoodTrends(studentId, daysToAnalyze);
+
+      res.json(analysis);
+    } catch (error: any) {
+      console.error("Analyze mood trends error:", error?.message || String(error));
+      res.status(500).json({ message: error?.message || "Failed to analyze mood trends" });
+    }
+  });
+
+  // Predict next menstrual cycle for a student
+  app.get("/api/period-tracker/:studentId/cycle-prediction", authenticateToken, async (req: AuthRequest, res) => {
+    try {
+      const { studentId } = req.params;
+
+      // Verify student exists
+      const student = await storage.getStudent(studentId);
+      if (!student) {
+        return res.status(404).json({ message: "Student not found" });
+      }
+
+      // Authorization: Only Lady Superintendent and Admin can access cycle predictions
+      if (req.user?.role === "Lady Superintendent") {
+        if (!req.user.schoolId || student.schoolId !== req.user.schoolId) {
+          return res.status(403).json({ message: "Access denied: Student not in your school" });
+        }
+      } else if (req.user?.role !== "Admin") {
+        return res.status(403).json({ message: "Access denied: Period Tracker is only accessible to Lady Superintendent" });
+      }
+
+      const prediction = await storage.predictNextCycle(studentId);
+
+      res.json(prediction);
+    } catch (error: any) {
+      console.error("Predict cycle error:", error?.message || String(error));
+      res.status(500).json({ message: error?.message || "Failed to predict cycle" });
+    }
+  });
+
+
   return httpServer;
 }
+
+

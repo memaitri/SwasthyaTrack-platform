@@ -14,6 +14,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { formatGenderDisplay } from "@/lib/genderUtils";
 import {
   Users,
   FileHeart,
@@ -200,7 +201,7 @@ export default function HeadmasterDashboard() {
         'Student ID': s.id,
         Name: s.fullName || s.name || s.studentName || '—',
         Age: s.age || '—',
-        Gender: s.gender || '—',
+        Gender: formatGenderDisplay(s.gender) || '—',
         'Class/Section': s.classSection || s.class || '—',
       }));
       const cols = [{ key: 'Student ID', header: 'Student ID' }, { key: 'Name', header: 'Name' }, { key: 'Age', header: 'Age' }, { key: 'Gender', header: 'Gender' }, { key: 'Class/Section', header: 'Class/Section' }];

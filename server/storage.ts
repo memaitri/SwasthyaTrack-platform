@@ -32,8 +32,12 @@ import {
   type Referral,
   type InsertReferral,
   annualHealthCards as annualHealthCardsTable,
+  periodTrackerEntries,
+  type PeriodTrackerEntry,
+  type InsertPeriodTrackerEntry,
 } from "@shared/schema";
 import { eq, and, like, or, desc, gte, lte, sql, count, inArray, isNull } from "drizzle-orm";
+import { predictMenstrualCycle, type CycleEntry } from "../lib/menstrualCyclePrediction";
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -58,6 +62,8 @@ export interface IStorage {
     page?: number;
     limit?: number;
     gender?: string;
+    menstruationStarted?: boolean;
+    minAge?: number;
   }): Promise<{ students: Student[]; total: number }>;
   createStudent(student: InsertStudent): Promise<Student>;
   updateStudent(id: string, data: Partial<InsertStudent>): Promise<Student | undefined>;
@@ -154,6 +160,22 @@ export interface IStorage {
     year: number;
     month: number;
   }): Promise<any[]>;
+
+  // Period Tracker methods
+  getPeriodTrackerEntry(id: string): Promise<PeriodTrackerEntry | undefined>;
+  getPeriodTrackerEntries(params: {
+    studentId: string;
+    startDate?: string;
+    endDate?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{ entries: PeriodTrackerEntry[]; total: number }>;
+  createPeriodTrackerEntry(entry: InsertPeriodTrackerEntry): Promise<PeriodTrackerEntry>;
+  upsertPeriodTrackerEntry(entry: InsertPeriodTrackerEntry): Promise<PeriodTrackerEntry>;
+  updatePeriodTrackerEntry(id: string, data: Partial<InsertPeriodTrackerEntry>): Promise<PeriodTrackerEntry | undefined>;
+  deletePeriodTrackerEntry(id: string): Promise<void>;
+  analyzeMoodTrends(studentId: string, days: number): Promise<any>;
+  predictNextCycle(studentId: string): Promise<any>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -312,8 +334,11 @@ export class DatabaseStorage implements IStorage {
     search?: string;
     page?: number;
     limit?: number;
+    gender?: string;
+    menstruationStarted?: boolean;
+    minAge?: number;
   }): Promise<{ students: Student[]; total: number }> {
-    const { schoolId, classSection, search, page = 1, limit = 10 } = params || {};
+    const { schoolId, classSection, search, page = 1, limit = 10, gender, menstruationStarted, minAge } = params || {};
     const offset = (page - 1) * limit;
 
     let query = db.select().from(students);
@@ -321,6 +346,16 @@ export class DatabaseStorage implements IStorage {
     const conditions = [];
     if (schoolId) conditions.push(eq(students.schoolId, schoolId));
     if (classSection && classSection !== "all") conditions.push(eq(students.classSection, classSection));
+    if (gender) conditions.push(sql`${students.gender} = ${gender}`);
+    if (menstruationStarted !== undefined) {
+      // Filter for students who have menstruation started (menstruationStartedAt is NOT NULL)
+      conditions.push(sql`${students.menstruationStartedAt} IS NOT NULL`);
+    }
+    if (minAge !== undefined) {
+      // Filter students by age (calculated from dateOfBirth)
+      // SQL: EXTRACT(YEAR FROM AGE(CURRENT_DATE, date_of_birth)) >= minAge
+      conditions.push(sql`EXTRACT(YEAR FROM AGE(CURRENT_DATE, ${students.dateOfBirth})) >= ${minAge}`);
+    }
     if (search) {
       conditions.push(
         or(
@@ -1350,7 +1385,7 @@ export class DatabaseStorage implements IStorage {
           if (monthlyCard?.symptoms?.some(s => s.toLowerCase().includes('menstrual'))) {
             conditionMet = true;
           } else if (annualCard) {
-            conditionMet = annualCard.summary_adolescent_menstrual_issues === true || annualCard.e7_severe_menstrual_pain === true;
+            conditionMet = annualCard.summary_adolescent_substance_use === true || annualCard.summary_adolescent_depressed === true;
           }
           break;
         case "referrals":
@@ -1431,6 +1466,285 @@ export class DatabaseStorage implements IStorage {
     }));
 
     return studentDetailsWithCards;
+  }
+
+  // Period Tracker Methods
+  async getPeriodTrackerEntry(id: string): Promise<PeriodTrackerEntry | undefined> {
+    const [entry] = await db.select().from(periodTrackerEntries).where(eq(periodTrackerEntries.id, id));
+    return entry;
+  }
+
+  async getPeriodTrackerEntries(params: {
+    studentId: string;
+    startDate?: string;
+    endDate?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{ entries: PeriodTrackerEntry[]; total: number }> {
+    const { studentId, startDate, endDate, page = 1, limit = 100 } = params;
+    const offset = (page - 1) * limit;
+
+    const conditions = [eq(periodTrackerEntries.studentId, studentId)];
+    
+    if (startDate) {
+      conditions.push(gte(periodTrackerEntries.entryDate, startDate));
+    }
+    if (endDate) {
+      conditions.push(lte(periodTrackerEntries.entryDate, endDate));
+    }
+
+    let query = db.select().from(periodTrackerEntries).where(and(...conditions));
+    
+    // Get total count
+    const [totalResult] = await db
+      .select({ count: count() })
+      .from(periodTrackerEntries)
+      .where(and(...conditions));
+
+    const entries = await query
+      .orderBy(desc(periodTrackerEntries.entryDate))
+      .limit(limit)
+      .offset(offset);
+
+    return { entries, total: totalResult?.count || 0 };
+  }
+
+  async createPeriodTrackerEntry(entry: InsertPeriodTrackerEntry): Promise<PeriodTrackerEntry> {
+    const insertData: any = { ...entry };
+    
+    // Convert date to string format if needed
+    if (entry.entryDate instanceof Date) {
+      insertData.entryDate = entry.entryDate.toISOString().split('T')[0];
+    }
+    
+    // Convert referral date to string format if needed
+    if (entry.referredDate && typeof entry.referredDate !== 'string') {
+      insertData.referredDate = (entry.referredDate as Date).toISOString().split('T')[0];
+    }
+
+    const [newEntry] = await db.insert(periodTrackerEntries).values(insertData).returning();
+    return newEntry;
+  }
+
+  async upsertPeriodTrackerEntry(entry: InsertPeriodTrackerEntry): Promise<PeriodTrackerEntry> {
+    const insertData: any = { ...entry };
+    
+    // Convert date to string format if needed
+    if (entry.entryDate instanceof Date) {
+      insertData.entryDate = entry.entryDate.toISOString().split('T')[0];
+    }
+    
+    // Convert referral date to string format if needed
+    if (entry.referredDate && typeof entry.referredDate !== 'string') {
+      insertData.referredDate = (entry.referredDate as Date).toISOString().split('T')[0];
+    }
+
+    console.log(`[UPSERT] Attempting upsert for student ${entry.studentId} on date ${insertData.entryDate}`);
+
+    try {
+      // First, try to find existing entry for this student and date
+      const existingEntry = await db
+        .select()
+        .from(periodTrackerEntries)
+        .where(
+          and(
+            eq(periodTrackerEntries.studentId, entry.studentId),
+            eq(periodTrackerEntries.entryDate, insertData.entryDate)
+          )
+        )
+        .limit(1);
+
+      if (existingEntry.length > 0) {
+        console.log(`[UPSERT] Found existing entry ${existingEntry[0].id}, updating...`);
+        // Update existing entry
+        const updateData = { ...insertData, updatedAt: new Date() };
+        delete updateData.id; // Remove id from update data
+        
+        const [updatedEntry] = await db
+          .update(periodTrackerEntries)
+          .set(updateData)
+          .where(eq(periodTrackerEntries.id, existingEntry[0].id))
+          .returning();
+        
+        console.log(`[UPSERT] Successfully updated entry ${updatedEntry.id}`);
+        return updatedEntry;
+      } else {
+        console.log(`[UPSERT] No existing entry found, creating new...`);
+        // Create new entry
+        const [newEntry] = await db.insert(periodTrackerEntries).values(insertData).returning();
+        console.log(`[UPSERT] Successfully created new entry ${newEntry.id}`);
+        return newEntry;
+      }
+    } catch (error: any) {
+      console.error(`[UPSERT] Error during upsert:`, error);
+      throw error;
+    }
+  }
+
+  async updatePeriodTrackerEntry(id: string, data: Partial<InsertPeriodTrackerEntry>): Promise<PeriodTrackerEntry | undefined> {
+    const updateData: any = { ...data, updatedAt: new Date() };
+
+    // Convert date to string format if needed
+    if (data.entryDate instanceof Date) {
+      updateData.entryDate = data.entryDate.toISOString().split('T')[0];
+    }
+    
+    // Convert referral date to string format if needed
+    if (data.referredDate && typeof data.referredDate !== 'string') {
+      updateData.referredDate = (data.referredDate as Date).toISOString().split('T')[0];
+    }
+
+    const [entry] = await db
+      .update(periodTrackerEntries)
+      .set(updateData)
+      .where(eq(periodTrackerEntries.id, id))
+      .returning();
+    
+    return entry;
+  }
+
+  async deletePeriodTrackerEntry(id: string): Promise<void> {
+    await db.delete(periodTrackerEntries).where(eq(periodTrackerEntries.id, id));
+  }
+
+  async analyzeMoodTrends(studentId: string, days: number = 30): Promise<any> {
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+    const startDateStr = startDate.toISOString().split('T')[0];
+
+    const entries = await db
+      .select()
+      .from(periodTrackerEntries)
+      .where(
+        and(
+          eq(periodTrackerEntries.studentId, studentId),
+          gte(periodTrackerEntries.entryDate, startDateStr)
+        )
+      )
+      .orderBy(desc(periodTrackerEntries.entryDate));
+
+    // Analyze mood frequency
+    const moodCounts: Record<string, number> = {};
+    const symptomCounts: Record<string, number> = {};
+    let totalPainIntensity = 0;
+    let painEntries = 0;
+    let avgTemperature = 0;
+    let tempEntries = 0;
+
+    entries.forEach(entry => {
+      // Count moods
+      if (entry.moods && Array.isArray(entry.moods)) {
+        (entry.moods as string[]).forEach(mood => {
+          moodCounts[mood] = (moodCounts[mood] || 0) + 1;
+        });
+      }
+
+      // Count symptoms
+      if (entry.symptoms && Array.isArray(entry.symptoms)) {
+        (entry.symptoms as string[]).forEach(symptom => {
+          symptomCounts[symptom] = (symptomCounts[symptom] || 0) + 1;
+        });
+      }
+
+      // Average pain intensity
+      if (entry.painIntensity !== null && entry.painIntensity !== undefined) {
+        totalPainIntensity += entry.painIntensity;
+        painEntries++;
+      }
+
+      // Average temperature
+      if (entry.bodyTemperatureCelsius) {
+        avgTemperature += parseFloat(entry.bodyTemperatureCelsius);
+        tempEntries++;
+      }
+    });
+
+    return {
+      period: `Last ${days} days`,
+      totalEntries: entries.length,
+      moodFrequency: Object.entries(moodCounts)
+        .map(([mood, count]) => ({ mood, count, percentage: ((count / entries.length) * 100).toFixed(1) }))
+        .sort((a, b) => b.count - a.count),
+      symptomFrequency: Object.entries(symptomCounts)
+        .map(([symptom, count]) => ({ symptom, count, percentage: ((count / entries.length) * 100).toFixed(1) }))
+        .sort((a, b) => b.count - a.count),
+      averagePainIntensity: painEntries > 0 ? (totalPainIntensity / painEntries).toFixed(1) : null,
+      averageTemperature: tempEntries > 0 ? (avgTemperature / tempEntries).toFixed(1) : null,
+      entries: entries.slice(0, 10), // Return last 10 entries for timeline
+    };
+  }
+
+  async predictNextCycle(studentId: string): Promise<any> {
+    // Get last 6 months of entries to analyze cycle patterns
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+    const startDateStr = sixMonthsAgo.toISOString().split('T')[0];
+
+    const entries = await db
+      .select()
+      .from(periodTrackerEntries)
+      .where(
+        and(
+          eq(periodTrackerEntries.studentId, studentId),
+          gte(periodTrackerEntries.entryDate, startDateStr)
+        )
+      )
+      .orderBy(periodTrackerEntries.entryDate);
+
+    // Convert to CycleEntry format for the prediction utility
+    const cycleEntries: CycleEntry[] = entries.map(entry => ({
+      date: new Date(entry.entryDate),
+      flowIntensity: entry.flowCategory as any,
+      moods: entry.moods,
+      symptoms: entry.symptoms,
+      painIntensity: entry.painIntensity,
+      bodyTemperature: entry.bodyTemperatureCelsius,
+    }));
+
+    // Use the reusable prediction utility
+    const result = predictMenstrualCycle(cycleEntries, {
+      dateField: 'date',
+      flowField: 'flowIntensity',
+      minPeriodsRequired: 2,
+      lookbackMonths: 6,
+      periodStartFlowLevels: ['medium', 'heavy'],
+      minDaysBetweenPeriods: 7,
+    });
+
+    // Return formatted response
+    if (!result.prediction) {
+      return {
+        prediction: null,
+        message: result.message || "Not enough data to predict cycle. Need at least 2 recorded periods.",
+        recordedPeriods: result.statistics.recordedPeriods,
+        warnings: result.warnings,
+      };
+    }
+
+    return {
+      prediction: {
+        nextPeriodDate: result.prediction.nextPeriodDate.toISOString().split('T')[0],
+        confidence: result.prediction.confidence,
+        averageCycleLength: result.prediction.averageCycleLength,
+        cycleRegularity: result.prediction.cycleRegularity,
+        standardDeviation: result.prediction.standardDeviation.toFixed(1),
+        dataSource: result.prediction.dataSource,
+      },
+      fertileWindow: result.fertileWindow ? {
+        start: result.fertileWindow.fertileWindowStart.toISOString().split('T')[0],
+        end: result.fertileWindow.fertileWindowEnd.toISOString().split('T')[0],
+        ovulationDate: result.fertileWindow.ovulationDate.toISOString().split('T')[0],
+        confidence: result.fertileWindow.confidence,
+      } : null,
+      historicalData: {
+        recordedPeriods: result.statistics.recordedPeriods,
+        cycleLengths: result.statistics.cycleLengths,
+        lastPeriodStart: result.statistics.lastPeriodStart?.toISOString().split('T')[0] || null,
+        averagePeriodDuration: result.statistics.averagePeriodDuration,
+        isRegular: result.statistics.isRegular,
+      },
+      warnings: result.warnings,
+    };
   }
 }
 

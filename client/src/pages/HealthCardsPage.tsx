@@ -123,7 +123,17 @@ export default function HealthCardsPage() {
         title: "Health card updated",
         description: "The health card has been updated successfully.",
       });
+      
+      // Automatic propagation: Invalidate all related queries across all views
       queryClient.invalidateQueries({ queryKey: ["/api/annual-cards"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/students"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/teacher/dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/headmaster/dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/po/dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/teacher/referral-tracking"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/teacher/class-health-summary"] });
+      
       setEditingCard(null);
     },
     onError: (error: any) => {
@@ -144,8 +154,16 @@ export default function HealthCardsPage() {
         title: "Health card approved",
         description: "The health card has been approved successfully.",
       });
+      
+      // Automatic propagation: Invalidate all related queries across all views
       queryClient.invalidateQueries({ queryKey: ["/api/annual-cards"] });
       queryClient.invalidateQueries({ queryKey: ["/api/students"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/teacher/dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/headmaster/dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/po/dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/teacher/referral-tracking"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/teacher/class-health-summary"] });
     },
     onError: (error: any) => {
       toast({
@@ -165,8 +183,17 @@ export default function HealthCardsPage() {
         title: "Health card rejected",
         description: "The health card has been rejected.",
       });
+      
+      // Automatic propagation: Invalidate all related queries across all views
       queryClient.invalidateQueries({ queryKey: ["/api/annual-cards"] });
       queryClient.invalidateQueries({ queryKey: ["/api/students"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/teacher/dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/headmaster/dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/po/dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/teacher/referral-tracking"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/teacher/class-health-summary"] });
+      
       setRejectingCard(null);
       setRejectionReason("");
     },

@@ -12,8 +12,8 @@ import { Bar } from "react-chartjs-2";
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 
 interface BarChartProps {
-  labels: string[];
-  datasets: {
+  labels?: string[];
+  datasets?: {
     label: string;
     data: number[];
     backgroundColor: string | string[];
@@ -28,9 +28,25 @@ interface BarChartProps {
 }
 
 export function BarChart({ labels, datasets, horizontal = false, renderLabelsOutside = false, externalLabels }: BarChartProps) {
+  // Provide default values to prevent runtime errors
+  const safeLabels = labels || [];
+  const safeDatasets = datasets || [];
+
+  // Show empty state if no data is provided
+  if (safeLabels.length === 0 || safeDatasets.length === 0) {
+    return (
+      <div className="h-[300px] w-full flex items-center justify-center text-muted-foreground">
+        <div className="text-center">
+          <p className="text-sm">No data available</p>
+          <p className="text-xs mt-1">Chart will appear when data is loaded</p>
+        </div>
+      </div>
+    );
+  }
+
   const data = {
-    labels,
-    datasets: datasets.map((ds) => ({
+    labels: safeLabels,
+    datasets: safeDatasets.map((ds) => ({
       ...ds,
       borderWidth: ds.borderWidth ?? 1,
       borderRadius: 4,
@@ -68,7 +84,7 @@ export function BarChart({ labels, datasets, horizontal = false, renderLabelsOut
   };
 
   // Automatically switch to horizontal layout when labels are very long or there are many categories
-  const useHorizontal = horizontal || labels.length > 6 || labels.some((l) => l.length > 28);
+  const useHorizontal = horizontal || safeLabels.length > 6 || safeLabels.some((l) => l.length > 28);
 
   // Measure the pixel width of the longest label (use canvas measureText) to set minimal left padding
   const measureTextWidth = (text: string) => {
@@ -89,9 +105,9 @@ export function BarChart({ labels, datasets, horizontal = false, renderLabelsOut
   const showExternalLabels = useHorizontal && renderLabelsOutside;
 
   // Determine which set of labels we will render externally (if enabled)
-  const displayLabels = showExternalLabels && externalLabels && externalLabels.length ? externalLabels : labels;
+  const displayLabels = showExternalLabels && externalLabels && externalLabels.length ? externalLabels : safeLabels;
 
-  const maxLabelWidthPx = (displayLabels || labels).reduce((max, l) => {
+  const maxLabelWidthPx = (displayLabels || safeLabels).reduce((max, l) => {
     const parts = formatLabel(String(l));
     // measure widest wrapped line
     const widest = Math.max(...parts.map((p: string) => measureTextWidth(String(p))));
@@ -141,7 +157,7 @@ export function BarChart({ labels, datasets, horizontal = false, renderLabelsOut
             if (!tooltipItems || !tooltipItems.length) return "";
             const ti = tooltipItems[0];
             const idx = ti.dataIndex ?? ti.data?.index ?? ti.index ?? 0;
-            return labels[idx] ?? ti.label ?? ti.dataset?.label ?? "";
+            return safeLabels[idx] ?? ti.label ?? ti.dataset?.label ?? "";
           },
           label: (tooltipItem: any) => {
             const value = tooltipItem.formattedValue ?? tooltipItem.parsed?.y ?? tooltipItem.parsed?.x ?? "";
@@ -189,7 +205,7 @@ export function BarChart({ labels, datasets, horizontal = false, renderLabelsOut
               // render full or wrapped labels on the Y axis (only when not using external labels)
               callback: !showExternalLabels
                 ? ( (tickValue: any, index: number) => {
-                    const raw = labels[index] ?? tickValue ?? "";
+                    const raw = safeLabels[index] ?? tickValue ?? "";
                     return formatLabelString(String(raw));
                   })
                 : undefined,
@@ -214,7 +230,7 @@ export function BarChart({ labels, datasets, horizontal = false, renderLabelsOut
               },
               // Return a string with newlines for multi-line rendering
               callback: (tickValue: any, index: number, ticks: any) => {
-                const raw = labels[index] ?? tickValue ?? "";
+                const raw = safeLabels[index] ?? tickValue ?? "";
                 return formatLabelString(String(raw));
               },
             },
@@ -233,10 +249,10 @@ export function BarChart({ labels, datasets, horizontal = false, renderLabelsOut
   };
 
   const leftColumnWidth = Math.min(520, Math.max(80, maxLabelWidthPx + 24));
-  const containerHeight = useHorizontal ? Math.max(260, labels.length * 36 + 80) : Math.max(480, Math.min(720, labels.length * 28));
+  const containerHeight = useHorizontal ? Math.max(260, safeLabels.length * 36 + 80) : Math.max(480, Math.min(720, safeLabels.length * 28));
 
   if (showExternalLabels) {
-    const toRender = externalLabels && externalLabels.length ? externalLabels : labels;
+    const toRender = externalLabels && externalLabels.length ? externalLabels : safeLabels;
     const fontSize = 10; // very small labels per request
     // compute an individual row height so each label lines up with its bar
     const contentAreaHeight = Math.max(160, containerHeight - 16); // conservative padding for top/bottom

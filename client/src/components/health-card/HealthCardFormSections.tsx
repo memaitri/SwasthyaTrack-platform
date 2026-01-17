@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
+import React, { useState } from "react";
 import { getBMIClassification, getBMIClassificationLabel } from "@/lib/bmiColors";
 import { DEFAULT_REFERRAL_FACILITIES, REFERRAL_FACILITIES, REFERRAL_FACILITY_OPTIONS } from "@/lib/referralFacilities";
 
@@ -26,6 +26,9 @@ export function HealthCardFormSections({
   const showAdolescentSection = studentAge >= 10;
   const isFemale = studentGender === "F";
   const canViewMenstrualHealth = userRole === "Lady Superintendent" || userRole === "Admin";
+  // Allow ClassTeacher to access menstrual health for female students aged 10+
+  const canAccessMenstrualTracking = isFemale && showAdolescentSection && 
+    (userRole === "ClassTeacher" || userRole === "Lady Superintendent" || userRole === "Admin");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Calculate BMI when weight or height changes
@@ -34,16 +37,20 @@ export function HealthCardFormSections({
   const calculatedBMI = weight && height ? (parseFloat(weight) / Math.pow(parseFloat(height) / 100, 2)).toFixed(2) : "";
   const calculatedBMIValue = calculatedBMI ? parseFloat(calculatedBMI) : null;
 
-  // Update BMI field when calculated
-  if (calculatedBMI && calculatedBMI !== form.getValues("bmi")) {
-    form.setValue("bmi", calculatedBMI);
-  }
+  // Use useEffect to update BMI field to prevent infinite re-renders
+  React.useEffect(() => {
+    if (calculatedBMI && calculatedBMI !== form.getValues("bmi")) {
+      form.setValue("bmi", calculatedBMI);
+    }
+  }, [calculatedBMI, form]);
 
   // Auto-calculate BMI category
   const bmiCategory = calculatedBMIValue ? getBMIClassification(calculatedBMIValue) : "";
-  if (bmiCategory && bmiCategory !== form.getValues("bmi_category")) {
-    form.setValue("bmi_category", bmiCategory);
-  }
+  React.useEffect(() => {
+    if (bmiCategory && bmiCategory !== form.getValues("bmi_category")) {
+      form.setValue("bmi_category", bmiCategory);
+    }
+  }, [bmiCategory, form]);
 
   // Calculate blood pressure category when blood pressure changes
   const bloodPressure = form.watch("bloodPressure");
@@ -62,9 +69,11 @@ export function HealthCardFormSections({
   };
 
   const bpCategory = bloodPressure ? calculateBPCategory(bloodPressure) : "";
-  if (bpCategory && bpCategory !== form.getValues("bpClassification")) {
-    form.setValue("bpClassification", bpCategory);
-  }
+  React.useEffect(() => {
+    if (bpCategory && bpCategory !== form.getValues("bpClassification")) {
+      form.setValue("bpClassification", bpCategory);
+    }
+  }, [bpCategory, form]);
 
   return (
     <div className="space-y-6">
@@ -2681,8 +2690,8 @@ export function HealthCardFormSections({
               />
             </div>
 
-            {/* E4: Female-only */}
-            {isFemale && (
+            {/* E4: Female-only - Menstruation started (Age 10+ restriction) */}
+            {canAccessMenstrualTracking && (
               <div className="space-y-3 border-l-4 border-pink-300 pl-4">
                 <FormField
                   control={form.control}
@@ -2694,7 +2703,7 @@ export function HealthCardFormSections({
                       </FormControl>
                       <div>
                         <FormLabel className="text-sm">
-                          E4: Menstruation started? (female only)
+                          E4: Menstruation started? (female students aged 10+ only)
                         </FormLabel>
                         <div className="mt-2 grid grid-cols-3 gap-2">
                           <FormField
@@ -2921,8 +2930,8 @@ export function HealthCardFormSections({
               />
             </div>
 
-            {/* E7: Female-only */}
-            {isFemale && (
+            {/* E7: Female-only - Severe menstrual pain (Age 10+ restriction) */}
+            {canAccessMenstrualTracking && (
               <div className="space-y-3 border-l-4 border-pink-300 pl-4">
                 <FormField
                   control={form.control}
@@ -2934,7 +2943,7 @@ export function HealthCardFormSections({
                       </FormControl>
                       <div>
                         <FormLabel className="text-sm">
-                          E7: Severe pain during menstruation interfering with activities (female only)
+                          E7: Severe pain during menstruation interfering with activities (female students aged 10+ only)
                         </FormLabel>
                         {field.value && (
                           <div className="mt-2 grid grid-cols-3 gap-2">
@@ -3003,11 +3012,18 @@ export function HealthCardFormSections({
             )}
 
             {/* Detailed Menstrual Cycle Tracking for Adolescent Females */}
-            {isFemale && showAdolescentSection && canViewMenstrualHealth && (
+            {canAccessMenstrualTracking && (
               <Card className="mt-6">
                 <CardHeader>
                   <CardTitle className="text-lg text-pink-700">Detailed Menstrual Cycle Tracking</CardTitle>
-                  <p className="text-sm text-gray-600">Comprehensive tracking for adolescent female health concerns</p>
+                  <p className="text-sm text-gray-600">
+                    Comprehensive tracking for female students aged 10+ years
+                    {!canViewMenstrualHealth && (
+                      <span className="block text-xs text-orange-600 mt-1">
+                        Note: Full menstrual health management is handled by Lady Superintendent
+                      </span>
+                    )}
+                  </p>
                 </CardHeader>
                 <CardContent className="space-y-6">
                   <div className="grid grid-cols-2 gap-4">

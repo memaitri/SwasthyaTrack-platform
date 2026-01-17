@@ -14,8 +14,8 @@ import { Line } from "react-chartjs-2";
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler);
 
 interface LineChartProps {
-  labels: string[];
-  datasets: {
+  labels?: string[];
+  datasets?: {
     label: string;
     data: number[];
     borderColor: string;
@@ -26,9 +26,25 @@ interface LineChartProps {
 }
 
 export function LineChart({ labels, datasets }: LineChartProps) {
+  // Provide default values to prevent runtime errors
+  const safeLabels = labels || [];
+  const safeDatasets = datasets || [];
+
+  // Show empty state if no data is provided
+  if (safeLabels.length === 0 || safeDatasets.length === 0) {
+    return (
+      <div className="h-[300px] w-full flex items-center justify-center text-muted-foreground">
+        <div className="text-center">
+          <p className="text-sm">No data available</p>
+          <p className="text-xs mt-1">Chart will appear when data is loaded</p>
+        </div>
+      </div>
+    );
+  }
+
   const data = {
-    labels,
-    datasets: datasets.map((ds) => ({
+    labels: safeLabels,
+    datasets: safeDatasets.map((ds) => ({
       ...ds,
       tension: ds.tension ?? 0.4,
       pointRadius: 4,

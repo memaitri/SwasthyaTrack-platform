@@ -18,6 +18,7 @@ import { exportToCSV } from "@/lib/csvExport";
 import { exportToPDF, exportToExcel } from "@/lib/exportService";
 import { useAuthenticatedFetch } from "@/lib/auth";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { SharedReports } from "@/components/reports/SharedReports";
 import {
   School,
   Users,
@@ -174,6 +175,47 @@ export default function PODashboard() {
     }
   };
 
+  // Unified report generation handler
+  const handleUnifiedReport = async (reportType: string, format: string = "excel") => {
+    try {
+      const params = new URLSearchParams();
+      params.append("type", reportType);
+      params.append("format", format);
+      params.append("month", selectedMonth);
+      params.append("year", selectedYear);
+
+      const response = await apiRequest("GET", `/api/reports/unified?${params}`);
+      
+      if (format === 'json') {
+        const data = await response.json();
+        console.log('Report data:', data);
+        // Could show in a modal or download as JSON
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${reportType}-report-${selectedYear}-${selectedMonth}.json`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      } else {
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${reportType}-report-${selectedYear}-${selectedMonth}.${format === "excel" ? "xlsx" : format}`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      }
+    } catch (error) {
+      console.error("Unified report generation failed:", error);
+      // You could add a toast notification here
+    }
+  };
+
   const { data: dashboardData, isLoading, refetch } = useQuery({
     queryKey: ["/api/po/dashboard", selectedMonth, selectedYear],
     queryFn: async () => {
@@ -273,13 +315,15 @@ export default function PODashboard() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-6">
+          <TabsList className="grid w-full grid-cols-8">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="referrals">Referrals</TabsTrigger>
             <TabsTrigger value="nutrition">Nutrition</TabsTrigger>
             <TabsTrigger value="diseases">Diseases</TabsTrigger>
             <TabsTrigger value="adolescent">Adolescent</TabsTrigger>
+            <TabsTrigger value="menstrual">Menstrual Health</TabsTrigger>
             <TabsTrigger value="reports">Reports</TabsTrigger>
+            <TabsTrigger value="shared">Shared Reports</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
@@ -1091,15 +1135,293 @@ export default function PODashboard() {
             </Card>
           </TabsContent>
 
+          <TabsContent value="menstrual" className="space-y-6">
+            {/* Menstrual Health Analytics */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <MetricCard
+                title="Eligible Students"
+                value={dashboardData?.menstrualHealthAnalytics?.totalEligibleStudents || 0}
+                icon={Users}
+                variant="default"
+                subtitle="Female, age 10+"
+              />
+              <MetricCard
+                title="Actively Tracked"
+                value={dashboardData?.menstrualHealthAnalytics?.totalTrackedStudents || 0}
+                icon={Activity}
+                variant="success"
+                subtitle="With period data"
+              />
+              <MetricCard
+                title="Late Menstruation"
+                value={dashboardData?.menstrualHealthAnalytics?.lateMenstruationCases?.length || 0}
+                icon={AlertCircle}
+                variant="warning"
+                subtitle="Needs attention"
+              />
+              <MetricCard
+                title="Referrals"
+                value={dashboardData?.menstrualHealthAnalytics?.referralAnalysis?.total || 0}
+                icon={Stethoscope}
+                variant="info"
+                subtitle="Menstrual health"
+              />
+            </div>
+
+            {/* Monthly Menstruation Trend */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <TrendingUp className="h-5 w-5" />
+                  Monthly Menstruation Tracking Trend
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {dashboardData?.menstrualHealthAnalytics?.monthlyTrend && (
+                  <ChartContainer title="Monthly Menstruation Tracking Trend">
+                    <LineChart
+                      labels={dashboardData.menstrualHealthAnalytics.monthlyTrend.map((item: any) => item.month)}
+                      datasets={[{
+                        label: "Students Tracked Per Month",
+                        data: dashboardData.menstrualHealthAnalytics.monthlyTrend.map((item: any) => item.count),
+                        borderColor: "#8b5cf6",
+                        backgroundColor: "#8b5cf6",
+                      }]}
+                    />
+                  </ChartContainer>
+                )}
+              </CardContent>
+            </Card>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Cycle Regularity Analysis */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <BarChartIcon className="h-5 w-5" />
+                    Cycle Regularity Analysis
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {dashboardData?.menstrualHealthAnalytics?.cycleRegularity && (
+                    <ChartContainer title="Cycle Regularity Distribution">
+                      <PieChart
+                        labels={['Regular', 'Irregular', 'Unknown']}
+                        data={[
+                          dashboardData.menstrualHealthAnalytics.cycleRegularity.regular,
+                          dashboardData.menstrualHealthAnalytics.cycleRegularity.irregular,
+                          dashboardData.menstrualHealthAnalytics.cycleRegularity.unknown
+                        ]}
+                        backgroundColor={['#10b981', '#f59e0b', '#6b7280']}
+                      />
+                    </ChartContainer>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Age-wise Irregularity Analysis */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Users className="h-5 w-5" />
+                    Age-wise Irregularity Rates
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {dashboardData?.menstrualHealthAnalytics?.ageWiseAnalysis && (
+                    <ChartContainer title="Age-wise Irregularity Rates">
+                      <BarChart
+                        labels={Object.keys(dashboardData.menstrualHealthAnalytics.ageWiseAnalysis.irregularityRates || {})}
+                        datasets={[{
+                          label: "Irregularity Rate (%)",
+                          data: Object.values(dashboardData.menstrualHealthAnalytics.ageWiseAnalysis.irregularityRates || {}).map(rate => parseFloat(rate as string)),
+                          backgroundColor: "#ef4444",
+                        }]}
+                      />
+                    </ChartContainer>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Common Symptoms Analysis */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Heart className="h-5 w-5" />
+                  Common Symptoms & Moods
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div>
+                    <h4 className="font-semibold mb-3">Most Common Symptoms</h4>
+                    {dashboardData?.menstrualHealthAnalytics?.symptomAnalysis?.symptoms?.slice(0, 5).map((symptom: any, index: number) => (
+                      <div key={index} className="flex justify-between items-center py-2 border-b">
+                        <span className="capitalize">{symptom.symptom.replace('_', ' ')}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm text-muted-foreground">{symptom.count} reports</span>
+                          <Badge variant="secondary">{symptom.percentage}%</Badge>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div>
+                    <h4 className="font-semibold mb-3">Most Common Moods</h4>
+                    {dashboardData?.menstrualHealthAnalytics?.symptomAnalysis?.moods?.slice(0, 5).map((mood: any, index: number) => (
+                      <div key={index} className="flex justify-between items-center py-2 border-b">
+                        <span className="capitalize">{mood.mood}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm text-muted-foreground">{mood.count} reports</span>
+                          <Badge variant="secondary">{mood.percentage}%</Badge>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Late Menstruation Cases */}
+            {dashboardData?.menstrualHealthAnalytics?.lateMenstruationCases && dashboardData.menstrualHealthAnalytics.lateMenstruationCases.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <AlertTriangle className="h-5 w-5 text-orange-500" />
+                    Late Menstruation Cases (Cycle &gt; 35 days or Missed Expected Date)
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <DataTable
+                    data={dashboardData.menstrualHealthAnalytics.lateMenstruationCases}
+                    getRowKey={(item: any) => item.studentId || item.studentName || Math.random().toString()}
+                    columns={[
+                      { key: 'studentName', header: 'Student Name' },
+                      { key: 'age', header: 'Age' },
+                      { key: 'school', header: 'School' },
+                      { key: 'lastMenstruationDate', header: 'Last Period' },
+                      { key: 'expectedDate', header: 'Expected Date' },
+                      { key: 'delayDays', header: 'Delay (Days)' },
+                      { 
+                        key: 'riskFlag', 
+                        header: 'Risk Level',
+                        render: (value) => (
+                          <StatusBadge 
+                            status={value === 'Needs Attention' ? 'Pending' : 'Approved'} 
+                            text={value} 
+                          />
+                        )
+                      }
+                    ]}
+                  />
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Referral Facilities Analysis */}
+            {dashboardData?.menstrualHealthAnalytics?.referralAnalysis?.byFacility && Object.keys(dashboardData.menstrualHealthAnalytics.referralAnalysis.byFacility).length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <MapPin className="h-5 w-5" />
+                    Menstrual Health Referrals by Facility
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ChartContainer title="Referrals by Healthcare Facility">
+                    <BarChart
+                      labels={Object.keys(dashboardData.menstrualHealthAnalytics.referralAnalysis.byFacility).map(facility => 
+                        facility.length > 20 ? facility.substring(0, 20) + '...' : facility
+                      )}
+                      datasets={[{
+                        label: "Referrals by Healthcare Facility",
+                        data: Object.values(dashboardData.menstrualHealthAnalytics.referralAnalysis.byFacility) as number[],
+                        backgroundColor: "#3b82f6",
+                      }]}
+                    />
+                  </ChartContainer>
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+
           <TabsContent value="reports" className="space-y-6">
-            {/* Exportable Reports */}
+            {/* Unified Report Generation */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <FileText className="h-5 w-5" />
-                  Exportable Reports for District, State & National Level
+                  Unified Report Generation
                 </CardTitle>
-                <p className="text-sm text-muted-foreground">PO can export comprehensive health reports</p>
+                <p className="text-sm text-muted-foreground">Generate comprehensive reports with menstrual health analytics</p>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <Button 
+                    variant="outline" 
+                    className="h-20 flex flex-col gap-2" 
+                    onClick={() => handleUnifiedReport("menstrual-health", "excel")}
+                  >
+                    <Heart className="h-6 w-6 text-pink-500" />
+                    <span className="text-sm">Menstrual Health Report</span>
+                    <span className="text-xs text-muted-foreground">Analytics & trends</span>
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    className="h-20 flex flex-col gap-2" 
+                    onClick={() => handleUnifiedReport("health-overview", "excel")}
+                  >
+                    <Stethoscope className="h-6 w-6 text-blue-500" />
+                    <span className="text-sm">Health Overview</span>
+                    <span className="text-xs text-muted-foreground">Complete health status</span>
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    className="h-20 flex flex-col gap-2" 
+                    onClick={() => handleUnifiedReport("referrals", "excel")}
+                  >
+                    <ExternalLink className="h-6 w-6 text-orange-500" />
+                    <span className="text-sm">Referrals Report</span>
+                    <span className="text-xs text-muted-foreground">All referral types</span>
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    className="h-20 flex flex-col gap-2" 
+                    onClick={() => handleUnifiedReport("student-demographics", "excel")}
+                  >
+                    <Users className="h-6 w-6 text-green-500" />
+                    <span className="text-sm">Student Demographics</span>
+                    <span className="text-xs text-muted-foreground">Population analysis</span>
+                  </Button>
+                </div>
+
+                <div className="mt-6 flex gap-4">
+                  <Select defaultValue="excel">
+                    <SelectTrigger className="w-32">
+                      <SelectValue placeholder="Format" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="excel">Excel</SelectItem>
+                      <SelectItem value="pdf">PDF</SelectItem>
+                      <SelectItem value="json">JSON</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button className="flex items-center gap-2" onClick={() => handleUnifiedReport("menstrual-health", "excel")}>
+                    <Download className="h-4 w-4" />
+                    Generate Report
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Legacy Exportable Reports */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="h-5 w-5" />
+                  Legacy Reports (District, State & National Level)
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">Traditional PO export functionality</p>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1177,6 +1499,10 @@ export default function PODashboard() {
                 </div>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="shared" className="space-y-6">
+            <SharedReports />
           </TabsContent>
         </Tabs>
       </div>

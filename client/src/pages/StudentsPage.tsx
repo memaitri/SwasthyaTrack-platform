@@ -9,9 +9,11 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAuth } from "@/lib/auth";
-import { UserPlus, Filter, Eye, FileHeart, Stethoscope } from "lucide-react";
+import { formatGenderDisplay, formatGenderWithIcon, getGenderBadgeVariant } from "@/lib/genderUtils";
+import { UserPlus, Filter, Eye, FileHeart, Stethoscope, CheckCircle } from "lucide-react";
 import { Link, useLocation } from "wouter";
-import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { exportToCSV } from "@/lib/csvExport";
 import { exportToPDF, exportToExcel } from "@/lib/exportService";
 import type { Student } from "@shared/schema";
@@ -19,6 +21,7 @@ import type { Student } from "@shared/schema";
 export default function StudentsPage() {
   const { user, hasRole } = useAuth();
   const [, setLocation] = useLocation();
+  const { toast } = useToast();
 
   // Redirect Admin users away from this page — Admins are not allowed to access the Students UI
   useEffect(() => {
@@ -53,6 +56,28 @@ export default function StudentsPage() {
   const totalItems = data?.totalItems || 0;
 
   const canAddStudent = hasRole("ClassTeacher", "Admin");
+
+  // Mutation for marking menstruation
+  const markMenstruationMutation = useMutation({
+    mutationFn: async (studentId: string) => {
+      const res = await apiRequest("POST", `/api/students/${studentId}/mark-menstruation`, {});
+      return res.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Success",
+        description: data.message || "Menstruation marked successfully",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/students"] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to mark menstruation",
+        variant: "destructive",
+      });
+    },
+  });
 
   return (
     <AppLayout title="Students">
@@ -139,11 +164,18 @@ export default function StudentsPage() {
               key: "gender",
               header: "Gender",
               className: "text-center",
-              render: (item: any) => (
-                <Badge variant="outline" className="no-default-hover-elevate no-default-active-elevate">
-                  {item.gender === "M" ? "Male" : item.gender === "F" ? "Female" : "Other"}
-                </Badge>
-              ),
+              render: (item: any) => {
+                const genderInfo = formatGenderWithIcon(item.gender);
+                return (
+                  <Badge 
+                    variant={getGenderBadgeVariant(item.gender)} 
+                    className="no-default-hover-elevate no-default-active-elevate"
+                  >
+                    <span className="mr-1">{genderInfo.icon}</span>
+                    {genderInfo.label}
+                  </Badge>
+                );
+              },
             },
             { key: "classSection", header: "Class" },
             { key: "fatherGuardianName", header: "Guardian" },
@@ -183,6 +215,29 @@ export default function StudentsPage() {
                       </Button>
                     </Link>
                   )}
+                  {/* Mark Menstruation Button - Only for Class Teachers, Female Students >= 10 years old */}
+                  {hasRole("ClassTeacher") && item.gender === "F" && !item.menstruationStartedAt && (() => {
+                    const age = item.dateOfBirth ? Math.floor((Date.now() - new Date(item.dateOfBirth).getTime()) / (1000 * 60 * 60 * 24 * 365.25)) : 0;
+                    return age >= 10;
+                  })() && (
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => markMenstruationMutation.mutate(item.id)}
+                      disabled={markMenstruationMutation.isPending}
+                      title="Mark first menstrual cycle"
+                      data-testid={`button-mark-menstruation-${item.id}`}
+                    >
+                      <CheckCircle className="h-4 w-4 mr-1" />
+                      Mark Cycle
+                    </Button>
+                  )}
+                  {/* Show marked status */}
+                  {item.menstruationStartedAt && (
+                    <Badge variant="secondary" className="text-xs">
+                      Cycle Marked
+                    </Badge>
+                  )}
                 </div>
               ),
             },
@@ -194,8 +249,12 @@ export default function StudentsPage() {
           onExport={async (type) => {
             const fmt = type || exportFormat;
             if (fmt === "csv") {
+              const studentsWithFormattedGender = students.map((student: any) => ({
+                ...student,
+                gender: formatGenderDisplay(student.gender)
+              }));
               exportToCSV(
-                students,
+                studentsWithFormattedGender,
                 [
                   { key: "fullName", header: "Full Name" },
                   { key: "uniqueId", header: "Unique ID" },

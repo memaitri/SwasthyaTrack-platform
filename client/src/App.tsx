@@ -21,6 +21,8 @@ import ApprovalsPage from "@/pages/ApprovalsPage";import PendingSchoolsPage from
 import MealLogsPage from "@/pages/MealLogsPage";
 import MealOptionsPage from "@/pages/MealOptionsPage";
 import HostelAttendancePage from "@/pages/HostelAttendancePage";
+
+import PeriodTrackerPage from "@/pages/PeriodTrackerPage";
 import ReportsPage from "@/pages/ReportsPage";
 import UsersPage from "@/pages/UsersPage";
 import SchoolsPage from "@/pages/SchoolsPage";
@@ -148,19 +150,19 @@ function Router() {
       </Route>
 
       <Route path="/health-cards">
-        <ProtectedRoute>
+        <ProtectedRoute allowedRoles={["Admin", "PO", "Headmaster", "ClassTeacher", "MedicalTeam", "HostelWarden", "MealSuperintendent"]}>
           <HealthCardsPage />
         </ProtectedRoute>
       </Route>
 
       <Route path="/health-cards/:id">
-        <ProtectedRoute>
+        <ProtectedRoute allowedRoles={["Admin", "PO", "Headmaster", "ClassTeacher", "MedicalTeam", "HostelWarden", "MealSuperintendent"]}>
           <HealthCardsPage />
         </ProtectedRoute>
       </Route>
 
       <Route path="/health-cards/view/:id">
-        <ProtectedRoute>
+        <ProtectedRoute allowedRoles={["Admin", "PO", "Headmaster", "ClassTeacher", "MedicalTeam", "HostelWarden", "MealSuperintendent"]}>
           <HealthCardsPage />
         </ProtectedRoute>
       </Route>
@@ -186,6 +188,14 @@ function Router() {
       <Route path="/meals">
         <ProtectedRoute allowedRoles={["Admin", "PO", "MedicalTeam", "HostelWarden", "MealSuperintendent"]}>
           <MealLogsPage />
+        </ProtectedRoute>
+      </Route>
+
+
+
+      <Route path="/period-tracker">
+        <ProtectedRoute allowedRoles={["Lady Superintendent", "Admin"]}>
+          <PeriodTrackerPage />
         </ProtectedRoute>
       </Route>
 
