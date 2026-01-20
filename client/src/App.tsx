@@ -28,7 +28,6 @@ import UsersPage from "@/pages/UsersPage";
 import SchoolsPage from "@/pages/SchoolsPage";
 import ProfilePage from "@/pages/ProfilePage";
 import POSchoolDetailPage from "@/pages/POSchoolDetailPage";
-import DataManagementPage from "@/pages/DataManagementPage";
 import DataQualityDashboard from "@/pages/DataQualityDashboard";
 import NotificationsPage from "@/pages/NotificationsPage";
 import type { Role } from "@shared/schema";
@@ -137,17 +136,6 @@ function Router() {
         </ProtectedRoute>
       </Route>
 
-      <Route path="/students/new">
-        <ProtectedRoute allowedRoles={["Admin", "ClassTeacher"]}>
-          <StudentFormPage />
-        </ProtectedRoute>
-      </Route>
-
-      <Route path="/students/:id">
-        <ProtectedRoute>
-          <StudentFormPage />
-        </ProtectedRoute>
-      </Route>
 
       <Route path="/health-cards">
         <ProtectedRoute allowedRoles={["Admin", "PO", "Headmaster", "ClassTeacher", "MedicalTeam", "HostelWarden", "MealSuperintendent"]}>
@@ -238,12 +226,6 @@ function Router() {
       <Route path="/reports">
         <ProtectedRoute>
           <ReportsPage />
-        </ProtectedRoute>
-      </Route>
-
-      <Route path="/data-management">
-        <ProtectedRoute allowedRoles={["Admin", "PO"]}>
-          <DataManagementPage />
         </ProtectedRoute>
       </Route>
 

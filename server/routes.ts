@@ -1,6 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
+import { reportsStorage } from "./reportsStorage.js";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { insertStudentSchema, insertSchoolSchema, insertAnnualHealthCardSchema, insertMonthlyCheckupSchema, insertMealLogSchema, loginSchema, registerSchema, roleEnum, hostelAttendance, annualHealthCards, users, schools, students, notifications, referrals, type Student } from "@shared/schema";
@@ -1194,6 +1195,101 @@ export async function registerRoutes(
     }
   });
 
+  // Get users that can be shared with (role-based filtering)
+  app.get("/api/users/shareable", authenticateToken, async (req: AuthRequest, res) => {
+    try {
+      const userRole = req.user!.role;
+      const userId = req.user!.id;
+      const user = await storage.getUser(userId);
+      
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      // Get all users with pagination
+      const { users, total } = await storage.getUsers(1, 100);
+      
+      // Filter users based on role-based sharing permissions
+      let shareableUsers = users.filter(u => u.id !== userId); // Exclude self
+      
+      switch (userRole) {
+        case 'PO':
+          // PO can share with other POs, Headmasters, and ClassTeachers in their district
+          shareableUsers = shareableUsers.filter(u => 
+            ['PO', 'Headmaster', 'ClassTeacher', 'MedicalTeam'].includes(u.role) &&
+            (u.district === user.district || !u.district)
+          );
+          break;
+          
+        case 'Headmaster':
+          // Headmaster can share with ClassTeachers, MedicalTeam in their school, and POs
+          shareableUsers = shareableUsers.filter(u => 
+            (u.role === 'ClassTeacher' && u.schoolId === user.schoolId) ||
+            (u.role === 'MedicalTeam' && u.schoolId === user.schoolId) ||
+            u.role === 'PO' ||
+            u.role === 'Headmaster'
+          );
+          break;
+          
+        case 'ClassTeacher':
+          // ClassTeacher can share with other ClassTeachers in same school, Headmaster, MedicalTeam, PO
+          shareableUsers = shareableUsers.filter(u => 
+            (u.role === 'ClassTeacher' && u.schoolId === user.schoolId) ||
+            (u.role === 'Headmaster' && u.schoolId === user.schoolId) ||
+            (u.role === 'MedicalTeam' && u.schoolId === user.schoolId) ||
+            u.role === 'PO'
+          );
+          break;
+          
+        case 'MedicalTeam':
+          // MedicalTeam can share with ClassTeachers, Headmaster in same school, and POs
+          shareableUsers = shareableUsers.filter(u => 
+            (u.role === 'ClassTeacher' && u.schoolId === user.schoolId) ||
+            (u.role === 'Headmaster' && u.schoolId === user.schoolId) ||
+            (u.role === 'MedicalTeam' && u.schoolId === user.schoolId) ||
+            u.role === 'PO'
+          );
+          break;
+          
+        case 'Lady Superintendent':
+        case 'HostelWarden':
+        case 'MealSuperintendent':
+          // These roles can share with ClassTeachers, Headmaster, MedicalTeam in same school, and POs
+          shareableUsers = shareableUsers.filter(u => 
+            (u.schoolId === user.schoolId && ['ClassTeacher', 'Headmaster', 'MedicalTeam'].includes(u.role)) ||
+            u.role === 'PO'
+          );
+          break;
+          
+        default:
+          // For other roles, limit to same school users
+          shareableUsers = shareableUsers.filter(u => u.schoolId === user.schoolId);
+      }
+      
+      // Add school names and remove passwords
+      const usersWithSchoolNames = await Promise.all(
+        shareableUsers.map(async (shareableUser) => {
+          let schoolName = null;
+          if (shareableUser.schoolId) {
+            const school = await storage.getSchool(shareableUser.schoolId);
+            schoolName = school?.name;
+          }
+          const { password: _, ...userWithoutPassword } = shareableUser;
+          return { ...userWithoutPassword, schoolName };
+        })
+      );
+      
+      res.json({
+        users: usersWithSchoolNames,
+        totalItems: usersWithSchoolNames.length,
+      });
+      
+    } catch (error: any) {
+      console.error("Get shareable users error:", error?.message || String(error));
+      res.status(500).json({ message: error?.message || "Failed to fetch users" });
+    }
+  });
+
   app.get("/api/users", authenticateToken, denyAdmin, authorizeRoles("Admin"), async (req: AuthRequest, res) => {
     try {
       const page = parseInt(req.query.page as string) || 1;
@@ -1566,7 +1662,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/schools/authenticated", authenticateToken, denyAdmin, authorizeRoles("PO"), async (req: AuthRequest, res) => {
+  app.post("/api/schools/authenticated", authenticateToken, denyAdmin, authorizeRoles(), async (req: AuthRequest, res) => {
     try {
       const data = insertSchoolSchema.parse(req.body);
       // Generate code if not provided
@@ -1703,7 +1799,7 @@ export async function registerRoutes(
     }
   });
 
-  app.put("/api/schools/:id", authenticateToken, denyAdmin, authorizeRoles("PO"), async (req: AuthRequest, res) => {
+  app.put("/api/schools/:id", authenticateToken, denyAdmin, authorizeRoles(), async (req: AuthRequest, res) => {
     try {
       const { id } = req.params;
       const school = await storage.updateSchool(id, req.body);
@@ -3156,7 +3252,7 @@ export async function registerRoutes(
   });
 
   // Update a meal entry
-  app.put("/api/meals/:id", authenticateToken, denyAdmin, authorizeRoles("ClassTeacher", "Headmaster", "PO", "MealSuperintendent"), async (req: AuthRequest, res) => {
+  app.put("/api/meals/:id", authenticateToken, denyAdmin, authorizeRoles("ClassTeacher", "Headmaster", "MealSuperintendent"), async (req: AuthRequest, res) => {
     try {
       const mealId = req.params.id;
       const { date: dateFromBody, mealType, menuItems, imageUrl, latitude, longitude, notes, studentId, classSection } = req.body;
@@ -3176,14 +3272,6 @@ export async function registerRoutes(
       } else if (role === "MealSuperintendent") {
         // Meal Superintendents can only manage meals for their assigned school
         if (req.user?.schoolId && req.user.schoolId !== existing.schoolId) return res.status(403).json({ message: "Insufficient permissions to update this meal" });
-      } else if (role === "PO") {
-        const user = await storage.getUser(req.user!.id);
-        const mealSchool = await storage.getSchool(existing.schoolId);
-        if (!user) return res.status(403).json({ message: "Insufficient permissions to update this meal" });
-        // PO may only access schools in their district or their explicitly assigned school
-        if (user.district && mealSchool && !sameDistrict(mealSchool.district, user.district)) {
-          return res.status(403).json({ message: "Insufficient permissions to update this meal" });
-        }
       }
 
       // Normalize mealType if provided
@@ -3222,7 +3310,7 @@ export async function registerRoutes(
   });
 
   // Delete a meal entry
-  app.delete("/api/meals/:id", authenticateToken, denyAdmin, authorizeRoles("ClassTeacher", "Headmaster", "PO", "MealSuperintendent"), async (req: AuthRequest, res) => {
+  app.delete("/api/meals/:id", authenticateToken, denyAdmin, authorizeRoles("ClassTeacher", "Headmaster", "MealSuperintendent"), async (req: AuthRequest, res) => {
     try {
       const mealId = req.params.id;
       const existing = await storage.getMealLog(mealId);
@@ -3238,13 +3326,6 @@ export async function registerRoutes(
         if (req.user?.schoolId && req.user.schoolId !== existing.schoolId) return res.status(403).json({ message: "Insufficient permissions to delete this meal" });
       } else if (role === "MealSuperintendent") {
         if (req.user?.schoolId && req.user.schoolId !== existing.schoolId) return res.status(403).json({ message: "Insufficient permissions to delete this meal" });
-      } else if (role === "PO") {
-        const user = await storage.getUser(req.user!.id);
-        const mealSchool = await storage.getSchool(existing.schoolId);
-        if (!user) return res.status(403).json({ message: "Insufficient permissions to delete this meal" });
-        if (user.district && mealSchool && !sameDistrict(mealSchool.district, user.district)) {
-          return res.status(403).json({ message: "Insufficient permissions to delete this meal" });
-        }
       }
 
       await storage.deleteMealLog(mealId);
@@ -3256,7 +3337,7 @@ export async function registerRoutes(
   });
 
   // Update referral status (ClassTeacher can update referrals for their class; HM/PO/Admin can update for their school)
-  app.patch("/api/referrals/:id", authenticateToken, authorizeRoles("ClassTeacher", "Headmaster", "PO", "Admin"), async (req: AuthRequest, res) => {
+  app.patch("/api/referrals/:id", authenticateToken, authorizeRoles("ClassTeacher", "Headmaster", "Admin"), async (req: AuthRequest, res) => {
     try {
       const referralId = req.params.id;
       const { status, completionDate, notes } = req.body;
@@ -4126,12 +4207,13 @@ async function getMenstrualHealthAnalytics(schools: any[], selectedMonth: number
 
   app.get("/api/po/dashboard", authenticateToken, authorizeRoles("PO", "Admin"), async (req: AuthRequest, res) => {
     try {
-      const { month, year } = req.query;
+      const { month, year, schoolType } = req.query;
       const selectedMonth = month ? parseInt(month as string) : new Date().getMonth() + 1;
       const selectedYear = year ? parseInt(year as string) : new Date().getFullYear();
+      const selectedSchoolType = schoolType as string | undefined;
 
       console.log('========== PO DASHBOARD REQUEST START ==========');
-      console.log('Request params:', { selectedMonth, selectedYear, userId: req.user!.id });
+      console.log('Request params:', { selectedMonth, selectedYear, selectedSchoolType, userId: req.user!.id });
 
       // Get PO's district to filter schools
       const user = await storage.getUser(req.user!.id);
@@ -4139,7 +4221,7 @@ async function getMenstrualHealthAnalytics(schools: any[], selectedMonth: number
 
       console.log('PO user district:', poDistrict);
 
-      // Filter schools by PO's district if PO (for Admin, show all schools)
+      // Filter schools by PO's district and optionally by school type
       let schools: any[] = [];
       if (req.user?.role === "Admin") {
         const result = await storage.getSchools(1, 1000);
@@ -4153,7 +4235,71 @@ async function getMenstrualHealthAnalytics(schools: any[], selectedMonth: number
         schools = [];
       }
 
+      // Apply school type filter if specified
+      if (selectedSchoolType && selectedSchoolType !== "all") {
+        schools = schools.filter(s => s.schoolType === selectedSchoolType);
+      }
+
+      // Separate schools by type for aggregated metrics
+      const governmentSchools = schools.filter(s => s.schoolType === "Government");
+      const aidedSchools = schools.filter(s => s.schoolType === "Aided");
+
       const metrics = await storage.getDashboardMetrics("PO", req.user!.id, undefined, undefined, poDistrict);
+
+      // Calculate aggregated metrics by school type
+      const calculateSchoolTypeMetrics = async (schoolList: any[], schoolTypeName: string) => {
+        let totalStudents = 0;
+        let totalHealthCards = 0;
+        let totalCheckups = 0;
+        let totalReferrals = 0;
+
+        const schoolsWithMetrics = await Promise.all(
+          schoolList.map(async (school) => {
+            const { students } = await storage.getStudents({ schoolId: school.id, limit: 1000 });
+            const { cards } = await storage.getAnnualHealthCards({ schoolId: school.id, status: "Approved", year: selectedYear, limit: 1000 });
+            const { checkups } = await storage.getMonthlyCheckups({ schoolId: school.id, month: selectedMonth, year: selectedYear });
+
+            totalStudents += students.length;
+            totalHealthCards += cards.length;
+            totalCheckups += checkups.length;
+
+            // Get referrals for this school
+            try {
+              const { referrals } = await storage.getReferrals({ schoolId: school.id, limit: 1000 });
+              totalReferrals += referrals.length;
+            } catch (error) {
+              console.warn(`Referrals not available for school ${school.id}:`, error);
+            }
+
+            return {
+              ...school,
+              studentCount: students.length,
+              healthCardCount: cards.length,
+              checkupCount: checkups.length,
+              healthCardCompletion: students.length > 0 ? Math.round((cards.length / students.length) * 100) : 0,
+              checkupCoverage: students.length > 0 ? Math.round((checkups.length / students.length) * 100) : 0,
+            };
+          })
+        );
+
+        return {
+          schoolType: schoolTypeName,
+          schoolCount: schoolList.length,
+          totalStudents,
+          totalHealthCards,
+          totalCheckups,
+          totalReferrals,
+          healthCardCompletion: totalStudents > 0 ? Math.round((totalHealthCards / totalStudents) * 100) : 0,
+          checkupCoverage: totalStudents > 0 ? Math.round((totalCheckups / totalStudents) * 100) : 0,
+          referralRate: totalStudents > 0 ? Math.round((totalReferrals / totalStudents) * 100) : 0,
+          schools: schoolsWithMetrics,
+        };
+      };
+
+      // Calculate metrics for each school type
+      const governmentMetrics = await calculateSchoolTypeMetrics(governmentSchools, "Government");
+      const aidedMetrics = await calculateSchoolTypeMetrics(aidedSchools, "Aided");
+      const overallMetrics = await calculateSchoolTypeMetrics(schools, "Overall");
 
       // Calculate basic district KPIs from real data
       let totalStudents = 0;
@@ -4315,6 +4461,12 @@ async function getMenstrualHealthAnalytics(schools: any[], selectedMonth: number
           goitrePercent: totalCards > 0 ? Math.round((goitre / totalCards) * 100) : 0,
           tbSuspicionPercent: totalCards > 0 ? Math.round((tbSuspected / totalCards) * 100) : 0,
           leprosySuspicionPercent: totalCards > 0 ? Math.round((leprosySuspected / totalCards) * 100) : 0,
+        },
+        // Add school type breakdown
+        schoolTypeBreakdown: {
+          government: governmentMetrics,
+          aided: aidedMetrics,
+          overall: overallMetrics,
         }
       };
 
@@ -5955,100 +6107,256 @@ async function generatePDFReport(reportData: any, reportType: string, userRole: 
     }
   });
 
-  // Get shared reports for current user
+  // Get shared reports for current user (Phase-1: Role-based access only)
   app.get("/api/reports/shared", authenticateToken, async (req: AuthRequest, res) => {
     try {
       const userId = req.user!.id;
+      const userRole = req.user!.role;
       
-      // Get notifications that contain shared reports for this user
-      const sharedReports = await db
-        .select()
-        .from(notifications)
-        .where(
-          and(
-            eq(notifications.type, 'system'),
-            sql`${notifications.title} LIKE 'New Shared Report:%'`,
-            sql`${notifications.metadata}->>'reportId' IS NOT NULL`
-          )
-        )
-        .orderBy(desc(notifications.createdAt))
-        .limit(50);
+      // Get reports based ONLY on user's role (ignore shared_reports table for Phase-1)
+      const roleBasedReports = await reportsStorage.getReportsForRole(userRole, userId);
       
-      // Filter reports shared with this user and parse metadata
-      const userReports = sharedReports
-        .filter(notification => {
-          try {
-            const metadata = notification.metadata as any;
-            return metadata && metadata.reportId;
-          } catch {
-            return false;
-          }
-        })
-        .map(notification => {
-          const metadata = notification.metadata as any;
-          return {
-            id: metadata.reportId,
-            reportType: metadata.reportType,
-            sharedBy: metadata.sharedBy,
-            sharedAt: metadata.sharedAt,
-            title: notification.title,
-            message: notification.message,
-            isRead: notification.isRead,
-            createdAt: notification.createdAt
-          };
-        });
+      // Format response for frontend
+      const formattedReports = roleBasedReports.map(report => ({
+        id: report.id,
+        reportId: report.reportId, // Actual report ID for viewing/downloading
+        reportType: report.reportCategory,
+        reportFormat: report.reportType,
+        sharedBy: 'System', // Phase-1: All reports are "system" reports
+        sharedAt: report.createdAt?.toISOString() || new Date().toISOString(),
+        title: `${report.reportCategory} Report`,
+        message: 'Role-based access enabled (Phase-1)',
+        isRead: false,
+        createdAt: report.createdAt,
+        fileName: report.fileName,
+        fileSize: report.fileSize,
+        expiresAt: report.expiresAt
+      }));
       
-      res.json({ reports: userReports });
+      res.json({ reports: formattedReports });
       
     } catch (error: any) {
-      console.error('Get shared reports error:', error);
-      res.status(500).json({ message: error?.message || 'Failed to get shared reports' });
+      console.error('Get role-based reports error:', error);
+      res.status(500).json({ message: error?.message || 'Failed to get reports' });
     }
   });
 
-  // Access shared report data
+  // View shared report (opens in new tab)
+  app.get("/api/reports/view/:reportId", authenticateToken, async (req: AuthRequest, res) => {
+    try {
+      const { reportId } = req.params;
+      const userId = req.user!.id;
+      const userRole = req.user!.role;
+      
+      // Check if user has access to this report
+      const hasAccess = await reportsStorage.hasAccessToReport(reportId, userRole, userId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied to this report' });
+      }
+      
+      // Get the report file
+      const reportFile = await reportsStorage.getReportFile(reportId);
+      if (!reportFile) {
+        return res.status(404).json({ message: 'Report file not found' });
+      }
+      
+      // Get report metadata
+      const report = await reportsStorage.getReport(reportId);
+      if (!report) {
+        return res.status(404).json({ message: 'Report not found' });
+      }
+      
+      // Set appropriate headers for inline viewing
+      const contentType = report.reportType === 'PDF' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Disposition', `inline; filename="${report.fileName}"`);
+      res.setHeader('Content-Length', reportFile.length);
+      
+      // Stream the file
+      res.send(reportFile);
+      
+    } catch (error: any) {
+      console.error('View report error:', error);
+      res.status(500).json({ message: error?.message || 'Failed to view report' });
+    }
+  });
+
+  // Download shared report
+  app.get("/api/reports/download/:reportId", authenticateToken, async (req: AuthRequest, res) => {
+    try {
+      const { reportId } = req.params;
+      const userId = req.user!.id;
+      const userRole = req.user!.role;
+      
+      // Check if user has access to this report
+      const hasAccess = await reportsStorage.hasAccessToReport(reportId, userRole, userId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied to this report' });
+      }
+      
+      // Get the report file
+      const reportFile = await reportsStorage.getReportFile(reportId);
+      if (!reportFile) {
+        return res.status(404).json({ message: 'Report file not found' });
+      }
+      
+      // Get report metadata
+      const report = await reportsStorage.getReport(reportId);
+      if (!report) {
+        return res.status(404).json({ message: 'Report not found' });
+      }
+      
+      // Set appropriate headers for download
+      const contentType = report.reportType === 'PDF' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Disposition', `attachment; filename="${report.fileName}"`);
+      res.setHeader('Content-Length', reportFile.length);
+      
+      // Stream the file
+      res.send(reportFile);
+      
+    } catch (error: any) {
+      console.error('Download report error:', error);
+      res.status(500).json({ message: error?.message || 'Failed to download report' });
+    }
+  });
+
+  // Serve test HTML file (for development only)
+  app.get("/test-reports", (req, res) => {
+    res.sendFile(path.join(process.cwd(), 'test_reports.html'));
+  });
+
+  // Test endpoint to create sample reports for demo (Phase-1)
+  app.post("/api/reports/test", authenticateToken, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user!.id;
+      const userRole = req.user!.role;
+      
+      // Create multiple sample reports for different categories
+      const reportCategories = ['monthly-checkup', 'annual-health', 'meal-tracking'];
+      const createdReports = [];
+      
+      for (const category of reportCategories) {
+        const sampleReportData = {
+          reportId: `${category}-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+          reportType: Math.random() > 0.5 ? 'PDF' as const : 'EXCEL' as const,
+          reportCategory: category,
+          roleAllowed: userRole as any,
+          filePath: '',
+          fileName: '',
+          generatedBy: userId,
+          generatedFor: req.user!.schoolId || 'demo-school',
+          metadata: { 
+            testData: true, 
+            generatedAt: new Date().toISOString(),
+            userRole,
+            userId,
+            category
+          },
+        };
+        
+        const sampleFileBuffer = Buffer.from(`Sample ${category} report for ${userRole} generated at ${new Date().toISOString()}\n\nThis is a demo report file with sample content.`);
+        
+        const storedReport = await reportsStorage.storeReport(sampleReportData, sampleFileBuffer);
+        createdReports.push(storedReport);
+      }
+      
+      res.json({
+        success: true,
+        message: `Created ${createdReports.length} test reports for role: ${userRole}`,
+        reports: createdReports.map(r => ({
+          reportId: r.reportId,
+          fileName: r.fileName,
+          category: r.reportCategory,
+          type: r.reportType
+        }))
+      });
+      
+    } catch (error: any) {
+      console.error('Test report creation error:', error);
+      res.status(500).json({ message: error?.message || 'Failed to create test reports' });
+    }
+  });
+
+  // Share a report with other users
+  app.post("/api/reports/share", authenticateToken, async (req: AuthRequest, res) => {
+    try {
+      const { reportType, reportData, sharedWith, message, expiresAt } = req.body;
+      const sharedBy = req.user!.id;
+      
+      // Validate shared users exist and have appropriate roles
+      const sharedUsers = await Promise.all(
+        sharedWith.map(async (userId: string) => {
+          const user = await storage.getUser(userId);
+          if (!user) throw new Error(`User ${userId} not found`);
+          return user;
+        })
+      );
+      
+      // Generate a report first (this is a simplified version - in production you'd generate the actual report)
+      const reportBuffer = Buffer.from(`Mock ${reportType} report data: ${JSON.stringify(reportData)}`);
+      
+      // Store the report
+      const storedReport = await reportsStorage.storeReport({
+        reportId: `report_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        reportType: 'PDF', // Default to PDF for now
+        reportCategory: reportType,
+        roleAllowed: req.user!.role as any,
+        filePath: '', // Will be set by storeReport
+        fileName: '', // Will be set by storeReport
+        generatedBy: sharedBy,
+        generatedFor: reportData.schoolId || reportData.studentId || null,
+        metadata: reportData,
+      }, reportBuffer);
+      
+      // Share the report
+      const sharedReport = await reportsStorage.shareReport({
+        reportId: storedReport.id,
+        sharedBy,
+        sharedWith,
+        message: message || '',
+        expiresAt: expiresAt ? new Date(expiresAt) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days default
+      });
+      
+      res.json({ 
+        success: true, 
+        sharedReportId: sharedReport.id,
+        reportId: storedReport.reportId,
+        message: `Report shared with ${sharedUsers.length} user(s)` 
+      });
+      
+    } catch (error: any) {
+      console.error('Report sharing error:', error);
+      res.status(500).json({ message: error?.message || 'Failed to share report' });
+    }
+  });
+
+  // Access shared report data (for the old endpoint compatibility)
   app.get("/api/reports/shared/:reportId", authenticateToken, async (req: AuthRequest, res) => {
     try {
       const { reportId } = req.params;
       const userId = req.user!.id;
       
-      // Find the shared report notification
-      const sharedReport = await db
-        .select()
-        .from(notifications)
-        .where(
-          and(
-            eq(notifications.type, 'system'),
-            sql`${notifications.metadata}->>'reportId' = ${reportId}`
-          )
-        )
-        .limit(1);
-      
-      if (sharedReport.length === 0) {
-        return res.status(404).json({ message: 'Shared report not found' });
+      // Get the shared report
+      const sharedReport = await reportsStorage.getSharedReport(reportId, userId);
+      if (!sharedReport) {
+        return res.status(404).json({ message: 'Shared report not found or access denied' });
       }
       
-      const notification = sharedReport[0];
-      const metadata = notification.metadata as any;
-      
-      // Check if user has access (simplified - in production, check sharedWith array)
-      // For now, allow access if user received the notification
-      
-      // Mark as read
-      await db
-        .update(notifications)
-        .set({ isRead: true, readAt: new Date() })
-        .where(eq(notifications.id, notification.id));
-      
-      // Return report data (would need to fetch from original storage in production)
+      // Return report metadata
       res.json({
-        reportId: metadata.reportId,
-        reportType: metadata.reportType,
-        sharedBy: metadata.sharedBy,
-        sharedAt: metadata.sharedAt,
-        message: notification.message,
-        // In production, fetch actual report data from storage
-        reportData: { message: 'Report data would be loaded here' }
+        reportId: sharedReport.report.reportId,
+        reportType: sharedReport.report.reportCategory,
+        reportFormat: sharedReport.report.reportType,
+        sharedBy: 'User', // We'd need to join with users table to get the name
+        sharedAt: sharedReport.createdAt?.toISOString() || new Date().toISOString(),
+        message: sharedReport.message,
+        fileName: sharedReport.report.fileName,
+        fileSize: sharedReport.report.fileSize,
+        viewUrl: `/api/reports/view/${sharedReport.report.reportId}`,
+        downloadUrl: `/api/reports/download/${sharedReport.report.reportId}`,
       });
       
     } catch (error: any) {

@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAuth } from "@/lib/auth";
 import { formatGenderDisplay, formatGenderWithIcon, getGenderBadgeVariant } from "@/lib/genderUtils";
-import { UserPlus, Filter, Eye, FileHeart, Stethoscope, CheckCircle } from "lucide-react";
+import { UserPlus, Filter, FileHeart, Stethoscope, CheckCircle } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -85,18 +85,8 @@ export default function StudentsPage() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <h2 className="text-2xl font-bold text-foreground">Student Registry</h2>
-            <p className="text-muted-foreground">
-              {hasRole("ClassTeacher") ? "Manage your class students" : "View all registered students"}
-            </p>
+            <p className="text-muted-foreground">View all registered students</p>
           </div>
-          {canAddStudent && (
-            <Link href="/students/new">
-              <Button data-testid="button-add-student">
-                <UserPlus className="h-4 w-4 mr-2" />
-                Add Student
-              </Button>
-            </Link>
-          )}
         </div>
 
         <div className="flex flex-col sm:flex-row gap-4">
@@ -198,11 +188,6 @@ export default function StudentsPage() {
               header: "",
               render: (item: any) => (
                 <div className="flex items-center gap-1">
-                  <Link href={`/students/${item.id}`}>
-                    <Button variant="ghost" size="icon" data-testid={`button-view-${item.id}`}>
-                      <Eye className="h-4 w-4" />
-                    </Button>
-                  </Link>
                   <Link href={`/health-cards/view/${item.id}`}>
                     <Button variant="ghost" size="icon" data-testid={`button-health-${item.id}`}>
                       <FileHeart className="h-4 w-4" />

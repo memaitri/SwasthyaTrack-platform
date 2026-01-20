@@ -98,6 +98,7 @@ export default function PODashboard() {
    const [selectedMonth, setSelectedMonth] = useState(String(new Date().getMonth() + 1));
    const [selectedYear, setSelectedYear] = useState(String(new Date().getFullYear()));
    const [activeTab, setActiveTab] = useState("overview");
+   const [schoolTypeFilter, setSchoolTypeFilter] = useState("all"); // School type filter: all, Government, Aided
    const [, setLocation] = useLocation();
 
    // Export function for PO dashboard
@@ -217,11 +218,14 @@ export default function PODashboard() {
   };
 
   const { data: dashboardData, isLoading, refetch } = useQuery({
-    queryKey: ["/api/po/dashboard", selectedMonth, selectedYear],
+    queryKey: ["/api/po/dashboard", selectedMonth, selectedYear, schoolTypeFilter],
     queryFn: async () => {
       const params = new URLSearchParams();
       params.append("month", selectedMonth);
       params.append("year", selectedYear);
+      if (schoolTypeFilter !== "all") {
+        params.append("schoolType", schoolTypeFilter);
+      }
       const res = await apiRequest("GET", `/api/po/dashboard?${params}`);
       return res.json();
     },
@@ -283,10 +287,20 @@ export default function PODashboard() {
         {/* Header with filters */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h2 className="text-2xl font-bold text-foreground">District Health Intelligence</h2>
-            <p className="text-muted-foreground">Program Officer Dashboard - SwasthyaTrack</p>
+            <h2 className="text-2xl font-bold text-foreground">District Health Intelligence - Summary View</h2>
+            <p className="text-muted-foreground">Program Officer Dashboard - SwasthyaTrack (Read-Only)</p>
           </div>
           <div className="flex items-center gap-2">
+            <Select value={schoolTypeFilter} onValueChange={setSchoolTypeFilter}>
+              <SelectTrigger className="w-40" data-testid="filter-school-type">
+                <SelectValue placeholder="School Type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Schools</SelectItem>
+                <SelectItem value="Government">Government</SelectItem>
+                <SelectItem value="Aided">Aided</SelectItem>
+              </SelectContent>
+            </Select>
             <Select value={selectedMonth} onValueChange={setSelectedMonth}>
               <SelectTrigger className="w-36" data-testid="filter-month">
                 <SelectValue placeholder="Month" />
@@ -428,6 +442,109 @@ export default function PODashboard() {
                     <div className="text-2xl font-bold text-green-700 dark:text-green-400">{leprosySuspectedPercent}%</div>
                     <div className="text-sm text-green-600 dark:text-green-500">Leprosy Suspected</div>
                   </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* 🏫 School Type Breakdown - Summary Only */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <School className="h-5 w-5" />
+                  School Type Breakdown - Aggregated Summary
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Comparative analysis between Government and Aided schools (No individual school data access)
+                </p>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* Government Schools Summary */}
+                  <div className="p-6 border rounded-lg bg-blue-50 dark:bg-blue-950/20">
+                    <h3 className="text-lg font-semibold text-blue-700 dark:text-blue-400 mb-4">
+                      Government Schools Summary
+                    </h3>
+                    <div className="space-y-3">
+                      <div className="flex justify-between">
+                        <span>Total Schools:</span>
+                        <span className="font-medium">{districtKPIs.schoolTypeBreakdown?.government?.schoolCount || 0}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Total Students:</span>
+                        <span className="font-medium">{districtKPIs.schoolTypeBreakdown?.government?.totalStudents || 0}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Health Card Completion:</span>
+                        <span className="font-medium">{districtKPIs.schoolTypeBreakdown?.government?.healthCardCompletion || 0}%</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Checkup Coverage:</span>
+                        <span className="font-medium">{districtKPIs.schoolTypeBreakdown?.government?.checkupCoverage || 0}%</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Referral Rate:</span>
+                        <span className="font-medium">{districtKPIs.schoolTypeBreakdown?.government?.referralRate || 0}%</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Aided Schools Summary */}
+                  <div className="p-6 border rounded-lg bg-green-50 dark:bg-green-950/20">
+                    <h3 className="text-lg font-semibold text-green-700 dark:text-green-400 mb-4">
+                      Aided Schools Summary
+                    </h3>
+                    <div className="space-y-3">
+                      <div className="flex justify-between">
+                        <span>Total Schools:</span>
+                        <span className="font-medium">{districtKPIs.schoolTypeBreakdown?.aided?.schoolCount || 0}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Total Students:</span>
+                        <span className="font-medium">{districtKPIs.schoolTypeBreakdown?.aided?.totalStudents || 0}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Health Card Completion:</span>
+                        <span className="font-medium">{districtKPIs.schoolTypeBreakdown?.aided?.healthCardCompletion || 0}%</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Checkup Coverage:</span>
+                        <span className="font-medium">{districtKPIs.schoolTypeBreakdown?.aided?.checkupCoverage || 0}%</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Referral Rate:</span>
+                        <span className="font-medium">{districtKPIs.schoolTypeBreakdown?.aided?.referralRate || 0}%</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Comparative Chart */}
+                <div className="mt-6">
+                  <ChartContainer title="Government vs Aided Schools - Key Metrics Comparison" isLoading={isLoading}>
+                    <BarChart
+                      labels={["Health Card Completion %", "Checkup Coverage %", "Referral Rate %"]}
+                      datasets={[
+                        {
+                          label: "Government Schools",
+                          data: [
+                            districtKPIs.schoolTypeBreakdown?.government?.healthCardCompletion || 0,
+                            districtKPIs.schoolTypeBreakdown?.government?.checkupCoverage || 0,
+                            districtKPIs.schoolTypeBreakdown?.government?.referralRate || 0
+                          ],
+                          backgroundColor: "hsl(210, 70%, 50%)",
+                        },
+                        {
+                          label: "Aided Schools",
+                          data: [
+                            districtKPIs.schoolTypeBreakdown?.aided?.healthCardCompletion || 0,
+                            districtKPIs.schoolTypeBreakdown?.aided?.checkupCoverage || 0,
+                            districtKPIs.schoolTypeBreakdown?.aided?.referralRate || 0
+                          ],
+                          backgroundColor: "hsl(142, 76%, 36%)",
+                        }
+                      ]}
+                    />
+                  </ChartContainer>
                 </div>
               </CardContent>
             </Card>
@@ -579,6 +696,21 @@ export default function PODashboard() {
           </TabsContent>
 
           <TabsContent value="referrals" className="space-y-6">
+            {/* Summary Notice */}
+            <Card className="border-blue-200 bg-blue-50 dark:bg-blue-950/20">
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-3">
+                  <Shield className="h-6 w-6 text-blue-500" />
+                  <div>
+                    <h3 className="text-lg font-semibold text-blue-700 dark:text-blue-400">Summary View Only</h3>
+                    <p className="text-blue-600 dark:text-blue-300">
+                      PO access is limited to aggregated referral statistics. Individual school data is not accessible.
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
             {/* Referral Management Dashboard */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <MetricCard
@@ -607,8 +739,8 @@ export default function PODashboard() {
               />
             </div>
 
-            {/* Facility Load */}
-            <ChartContainer title="Facility-wise Referral Load" isLoading={isLoading}>
+            {/* Facility Load - Summary Only */}
+            <ChartContainer title="Facility-wise Referral Load (Aggregated)" isLoading={isLoading}>
               <BarChart
                 labels={referralManagement.facilityWiseLoad?.map((f: FacilityLoad) => f.facility) || []}
                 datasets={[{
@@ -623,33 +755,8 @@ export default function PODashboard() {
               />
             </ChartContainer>
 
-
-
-            {/* Most Referred Schools */}
-            <DataTable
-              title="Most Referred Schools"
-              columns={[
-                { key: "schoolName", header: "School Name" },
-                { key: "referralCount", header: "Total Referrals" },
-              ]}
-              data={referralManagement.mostReferredSchools || []}
-              getRowKey={(item: any) => item.schoolId}
-              exportable
-              onExport={(type) => {
-                if (type === 'pdf') return exportToPDF(referralManagement.mostReferredSchools || [], {}, 'PO');
-                if (type === 'xlsx') return exportToExcel(referralManagement.mostReferredSchools || [], {}, 'PO');
-                // csv
-                const exportData = (referralManagement.mostReferredSchools || []).map((s: any) => ({
-                  'School Name': s.schoolName,
-                  'Total Referrals': s.referralCount,
-                }));
-                exportToCSV(exportData, [{ key: 'School Name', header: 'School Name' }, { key: 'Total Referrals', header: 'Total Referrals' }], `most-referred-schools-${new Date().toISOString().split('T')[0]}.csv`);
-              }}
-              isLoading={isLoading}
-            />
-
-            {/* Most Referred Issues */}
-            <ChartContainer title="Most Referred Health Issues" isLoading={isLoading}>
+            {/* Most Referred Issues - Summary Only */}
+            <ChartContainer title="Most Referred Health Issues (District Summary)" isLoading={isLoading}>
               {(() => {
               // Create concise external labels to avoid very long, detailed text in the chart area
               const conciseLabel = (s?: string) => {
@@ -687,9 +794,62 @@ export default function PODashboard() {
               );
             })()}
             </ChartContainer>
+
+            {/* School Type Referral Comparison */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Referral Patterns by School Type</CardTitle>
+                <p className="text-sm text-muted-foreground">Comparative referral statistics (No individual school access)</p>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="p-4 border rounded-lg">
+                    <h4 className="font-medium text-blue-700 dark:text-blue-400 mb-3">Government Schools</h4>
+                    <div className="space-y-2">
+                      <div className="flex justify-between">
+                        <span>Total Referrals:</span>
+                        <span className="font-medium">{districtKPIs.schoolTypeBreakdown?.government?.totalReferrals || 0}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Referral Rate:</span>
+                        <span className="font-medium">{districtKPIs.schoolTypeBreakdown?.government?.referralRate || 0}%</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="p-4 border rounded-lg">
+                    <h4 className="font-medium text-green-700 dark:text-green-400 mb-3">Aided Schools</h4>
+                    <div className="space-y-2">
+                      <div className="flex justify-between">
+                        <span>Total Referrals:</span>
+                        <span className="font-medium">{districtKPIs.schoolTypeBreakdown?.aided?.totalReferrals || 0}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Referral Rate:</span>
+                        <span className="font-medium">{districtKPIs.schoolTypeBreakdown?.aided?.referralRate || 0}%</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="nutrition" className="space-y-6">
+            {/* Summary Notice */}
+            <Card className="border-blue-200 bg-blue-50 dark:bg-blue-950/20">
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-3">
+                  <Shield className="h-6 w-6 text-blue-500" />
+                  <div>
+                    <h3 className="text-lg font-semibold text-blue-700 dark:text-blue-400">Nutrition Summary View</h3>
+                    <p className="text-blue-600 dark:text-blue-300">
+                      Aggregated nutrition data across the district. Individual school nutrition data is not accessible.
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
             {/* Anthropometry Analytics */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <ChartContainer title="BMI Distribution Across District" isLoading={isLoading}>
@@ -752,55 +912,57 @@ export default function PODashboard() {
               />
             </ChartContainer>
 
-            {/* School-wise Nutrition Risk Ranking */}
-            <DataTable
-              title="School-wise Nutrition Risk Ranking"
-              columns={[
-                { key: "schoolName", header: "School Name" },
-                { key: "underweightCount", header: "Underweight Cases" },
-                { key: "obeseCount", header: "Obese Cases" },
-                { key: "riskScore", header: "Risk Score %" },
-                {
-                  key: "riskLevel",
-                  header: "Risk Level",
-                  render: (item: any) => (
-                    <Badge variant={
-                      item.riskScore > 25 ? "destructive" :
-                      item.riskScore > 15 ? "secondary" : "default"
-                    }>
-                      {item.riskScore > 25 ? "High" :
-                       item.riskScore > 15 ? "Medium" : "Low"}
-                    </Badge>
-                  )
-                },
-              ]}
-              data={anthropometryAnalytics.schoolNutritionRanking || []}
-              getRowKey={(item: any) => item.schoolId}
-              isLoading={isLoading}
-              exportable
-              onExport={(type) => {
-                if (type === 'pdf') return exportToPDF(anthropometryAnalytics.schoolNutritionRanking || [], {}, 'PO');
-                if (type === 'xlsx') return exportToExcel(anthropometryAnalytics.schoolNutritionRanking || [], {}, 'PO');
-                const exportData = (anthropometryAnalytics.schoolNutritionRanking || []).map((s: any) => ({
-                  'School Name': s.schoolName,
-                  'Underweight Cases': s.underweightCount,
-                  'Obese Cases': s.obeseCount,
-                  'Risk Score %': s.riskScore,
-                }));
-                exportToCSV(exportData, [
-                  { key: 'School Name', header: 'School Name' },
-                  { key: 'Underweight Cases', header: 'Underweight Cases' },
-                  { key: 'Obese Cases', header: 'Obese Cases' },
-                  { key: 'Risk Score %', header: 'Risk Score %' },
-                ], `nutrition-risk-${new Date().toISOString().split('T')[0]}.csv`);
-              }}
-            />
+            {/* Nutrition Risk Summary by School Type */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Nutrition Risk Summary by School Type</CardTitle>
+                <p className="text-sm text-muted-foreground">Aggregated nutrition risk analysis (No individual school data)</p>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="p-4 border rounded-lg bg-blue-50 dark:bg-blue-950/20">
+                    <h4 className="font-medium text-blue-700 dark:text-blue-400 mb-3">Government Schools</h4>
+                    <div className="space-y-2">
+                      <div className="flex justify-between">
+                        <span>Avg Underweight %:</span>
+                        <span className="font-medium">{anthropometryAnalytics.genderSplit?.male?.underweightPercent || 0}%</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Avg Normal %:</span>
+                        <span className="font-medium">{anthropometryAnalytics.genderSplit?.male?.normalPercent || 0}%</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Avg Obese %:</span>
+                        <span className="font-medium">{anthropometryAnalytics.genderSplit?.male?.obesePercent || 0}%</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="p-4 border rounded-lg bg-green-50 dark:bg-green-950/20">
+                    <h4 className="font-medium text-green-700 dark:text-green-400 mb-3">Aided Schools</h4>
+                    <div className="space-y-2">
+                      <div className="flex justify-between">
+                        <span>Avg Underweight %:</span>
+                        <span className="font-medium">{anthropometryAnalytics.genderSplit?.female?.underweightPercent || 0}%</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Avg Normal %:</span>
+                        <span className="font-medium">{anthropometryAnalytics.genderSplit?.female?.normalPercent || 0}%</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Avg Obese %:</span>
+                        <span className="font-medium">{anthropometryAnalytics.genderSplit?.female?.obesePercent || 0}%</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
 
             {/* Gender Split Analysis */}
             <Card>
               <CardHeader>
                 <CardTitle>Gender-wise Nutrition Patterns</CardTitle>
-                <p className="text-sm text-muted-foreground">BMI distribution by gender</p>
+                <p className="text-sm text-muted-foreground">BMI distribution by gender (District-wide summary)</p>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-2 gap-6">
@@ -844,6 +1006,20 @@ export default function PODashboard() {
           </TabsContent>
 
           <TabsContent value="diseases" className="space-y-6">
+            {/* Summary Notice */}
+            <Card className="border-blue-200 bg-blue-50 dark:bg-blue-950/20">
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-3">
+                  <Shield className="h-6 w-6 text-blue-500" />
+                  <div>
+                    <h3 className="text-lg font-semibold text-blue-700 dark:text-blue-400">Disease Summary View</h3>
+                    <p className="text-blue-600 dark:text-blue-300">
+                      Aggregated disease statistics across the district. Individual case details are not accessible.
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
             {/* Deficiencies Insights */}
             <Card>
               <CardHeader>
@@ -1014,6 +1190,20 @@ export default function PODashboard() {
             </TabsContent>
 
           <TabsContent value="adolescent" className="space-y-6">
+            {/* Summary Notice */}
+            <Card className="border-blue-200 bg-blue-50 dark:bg-blue-950/20">
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-3">
+                  <Shield className="h-6 w-6 text-blue-500" />
+                  <div>
+                    <h3 className="text-lg font-semibold text-blue-700 dark:text-blue-400">Adolescent Health Summary</h3>
+                    <p className="text-blue-600 dark:text-blue-300">
+                      Aggregated adolescent health data. Individual student information is not accessible.
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
             {/* Adolescent Health Monitoring */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <MetricCard
@@ -1136,6 +1326,20 @@ export default function PODashboard() {
           </TabsContent>
 
           <TabsContent value="menstrual" className="space-y-6">
+            {/* Summary Notice */}
+            <Card className="border-blue-200 bg-blue-50 dark:bg-blue-950/20">
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-3">
+                  <Shield className="h-6 w-6 text-blue-500" />
+                  <div>
+                    <h3 className="text-lg font-semibold text-blue-700 dark:text-blue-400">Menstrual Health Summary</h3>
+                    <p className="text-blue-600 dark:text-blue-300">
+                      Aggregated menstrual health analytics. Individual student data is not accessible.
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
             {/* Menstrual Health Analytics */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <MetricCard
@@ -1282,38 +1486,39 @@ export default function PODashboard() {
               </CardContent>
             </Card>
 
-            {/* Late Menstruation Cases */}
+            {/* Late Menstruation Cases - Summary Only */}
             {dashboardData?.menstrualHealthAnalytics?.lateMenstruationCases && dashboardData.menstrualHealthAnalytics.lateMenstruationCases.length > 0 && (
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <AlertTriangle className="h-5 w-5 text-orange-500" />
-                    Late Menstruation Cases (Cycle &gt; 35 days or Missed Expected Date)
+                    Late Menstruation Cases Summary
                   </CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    Aggregated statistics only - Individual student details not accessible
+                  </p>
                 </CardHeader>
                 <CardContent>
-                  <DataTable
-                    data={dashboardData.menstrualHealthAnalytics.lateMenstruationCases}
-                    getRowKey={(item: any) => item.studentId || item.studentName || Math.random().toString()}
-                    columns={[
-                      { key: 'studentName', header: 'Student Name' },
-                      { key: 'age', header: 'Age' },
-                      { key: 'school', header: 'School' },
-                      { key: 'lastMenstruationDate', header: 'Last Period' },
-                      { key: 'expectedDate', header: 'Expected Date' },
-                      { key: 'delayDays', header: 'Delay (Days)' },
-                      { 
-                        key: 'riskFlag', 
-                        header: 'Risk Level',
-                        render: (value) => (
-                          <StatusBadge 
-                            status={value === 'Needs Attention' ? 'Pending' : 'Approved'} 
-                            text={value} 
-                          />
-                        )
-                      }
-                    ]}
-                  />
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="text-center p-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg">
+                      <div className="text-2xl font-bold text-orange-700 dark:text-orange-400">
+                        {dashboardData.menstrualHealthAnalytics.lateMenstruationCases.length}
+                      </div>
+                      <div className="text-sm text-orange-600 dark:text-orange-500">Total Cases</div>
+                    </div>
+                    <div className="text-center p-4 bg-red-50 dark:bg-red-900/20 rounded-lg">
+                      <div className="text-2xl font-bold text-red-700 dark:text-red-400">
+                        {dashboardData.menstrualHealthAnalytics.lateMenstruationCases.filter((c: any) => c.delayDays > 7).length}
+                      </div>
+                      <div className="text-sm text-red-600 dark:text-red-500">High Risk (&gt;7 days)</div>
+                    </div>
+                    <div className="text-center p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
+                      <div className="text-2xl font-bold text-yellow-700 dark:text-yellow-400">
+                        {Math.round(dashboardData.menstrualHealthAnalytics.lateMenstruationCases.reduce((sum: number, c: any) => sum + (c.delayDays || 0), 0) / dashboardData.menstrualHealthAnalytics.lateMenstruationCases.length)}
+                      </div>
+                      <div className="text-sm text-yellow-600 dark:text-yellow-500">Avg Delay (days)</div>
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
             )}

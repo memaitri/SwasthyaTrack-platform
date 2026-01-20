@@ -23,7 +23,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
-import { School, Plus, Edit, Users, Eye, Loader2 } from "lucide-react";
+import { School, Plus, Edit, Users, Loader2 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 
 interface SchoolData {
@@ -269,21 +269,6 @@ export default function SchoolsPage() {
               header: "",
               render: (item: any) => (
                 <div className="flex items-center gap-1">
-                  <Link href={`/schools/${item.id}`}>
-                    <Button variant="ghost" size="icon" data-testid={`button-view-${item.id}`}>
-                      <Eye className="h-4 w-4" />
-                    </Button>
-                  </Link>
-                  {canManage && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleEdit(item)}
-                      data-testid={`button-edit-${item.id}`}
-                    >
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                  )}
                 </div>
               ),
             },

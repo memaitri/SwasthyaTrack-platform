@@ -728,16 +728,6 @@ export default function HealthCardsPage() {
                       </Button>
                     </>
                   )}
-                  {isAdmin && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      data-testid={`button-edit-${item.id}`}
-                      onClick={() => setEditingCard(item)}
-                    >
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                  )}
                   <Button variant="ghost" size="icon" data-testid={`button-download-${item.id}`}>
                     <FileDown className="h-4 w-4" />
                   </Button>
@@ -777,33 +767,6 @@ export default function HealthCardsPage() {
           }}
           emptyMessage="No health cards found"
         />
-
-        {/* Edit Dialog */}
-        {editingCard && (
-          <Dialog open={!!editingCard} onOpenChange={(open) => !open && setEditingCard(null)}>
-            <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>Edit Health Card</DialogTitle>
-              </DialogHeader>
-              <div className="py-4">
-                <HealthCardFormSections
-                  form={editForm}
-                  studentGender={editingCard.gender}
-                  studentAge={editingCard.ageYears || 0}
-                  userRole={user?.role}
-                />
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setEditingCard(null)}>
-                  Cancel
-                </Button>
-                <Button onClick={handleSaveEdit} disabled={updateMutation.isPending}>
-                  {updateMutation.isPending ? "Saving..." : "Save Changes"}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        )}
 
         {/* Reject Dialog */}
         {rejectingCard && (
