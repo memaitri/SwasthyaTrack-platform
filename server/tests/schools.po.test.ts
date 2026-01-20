@@ -19,8 +19,8 @@ describe('Schools listing PO district restrictions', () => {
     await registerRoutes(httpServer as any, app as any);
     server = httpServer.listen(0);
 
-    schoolA = await storage.createSchool({ name: 'PO School A', district: 'D-PO-1' } as any);
-    schoolB = await storage.createSchool({ name: 'Other School B', district: 'D-OTHER' } as any);
+    schoolA = await storage.createSchool({ name: 'PO School A', district: 'D-PO-1', schoolType: 'Government' } as any);
+    schoolB = await storage.createSchool({ name: 'Other School B', district: 'D-OTHER', schoolType: 'Aided' } as any);
 
     const poUser = await storage.createUser({ username: `po-${Date.now()}`, password: 'p', email: `po${Date.now()}@example.com`, fullName: 'Program Officer', role: 'PO', district: 'D-PO-1', isActive: true } as any);
 
@@ -61,7 +61,7 @@ describe('Schools listing PO district restrictions', () => {
   });
 
   it('returns only assigned school when PO has schoolId but no district', async () => {
-    const assignedSchool = await storage.createSchool({ name: 'Assigned School', district: 'ASSIGN' } as any);
+    const assignedSchool = await storage.createSchool({ name: 'Assigned School', district: 'ASSIGN', schoolType: 'Government' } as any);
     const poWithSchool = await storage.createUser({ username: `po-s-${Date.now()}`, password: 'p', email: `pos${Date.now()}@example.com`, fullName: 'PO With School', role: 'PO', schoolId: assignedSchool.id, isActive: true } as any);
     const secret = process.env.SESSION_SECRET || 'swasthya-track-secret-key-2025';
     const jwt = require('jsonwebtoken');

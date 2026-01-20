@@ -18,7 +18,7 @@ describe('Account approval flow', () => {
     await registerRoutes(httpServer as any, app as any);
     server = httpServer.listen(0);
 
-    school = await storage.createSchool({ name: 'Approval Test School', district: 'D-TEST' } as any);
+    school = await storage.createSchool({ name: 'Approval Test School', district: 'D-TEST', schoolType: 'Government' } as any);
 
     const hmUser = await storage.createUser({ username: `hm-${Date.now()}`, password: 'p', email: `hm${Date.now()}@example.com`, fullName: 'HM User', role: 'Headmaster', isActive: true, schoolId: school.id } as any);
     const secret = process.env.SESSION_SECRET || 'swasthya-track-secret-key-2025';

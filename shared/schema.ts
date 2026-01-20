@@ -25,6 +25,9 @@ export type NotificationType = typeof notificationTypeEnum[number];
 export const flowCategoryEnum = ["none", "spotting", "light", "medium", "heavy"] as const;
 export type FlowCategory = typeof flowCategoryEnum[number];
 
+export const schoolTypeEnum = ["Government", "Aided"] as const;
+export type SchoolType = typeof schoolTypeEnum[number];
+
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   username: text("username").notNull().unique(),
@@ -50,6 +53,7 @@ export const schools = pgTable("schools", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
   code: text("code").unique(),
+  schoolType: text("school_type").notNull().$type<SchoolType>(),
   region: text("region").notNull(), // Region for PO matching
   district: text("district").notNull(),
   block: text("block").notNull(),
@@ -913,6 +917,10 @@ export const insertSchoolSchema = createInsertSchema(schools).omit({
 }).extend({
   code: z.string().optional(),
   requestedByEmail: z.string().email().optional().or(z.literal("")),
+  schoolType: z.enum(schoolTypeEnum, {
+    required_error: "School Type is required",
+    invalid_type_error: "Invalid school type. Must be either 'Government' or 'Aided'",
+  }),
 });
 
 export const insertStudentSchema = createInsertSchema(students).omit({

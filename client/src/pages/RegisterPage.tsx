@@ -69,6 +69,9 @@ const registerSchema = z.object({
 const schoolFormSchema = z.object({
   name: z.string().min(3, "School name must be at least 3 characters"),
   code: z.string().optional(),
+  schoolType: z.enum(["Government", "Aided"], {
+    required_error: "School Type is required",
+  }),
   region: z.string().min(2, "Region is required"),
   district: z.string().min(2, "District is required"),
   block: z.string().min(2, "Block is required"),
@@ -119,6 +122,7 @@ export default function RegisterPage() {
     defaultValues: {
       name: "",
       code: "",
+      schoolType: "Government",
       region: "",
       district: "",
       block: "",
@@ -634,6 +638,27 @@ export default function RegisterPage() {
                     <FormControl>
                       <Input placeholder="Enter school name" {...field} />
                     </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={schoolForm.control}
+                name="schoolType"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>School Type *</FormLabel>
+                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select school type" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="Government">Government</SelectItem>
+                        <SelectItem value="Aided">Aided</SelectItem>
+                      </SelectContent>
+                    </Select>
                     <FormMessage />
                   </FormItem>
                 )}

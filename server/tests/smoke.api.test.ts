@@ -34,7 +34,7 @@ describe('API smoke tests', () => {
     hmToken = jwt.sign({ id: hmWithSchool.id, username: hmWithSchool.username, role: hmWithSchool.role }, secret, { expiresIn: '1h' });
 
     // create school and student
-    const school = await storage.createSchool({ name: 'Smoke School', district: 'Smoke-D' } as any);
+    const school = await storage.createSchool({ name: 'Smoke School', district: 'Smoke-D', schoolType: 'Government' } as any);
     await storage.updateUser(hmWithSchool.id, { schoolId: school.id } as any);
 
     await storage.createStudent({ fullName: 'Smoke Student', uniqueId: `SS-${Date.now()}`, gender: 'M', classSection: '4-A', schoolId: school.id, dateOfBirth: new Date('2016-01-01') } as any);

@@ -21,8 +21,8 @@ describe('Hostel attendance PO district restrictions', () => {
     await registerRoutes(httpServer as any, app as any);
     server = httpServer.listen(0);
 
-    schoolA = await storage.createSchool({ name: 'PO District School A', district: 'D-PO-1' } as any);
-    schoolB = await storage.createSchool({ name: 'Other District School B', district: 'D-OTHER' } as any);
+    schoolA = await storage.createSchool({ name: 'PO District School A', district: 'D-PO-1', schoolType: 'Government' } as any);
+    schoolB = await storage.createSchool({ name: 'Other District School B', district: 'D-OTHER', schoolType: 'Aided' } as any);
 
     studentA = await storage.createStudent({ fullName: 'PO Student A', uniqueId: `PS-A-${Date.now()}`, gender: 'M', classSection: '5-A', schoolId: schoolA.id } as any);
     studentB = await storage.createStudent({ fullName: 'Other Student B', uniqueId: `OS-B-${Date.now()}`, gender: 'F', classSection: '5-B', schoolId: schoolB.id } as any);
