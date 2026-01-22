@@ -33,6 +33,7 @@ function normalizeStatus(s?: string) {
 import { createClient } from "@supabase/supabase-js";
 import { isC7ReferralNeeded, isC8ReferralNeeded, isC9ReferralNeeded, generateC7ReferralIssue, generateC8ReferralIssue, getC9ReferralDescription } from "./referralLogic";
 import { getBMIClassification } from "../lib/bmiColors";
+import { filterBySchoolType, filterByDistrict, applyFilters, validateFilterConfig, type FilterConfig } from "../lib/filterUtils";
 // @ts-ignore - pdfkit doesn't have type definitions
 const PDFDocumentAny = PDFDocument as any;
 
@@ -2388,6 +2389,19 @@ export async function registerRoutes(
         const enrichedCards = await Promise.all(
           cards.map(async (card) => {
             const student = await storage.getStudent(card.studentId);
+            
+            // Calculate age from date of birth if not available in card
+            let ageYears = card.ageYears;
+            if (!ageYears && student?.dateOfBirth) {
+              const today = new Date();
+              const birthDate = new Date(student.dateOfBirth);
+              ageYears = today.getFullYear() - birthDate.getFullYear();
+              const monthDiff = today.getMonth() - birthDate.getMonth();
+              if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+                ageYears--;
+              }
+            }
+            
             return {
               ...card,
               status: normalizeStatus((card as any).status),
@@ -2395,6 +2409,9 @@ export async function registerRoutes(
               classSection: student?.classSection || card.classSection,
               studentId: student?.id,
               schoolName: card.schoolName,
+              // Include age and gender for frontend
+              ageYears: ageYears,
+              gender: card.gender || student?.gender,
               student: student, // Include full student object for filtering
             };
           })
@@ -2414,7 +2431,7 @@ export async function registerRoutes(
         const paginatedCards = filteredCards.slice(startIndex, endIndex);
         const filteredTotal = filteredCards.length;
 
-        // Remove student object from response
+        // Remove student object from response but keep age and gender
         const finalCards = paginatedCards.map(({ student, ...card }) => card);
 
         res.json({
@@ -2624,12 +2641,27 @@ export async function registerRoutes(
       console.debug(`[GET /api/annual-cards/${id}] sending response with keys:`, Object.keys(card));
 
       // Build a full-shaped card object, filling undefined schema fields with null so JSON contains all keys
+      // Calculate age from date of birth if not available in card
+      let ageYears = card.ageYears;
+      if (!ageYears && student?.dateOfBirth) {
+        const today = new Date();
+        const birthDate = new Date(student.dateOfBirth);
+        ageYears = today.getFullYear() - birthDate.getFullYear();
+        const monthDiff = today.getMonth() - birthDate.getMonth();
+        if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+          ageYears--;
+        }
+      }
+      
       const fullCard: any = {
         ...card,
         status: normalizeStatus((card as any).status),
         studentName: student?.fullName || card.nameOfChild,
         classSection: student?.classSection || card.classSection,
         schoolName: school?.name || card.schoolName || "Unknown School",
+        // Ensure age and gender are available
+        ageYears: ageYears,
+        gender: card.gender || student?.gender,
       };
 
       try {
@@ -2779,7 +2811,7 @@ export async function registerRoutes(
     }
   });
 
-  app.put("/api/annual-cards/:id", authenticateToken, authorizeRoles("Admin"), async (req: AuthRequest, res) => {
+  app.put("/api/annual-cards/:id", authenticateToken, authorizeRoles("Admin", "ClassTeacher"), async (req: AuthRequest, res) => {
     try {
       const { id } = req.params;
       const updateData = req.body;
@@ -4215,34 +4247,47 @@ async function getMenstrualHealthAnalytics(schools: any[], selectedMonth: number
       console.log('========== PO DASHBOARD REQUEST START ==========');
       console.log('Request params:', { selectedMonth, selectedYear, selectedSchoolType, userId: req.user!.id });
 
+      // Validate filter configuration
+      const filterConfig: FilterConfig = {
+        schoolType: selectedSchoolType as any,
+        month: selectedMonth,
+        year: selectedYear
+      };
+
+      const validation = validateFilterConfig(filterConfig);
+      if (!validation.isValid) {
+        return res.status(400).json({ 
+          message: "Invalid filter parameters", 
+          errors: validation.errors 
+        });
+      }
+
       // Get PO's district to filter schools
       const user = await storage.getUser(req.user!.id);
       const poDistrict: string | undefined = user?.district ?? undefined;
 
       console.log('PO user district:', poDistrict);
 
-      // Filter schools by PO's district and optionally by school type
+      // Get all schools and apply filters
       let schools: any[] = [];
       if (req.user?.role === "Admin") {
         const result = await storage.getSchools(1, 1000);
         schools = result.schools;
       } else if (poDistrict) {
-        // For PO, filter by district (not region)
+        // For PO, filter by district first
         const allSchools = await storage.getSchools(1, 1000);
-        schools = allSchools.schools.filter(s => sameDistrict(s.district, poDistrict));
+        schools = filterByDistrict(allSchools.schools, poDistrict);
       } else {
         // If PO has no district, show no schools
         schools = [];
       }
 
-      // Apply school type filter if specified
-      if (selectedSchoolType && selectedSchoolType !== "all") {
-        schools = schools.filter(s => s.schoolType === selectedSchoolType);
-      }
+      // Apply school type filter using utility function
+      schools = filterBySchoolType(schools, selectedSchoolType as any);
 
-      // Separate schools by type for aggregated metrics
-      const governmentSchools = schools.filter(s => s.schoolType === "Government");
-      const aidedSchools = schools.filter(s => s.schoolType === "Aided");
+      // Separate schools by type for aggregated metrics (using utility functions)
+      const governmentSchools = filterBySchoolType(schools, "Government");
+      const aidedSchools = filterBySchoolType(schools, "Aided");
 
       const metrics = await storage.getDashboardMetrics("PO", req.user!.id, undefined, undefined, poDistrict);
 

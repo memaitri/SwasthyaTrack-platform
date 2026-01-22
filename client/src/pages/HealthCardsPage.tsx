@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Form } from "@/components/ui/form";
 import { useAuth } from "@/lib/auth";
 import { getBMIColor, getBMIBgColor, getBMIClassificationLabel } from "@/lib/bmiColors";
 import { Eye, FileDown, Filter, Edit, CheckCircle2, XCircle, ArrowLeft } from "lucide-react";
@@ -336,9 +337,12 @@ export default function HealthCardsPage() {
               <Button variant="ghost" size="sm" onClick={() => setShowFullDetails(s => !s)}>
                 {showFullDetails ? 'Hide full details' : 'Show full details'}
               </Button>
-              <Button variant="ghost" size="sm" onClick={() => exportJSON(card)}>
-                <FileDown className="h-4 w-4 mr-2" />Export JSON
-              </Button>
+              {/* Hide Export JSON button for Class Teachers */}
+              {!hasRole("ClassTeacher") && (
+                <Button variant="ghost" size="sm" onClick={() => exportJSON(card)}>
+                  <FileDown className="h-4 w-4 mr-2" />Export JSON
+                </Button>
+              )}
             </div>
           </div>
 
@@ -609,16 +613,19 @@ export default function HealthCardsPage() {
               <SelectItem value="2023">2023</SelectItem>
             </SelectContent>
           </Select>
-          <Select value={exportFormat} onValueChange={setExportFormat}>
-            <SelectTrigger className="w-32">
-              <SelectValue placeholder="Export Format" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="csv">CSV</SelectItem>
-              <SelectItem value="pdf">PDF (with charts)</SelectItem>
-              <SelectItem value="excel">Excel (with charts)</SelectItem>
-            </SelectContent>
-          </Select>
+          {/* Hide export format selector for Class Teachers */}
+          {!hasRole("ClassTeacher") && (
+            <Select value={exportFormat} onValueChange={setExportFormat}>
+              <SelectTrigger className="w-32">
+                <SelectValue placeholder="Export Format" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="csv">CSV</SelectItem>
+                <SelectItem value="pdf">PDF (with charts)</SelectItem>
+                <SelectItem value="excel">Excel (with charts)</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
         </div>
 
         {error && (
@@ -646,8 +653,32 @@ export default function HealthCardsPage() {
                 </div>
               ),
             },
-            { key: "year", header: "Year", className: "text-center" },
-            { key: "schoolName", header: "School" },
+            // Show Age and Gender for Class Teachers, Year and School for others
+            ...(hasRole("ClassTeacher") ? [
+              { 
+                key: "ageYears", 
+                header: "Age", 
+                className: "text-center",
+                render: (item: any) => (
+                  <span className="text-sm">
+                    {item.ageYears ? `${item.ageYears} yrs` : "-"}
+                  </span>
+                ),
+              },
+              { 
+                key: "gender", 
+                header: "Gender", 
+                className: "text-center",
+                render: (item: any) => (
+                  <span className="text-sm">
+                    {item.gender || "-"}
+                  </span>
+                ),
+              },
+            ] : [
+              { key: "year", header: "Year", className: "text-center" },
+              { key: "schoolName", header: "School" },
+            ]),
             {
               key: "bmi",
               header: "BMI",
@@ -697,14 +728,32 @@ export default function HealthCardsPage() {
               header: "",
               render: (item: any) => (
                 <div className="flex items-center gap-1">
+                  {hasRole("ClassTeacher") && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      data-testid={`button-edit-card-${item.id}`}
+                      onClick={() => setEditingCard(item)}
+                    >
+                      <Edit className="h-4 w-4" />
+                    </Button>
+                  )}
                   <Link href={`/health-cards/view/${item.id}`}>
                     <Button variant="ghost" size="icon" data-testid={`button-view-${item.id}`}>
                       <Eye className="h-4 w-4" />
                     </Button>
                   </Link>
-                  <Button variant="ghost" size="icon" data-testid={`button-export-referrals-${item.id}`} onClick={() => exportReferrals(item.id)}>
-                    <FileDown className="h-4 w-4" />
-                  </Button>
+                  {/* Hide export buttons for Class Teachers */}
+                  {!hasRole("ClassTeacher") && (
+                    <>
+                      <Button variant="ghost" size="icon" data-testid={`button-export-referrals-${item.id}`} onClick={() => exportReferrals(item.id)}>
+                        <FileDown className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" data-testid={`button-download-${item.id}`}>
+                        <FileDown className="h-4 w-4" />
+                      </Button>
+                    </>
+                  )}
                   {(isAdmin || isHeadmaster) && item.status === "Pending" && (
                     <>
                       <Button
@@ -728,9 +777,6 @@ export default function HealthCardsPage() {
                       </Button>
                     </>
                   )}
-                  <Button variant="ghost" size="icon" data-testid={`button-download-${item.id}`}>
-                    <FileDown className="h-4 w-4" />
-                  </Button>
                 </div>
               ),
             },
@@ -738,19 +784,23 @@ export default function HealthCardsPage() {
           data={cards}
           getRowKey={(item: any) => item.id}
           isLoading={isLoading}
-          exportable
-          onExport={async (type) => {
+          // Remove export functionality for Class Teachers
+          exportable={!hasRole("ClassTeacher")}
+          onExport={!hasRole("ClassTeacher") ? async (type) => {
             const fmt = type || exportFormat;
             if (fmt === "csv") {
+              const csvColumns = [
+                { key: "nameOfChild", header: "Student Name" },
+                { key: "classSection", header: "Class" },
+                { key: "year", header: "Year" },
+                { key: "schoolName", header: "School" },
+                { key: "status", header: "Status" },
+                { key: "dateOfEntry", header: "Submitted Date" },
+              ];
+              
               exportToCSV(
                 cards,
-                [
-                  { key: "nameOfChild", header: "Student Name" },
-                  { key: "classSection", header: "Class" },
-                  { key: "year", header: "Year" },
-                  { key: "status", header: "Status" },
-                  { key: "dateOfEntry", header: "Submitted Date" },
-                ],
+                csvColumns,
                 "health_cards"
               );
             } else if (fmt === "pdf") {
@@ -758,7 +808,7 @@ export default function HealthCardsPage() {
             } else if (fmt === "xlsx") {
               exportToExcel(cards as any, { includeNutrition: false, includeMedical: true }, user?.fullName || user?.email || '');
             }
-          }}
+          } : undefined}
           pagination={{
             currentPage: page,
             totalPages,
@@ -767,6 +817,37 @@ export default function HealthCardsPage() {
           }}
           emptyMessage="No health cards found"
         />
+
+        {/* Edit Health Card Dialog - For Class Teachers Only */}
+        {hasRole("ClassTeacher") && editingCard && (
+          <Dialog open={!!editingCard} onOpenChange={(open) => !open && setEditingCard(null)}>
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Edit Health Card</DialogTitle>
+                <DialogDescription>
+                  Update health card details for {editingCard.nameOfChild}
+                </DialogDescription>
+              </DialogHeader>
+              <Form {...editForm}>
+                <form className="space-y-4">
+                  <HealthCardFormSections form={editForm} studentGender={editingCard.gender} studentAge={editingCard.ageYears} />
+                </form>
+              </Form>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setEditingCard(null)}>
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleSaveEdit}
+                  disabled={updateMutation.isPending}
+                  data-testid="button-save-health-card"
+                >
+                  {updateMutation.isPending ? "Saving..." : "Save Changes"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
 
         {/* Reject Dialog */}
         {rejectingCard && (

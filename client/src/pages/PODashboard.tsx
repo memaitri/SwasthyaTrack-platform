@@ -6,49 +6,36 @@ import { ChartContainer } from "@/components/charts/ChartContainer";
 import { BarChart } from "@/components/charts/BarChart";
 import { PieChart } from "@/components/charts/PieChart";
 import { LineChart } from "@/components/charts/LineChart";
-import { DataTable } from "@/components/dashboard/DataTable";
-import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Progress } from "@/components/ui/progress";
 import { apiRequest } from "@/lib/queryClient";
-import { exportToCSV } from "@/lib/csvExport";
-import { exportToPDF, exportToExcel } from "@/lib/exportService";
-import { useAuthenticatedFetch } from "@/lib/auth";
+import { exportToPDF } from "@/lib/exportService";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SharedReports } from "@/components/reports/SharedReports";
+import { InlineFilterControls } from "@/components/filters/FilterControls";
+import { usePOFilters } from "@/hooks/useFilters";
 import {
   School,
   Users,
-  FileHeart,
   Stethoscope,
   AlertCircle,
   CheckCircle2,
   TrendingUp,
-  Eye,
-  UtensilsCrossed,
-  UserCheck,
-  UserX,
   Calendar,
   Clock,
-  Database,
   Download,
   FileText,
-  Home,
   Heart,
   Shield,
   Target,
   MapPin,
-  Award,
   Activity,
   BarChart as BarChartIcon,
   AlertTriangle,
   Zap,
   Flame,
   Thermometer,
-  TrendingDown,
   ExternalLink,
 } from "lucide-react";
 import { useLocation } from "wouter";
@@ -73,40 +60,25 @@ interface BMITrend {
   overweight: number;
 }
 
-const months = [
-  { value: "1", label: "January" },
-  { value: "2", label: "February" },
-  { value: "3", label: "March" },
-  { value: "4", label: "April" },
-  { value: "5", label: "May" },
-  { value: "6", label: "June" },
-  { value: "7", label: "July" },
-  { value: "8", label: "August" },
-  { value: "9", label: "September" },
-  { value: "10", label: "October" },
-  { value: "11", label: "November" },
-  { value: "12", label: "December" },
-];
-
-const years = [
-  { value: "2025", label: "2025" },
-  { value: "2024", label: "2024" },
-  { value: "2023", label: "2023" },
-];
-
 export default function PODashboard() {
-   const [selectedMonth, setSelectedMonth] = useState(String(new Date().getMonth() + 1));
-   const [selectedYear, setSelectedYear] = useState(String(new Date().getFullYear()));
    const [activeTab, setActiveTab] = useState("overview");
-   const [schoolTypeFilter, setSchoolTypeFilter] = useState("all"); // School type filter: all, Government, Aided
-   const [, setLocation] = useLocation();
+
+   // Use the new filtering system
+   const {
+     filters,
+     updateFilter,
+     resetFilters,
+     buildParams,
+     filterOptions,
+     queryKey,
+     activeFilterCount,
+     filterSummary,
+   } = usePOFilters();
 
    // Export function for PO dashboard
    const handleExport = async (type: string, format: string = "excel") => {
      try {
-       const params = new URLSearchParams();
-       params.append("month", selectedMonth);
-       params.append("year", selectedYear);
+       const params = buildParams();
        params.append("format", format);
 
        const response = await apiRequest("GET", `/api/po/export/${type}?${params}`);
@@ -116,7 +88,7 @@ export default function PODashboard() {
        const url = window.URL.createObjectURL(blob);
        const a = document.createElement("a");
        a.href = url;
-       a.download = `${type}-report-${selectedYear}-${selectedMonth}.${format === "excel" ? "csv" : format}`;
+       a.download = `${type}-report-${filters.year}-${filters.month}.${format === "excel" ? "csv" : format}`;
        document.body.appendChild(a);
        a.click();
        window.URL.revokeObjectURL(url);
@@ -134,11 +106,11 @@ export default function PODashboard() {
       if (type === 'monthly-health') {
         try {
           const { generatePdfReport } = await import('@/lib/pdfReports');
-          const { blob, filename } = await generatePdfReport({ type: 'monthly-checkup', month: selectedMonth, year: selectedYear });
+          const { blob, filename } = await generatePdfReport({ type: 'monthly-checkup', month: filters.month, year: filters.year });
           const url = window.URL.createObjectURL(blob);
           const a = document.createElement('a');
           a.href = url;
-          a.download = filename || `${type}-${selectedYear}-${selectedMonth}.pdf`;
+          a.download = filename || `${type}-${filters.year}-${filters.month}.pdf`;
           document.body.appendChild(a);
           a.click();
           document.body.removeChild(a);
@@ -152,7 +124,9 @@ export default function PODashboard() {
       // For other types try to fetch JSON and use exportService for pretty tabular PDFs when feasible
       try {
         const token = localStorage.getItem('accessToken');
-        const res = await fetch(`/api/po/export/${type}?month=${selectedMonth}&year=${selectedYear}&format=json`, {
+        const params = buildParams();
+        params.append('format', 'json');
+        const res = await fetch(`/api/po/export/${type}?${params}`, {
           headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
         });
         if (res.ok) {
@@ -161,7 +135,7 @@ export default function PODashboard() {
           if (Array.isArray(json.rows) && json.rows.length > 0) {
             const columns = Object.keys(json.rows[0]).map((k) => ({ key: k, header: k }));
             const rows = json.rows;
-            await exportToPDF(rows as any, { columns }, 'PO');
+            exportToPDF(rows as any, { columns }, 'PO');
             return;
           }
         }
@@ -179,11 +153,9 @@ export default function PODashboard() {
   // Unified report generation handler
   const handleUnifiedReport = async (reportType: string, format: string = "excel") => {
     try {
-      const params = new URLSearchParams();
+      const params = buildParams();
       params.append("type", reportType);
       params.append("format", format);
-      params.append("month", selectedMonth);
-      params.append("year", selectedYear);
 
       const response = await apiRequest("GET", `/api/reports/unified?${params}`);
       
@@ -195,7 +167,7 @@ export default function PODashboard() {
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = `${reportType}-report-${selectedYear}-${selectedMonth}.json`;
+        a.download = `${reportType}-report-${filters.year}-${filters.month}.json`;
         document.body.appendChild(a);
         a.click();
         window.URL.revokeObjectURL(url);
@@ -205,7 +177,7 @@ export default function PODashboard() {
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = `${reportType}-report-${selectedYear}-${selectedMonth}.${format === "excel" ? "xlsx" : format}`;
+        a.download = `${reportType}-report-${filters.year}-${filters.month}.${format === "excel" ? "xlsx" : format}`;
         document.body.appendChild(a);
         a.click();
         window.URL.revokeObjectURL(url);
@@ -218,14 +190,9 @@ export default function PODashboard() {
   };
 
   const { data: dashboardData, isLoading, refetch } = useQuery({
-    queryKey: ["/api/po/dashboard", selectedMonth, selectedYear, schoolTypeFilter],
+    queryKey,
     queryFn: async () => {
-      const params = new URLSearchParams();
-      params.append("month", selectedMonth);
-      params.append("year", selectedYear);
-      if (schoolTypeFilter !== "all") {
-        params.append("schoolType", schoolTypeFilter);
-      }
+      const params = buildParams();
       const res = await apiRequest("GET", `/api/po/dashboard?${params}`);
       return res.json();
     },
@@ -258,13 +225,10 @@ export default function PODashboard() {
   const diseasesInsights = dashboardData?.diseasesInsights || {};
   const leprosyAnalytics = dashboardData?.leprosyAnalytics || {};
   const tbAnalytics = dashboardData?.tbAnalytics || {};
-  const developmentalDelays = dashboardData?.developmentalDelays || {};
   const adolescentHealth = dashboardData?.adolescentHealth || {};
   const referralManagement = dashboardData?.referralManagement || {};
   const complianceAnalytics = dashboardData?.complianceAnalytics || {};
   const alerts = dashboardData?.alerts || {};
-  const exportCapabilities = dashboardData?.exportCapabilities || {};
-  const metadata = dashboardData?.metadata || {};
 
   // Legacy computed values for backward compatibility (remove these gradually)
   const totalStudentsScreened = districtKPIs.totalStudentsScreened || 0;
@@ -289,43 +253,20 @@ export default function PODashboard() {
           <div>
             <h2 className="text-2xl font-bold text-foreground">District Health Intelligence - Summary View</h2>
             <p className="text-muted-foreground">Program Officer Dashboard - SwasthyaTrack (Read-Only)</p>
+            {filterSummary && (
+              <p className="text-sm text-blue-600 dark:text-blue-400 mt-1">
+                Filtered: {filterSummary}
+              </p>
+            )}
           </div>
-          <div className="flex items-center gap-2">
-            <Select value={schoolTypeFilter} onValueChange={setSchoolTypeFilter}>
-              <SelectTrigger className="w-40" data-testid="filter-school-type">
-                <SelectValue placeholder="School Type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Schools</SelectItem>
-                <SelectItem value="Government">Government</SelectItem>
-                <SelectItem value="Aided">Aided</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-              <SelectTrigger className="w-36" data-testid="filter-month">
-                <SelectValue placeholder="Month" />
-              </SelectTrigger>
-              <SelectContent>
-                {months.map((month) => (
-                  <SelectItem key={month.value} value={month.value}>
-                    {month.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={selectedYear} onValueChange={setSelectedYear}>
-              <SelectTrigger className="w-28" data-testid="filter-year">
-                <SelectValue placeholder="Year" />
-              </SelectTrigger>
-              <SelectContent>
-                {years.map((year) => (
-                  <SelectItem key={year.value} value={year.value}>
-                    {year.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          <InlineFilterControls
+            filters={filters}
+            filterOptions={filterOptions}
+            onFilterChange={updateFilter}
+            onReset={resetFilters}
+            isLoading={isLoading}
+            activeFilterCount={activeFilterCount}
+          />
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
@@ -624,7 +565,7 @@ export default function PODashboard() {
 
                   {/* Filter controls */}
                   <div className="flex gap-4">
-                    <Select value={heatmapStatus} onValueChange={(v) => setHeatmapStatus(v)}>
+                    <Select value={heatmapStatus} onValueChange={(v: string) => setHeatmapStatus(v)}>
                       <SelectTrigger className="w-48">
                         <SelectValue placeholder="Filter by status" />
                       </SelectTrigger>
@@ -634,7 +575,7 @@ export default function PODashboard() {
                         <SelectItem value="Completed">Completed</SelectItem>
                       </SelectContent>
                     </Select>
-                    <Select value={heatmapCategory} onValueChange={(v) => setHeatmapCategory(v)}>
+                    <Select value={heatmapCategory} onValueChange={(v: string) => setHeatmapCategory(v)}>
                       <SelectTrigger className="w-48">
                         <SelectValue placeholder="Filter by category" />
                       </SelectTrigger>

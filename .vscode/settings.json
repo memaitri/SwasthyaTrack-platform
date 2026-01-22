@@ -1,3 +1,22 @@
 {
-    "kiroAgent.configureMCP": "Disabled"
+    "kiroAgent.configureMCP": "Disabled",
+    "css.validate": false,
+    "less.validate": false,
+    "scss.validate": false,
+    "tailwindCSS.includeLanguages": {
+        "typescript": "typescript",
+        "javascript": "javascript",
+        "typescriptreact": "typescriptreact",
+        "javascriptreact": "javascriptreact"
+    },
+    "tailwindCSS.experimental.classRegex": [
+        ["cva\\(([^)]*)\\)", "[\"'`]([^\"'`]*).*?[\"'`]"],
+        ["cx\\(([^)]*)\\)", "(?:'|\"|`)([^']*)(?:'|\"|`)"]
+    ],
+    "files.associations": {
+        "*.css": "tailwindcss"
+    },
+    "editor.quickSuggestions": {
+        "strings": true
+    }
 }

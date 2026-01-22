@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -30,15 +30,18 @@ interface Notification {
 
 export function NotificationBell() {
   const [isOpen, setIsOpen] = useState(false);
+  const queryClient = useQueryClient();
 
-  // Get notifications including shared reports
-  const { data: notifications, isLoading } = useQuery({
-    queryKey: ["/api/notifications"],
+  // Get notifications including stored notifications from database
+  const { data: notifications, isLoading, error } = useQuery({
+    queryKey: ["/api/notifications/by-role"],
     queryFn: async () => {
-      const res = await apiRequest("GET", "/api/notifications?limit=20");
+      const res = await apiRequest("GET", "/api/notifications/by-role?limit=20");
       return res.json();
     },
-    refetchInterval: 30000 // Refresh every 30 seconds
+    refetchInterval: 30000, // Refresh every 30 seconds
+    enabled: true, // Ensure query is enabled
+    retry: 1 // Retry once on failure
   });
 
   // Get unread count
@@ -48,19 +51,27 @@ export function NotificationBell() {
       const res = await apiRequest("GET", "/api/notifications/unread-count");
       return res.json();
     },
-    refetchInterval: 30000
+    refetchInterval: 30000,
+    enabled: true, // Ensure query is enabled
+    retry: 1 // Retry once on failure
+  });
+
+  // Mutation to mark notification as read
+  const markAsReadMutation = useMutation({
+    mutationFn: async (notificationId: string) => {
+      const res = await apiRequest("PATCH", "/api/notifications/mark-read", { notificationId });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications/by-role"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications/unread-count"] });
+    },
   });
 
   const handleNotificationClick = async (notification: Notification) => {
-    // Mark as read if not already read
-    if (!notification.isRead) {
-      try {
-        await apiRequest("PUT", `/api/notifications/${notification.id}/read`);
-        // Refresh notifications
-        // queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
-      } catch (error) {
-        console.error("Failed to mark notification as read:", error);
-      }
+    // Mark as read if not already read and it's a stored notification (has proper ID format)
+    if (!notification.isRead && !notification.id.startsWith('card-') && !notification.id.startsWith('no-card-')) {
+      markAsReadMutation.mutate(notification.id);
     }
 
     // Handle shared report notifications
@@ -107,6 +118,10 @@ export function NotificationBell() {
               {isLoading ? (
                 <div className="p-4 text-center text-sm text-muted-foreground">
                   Loading notifications...
+                </div>
+              ) : error ? (
+                <div className="p-4 text-center text-sm text-red-500">
+                  Error loading notifications: {error.message}
                 </div>
               ) : notificationsList.length === 0 ? (
                 <div className="p-4 text-center text-sm text-muted-foreground">
@@ -166,8 +181,8 @@ export function NotificationBell() {
                   className="w-full text-xs"
                   onClick={() => {
                     setIsOpen(false);
-                    // Navigate to notifications page or shared reports
-                    window.location.href = '#shared-reports';
+                    // Navigate to notifications page
+                    window.location.href = '/notifications';
                   }}
                 >
                   View All Notifications

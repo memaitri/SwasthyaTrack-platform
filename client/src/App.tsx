@@ -136,6 +136,17 @@ function Router() {
         </ProtectedRoute>
       </Route>
 
+      <Route path="/students/new">
+        <ProtectedRoute allowedRoles={["ClassTeacher"]}>
+          <StudentFormPage />
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/students/:id">
+        <ProtectedRoute allowedRoles={["ClassTeacher"]}>
+          <StudentFormPage />
+        </ProtectedRoute>
+      </Route>
 
       <Route path="/health-cards">
         <ProtectedRoute allowedRoles={["Admin", "PO", "Headmaster", "ClassTeacher", "MedicalTeam", "HostelWarden", "MealSuperintendent"]}>
