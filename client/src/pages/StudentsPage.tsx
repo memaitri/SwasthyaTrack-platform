@@ -10,12 +10,13 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAuth } from "@/lib/auth";
 import { formatGenderDisplay, formatGenderWithIcon, getGenderBadgeVariant } from "@/lib/genderUtils";
-import { UserPlus, Filter, FileHeart, Stethoscope, CheckCircle, Edit } from "lucide-react";
+import { UserPlus, Filter, FileHeart, Stethoscope, CheckCircle, Edit, GraduationCap } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { exportToCSV } from "@/lib/csvExport";
 import { exportToPDF, exportToExcel } from "@/lib/exportService";
+import { AcademicStatusBadge } from "@/components/academic-actions/AcademicStatusBadge";
 import type { Student } from "@shared/schema";
 
 export default function StudentsPage() {
@@ -176,6 +177,17 @@ export default function StudentsPage() {
               },
             },
             { key: "classSection", header: "Class" },
+            {
+              key: "academicStatus",
+              header: "Academic Status",
+              render: (item: any) => (
+                <AcademicStatusBadge 
+                  status={item.academicStatus || "Active"} 
+                  showIcon={true}
+                  size="sm"
+                />
+              ),
+            },
             { key: "fatherGuardianName", header: "Guardian" },
             {
               key: "healthCardStatus",
@@ -200,6 +212,14 @@ export default function StudentsPage() {
                     <Link href={`/students/${item.id}`}>
                       <Button variant="ghost" size="icon" data-testid={`button-edit-${item.id}`}>
                         <Edit className="h-4 w-4" />
+                      </Button>
+                    </Link>
+                  )}
+                  {/* Academic Actions - for ClassTeacher, Headmaster, and Admin */}
+                  {(hasRole("ClassTeacher") || hasRole("Headmaster") || hasRole("Admin")) && (
+                    <Link href={`/students/${item.id}/academic-actions`}>
+                      <Button variant="ghost" size="icon" title="Academic Actions" data-testid={`button-academic-${item.id}`}>
+                        <GraduationCap className="h-4 w-4" />
                       </Button>
                     </Link>
                   )}

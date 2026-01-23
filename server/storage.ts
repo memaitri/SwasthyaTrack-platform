@@ -9,6 +9,7 @@ import {
   hostelAttendance,
   auditLogs,
   refreshTokens,
+  studentAcademicActions,
   type User,
   type InsertUser,
   type School,
@@ -25,6 +26,8 @@ import {
   type InsertHostelAttendance,
   type AuditLog,
   type InsertAuditLog,
+  type StudentAcademicAction,
+  type InsertStudentAcademicAction,
   notifications,
   type Notification,
   type InsertNotification,
@@ -176,6 +179,22 @@ export interface IStorage {
   deletePeriodTrackerEntry(id: string): Promise<void>;
   analyzeMoodTrends(studentId: string, days: number): Promise<any>;
   predictNextCycle(studentId: string): Promise<any>;
+
+  // Student Academic Actions methods
+  performStudentAcademicAction(params: {
+    studentId: string;
+    actionType: 'Promote' | 'Demote' | 'Detain';
+    reason: string;
+    performedBy: string;
+    performedByRole: string;
+  }): Promise<{ success: boolean; message: string; student?: Student }>;
+  getStudentAcademicActions(params: {
+    studentId?: string;
+    academicYear?: number;
+    page?: number;
+    limit?: number;
+  }): Promise<{ actions: StudentAcademicAction[]; total: number }>;
+  validateAcademicAction(studentId: string, actionType: 'Promote' | 'Demote' | 'Detain', performedBy: string): Promise<{ valid: boolean; message: string }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1745,6 +1764,273 @@ export class DatabaseStorage implements IStorage {
       },
       warnings: result.warnings,
     };
+  }
+
+  // Student Academic Actions methods
+  async performStudentAcademicAction(params: {
+    studentId: string;
+    actionType: 'Promote' | 'Demote' | 'Detain';
+    reason: string;
+    performedBy: string;
+    performedByRole: string;
+  }): Promise<{ success: boolean; message: string; student?: Student }> {
+    const { studentId, actionType, reason, performedBy, performedByRole } = params;
+
+    // Validate the action first
+    const validation = await this.validateAcademicAction(studentId, actionType, performedBy);
+    if (!validation.valid) {
+      return { success: false, message: validation.message };
+    }
+
+    // Get current student data
+    const student = await this.getStudent(studentId);
+    if (!student) {
+      return { success: false, message: "Student not found" };
+    }
+
+    // Get current class teacher (if any)
+    const currentTeacher = await db
+      .select()
+      .from(users)
+      .where(
+        and(
+          eq(users.schoolId, student.schoolId),
+          eq(users.classSection, student.classSection),
+          eq(users.role, "ClassTeacher"),
+          eq(users.isActive, true)
+        )
+      )
+      .limit(1);
+
+    // Calculate new class and status
+    const oldStatus = student.academicStatus || 'Active';
+    const oldClassSection = student.classSection;
+    let newClassSection = oldClassSection;
+    let newStatus: 'Active' | 'Promoted' | 'Demoted' | 'Detained' = 'Active';
+
+    if (actionType === 'Promote') {
+      newStatus = 'Promoted';
+      newClassSection = this.calculateNextClass(oldClassSection);
+    } else if (actionType === 'Demote') {
+      newStatus = 'Demoted';
+      newClassSection = this.calculatePreviousClass(oldClassSection);
+    } else if (actionType === 'Detain') {
+      newStatus = 'Detained';
+      // Class remains the same for detention
+    }
+
+    // Get new class teacher (if class changed)
+    let newTeacher = null;
+    if (newClassSection !== oldClassSection) {
+      const newTeacherResult = await db
+        .select()
+        .from(users)
+        .where(
+          and(
+            eq(users.schoolId, student.schoolId),
+            eq(users.classSection, newClassSection),
+            eq(users.role, "ClassTeacher"),
+            eq(users.isActive, true)
+          )
+        )
+        .limit(1);
+      newTeacher = newTeacherResult[0] || null;
+    }
+
+    const currentYear = new Date().getFullYear();
+
+    try {
+      // Start transaction
+      await db.transaction(async (tx) => {
+        // Update student record
+        await tx
+          .update(students)
+          .set({
+            academicStatus: newStatus,
+            classSection: newClassSection,
+            previousClassSection: oldClassSection,
+            academicYear: currentYear,
+            updatedAt: new Date(),
+          })
+          .where(eq(students.id, studentId));
+
+        // Create audit log entry
+        await tx.insert(studentAcademicActions).values({
+          studentId,
+          actionType,
+          oldStatus: oldStatus as any,
+          newStatus,
+          oldClassSection,
+          newClassSection,
+          oldTeacherId: currentTeacher[0]?.id || null,
+          newTeacherId: newTeacher?.id || null,
+          reason,
+          academicYear: currentYear,
+          performedBy,
+          performedByRole: performedByRole as any,
+        });
+
+        // Create general audit log
+        await tx.insert(auditLogs).values({
+          userId: performedBy,
+          action: `Student ${actionType}`,
+          entityType: 'Student',
+          entityId: studentId,
+          details: {
+            studentName: student.fullName,
+            oldClass: oldClassSection,
+            newClass: newClassSection,
+            oldStatus,
+            newStatus,
+            reason,
+            actionType,
+          },
+        });
+      });
+
+      // Get updated student
+      const updatedStudent = await this.getStudent(studentId);
+
+      return {
+        success: true,
+        message: `Student ${actionType.toLowerCase()}d successfully from ${oldClassSection} to ${newClassSection}`,
+        student: updatedStudent,
+      };
+    } catch (error) {
+      console.error('Error performing academic action:', error);
+      return {
+        success: false,
+        message: 'Failed to perform academic action. Please try again.',
+      };
+    }
+  }
+
+  async getStudentAcademicActions(params: {
+    studentId?: string;
+    academicYear?: number;
+    page?: number;
+    limit?: number;
+  }): Promise<{ actions: StudentAcademicAction[]; total: number }> {
+    const { studentId, academicYear, page = 1, limit = 50 } = params;
+    const offset = (page - 1) * limit;
+
+    let whereConditions = [];
+    if (studentId) {
+      whereConditions.push(eq(studentAcademicActions.studentId, studentId));
+    }
+    if (academicYear) {
+      whereConditions.push(eq(studentAcademicActions.academicYear, academicYear));
+    }
+
+    const whereClause = whereConditions.length > 0 ? and(...whereConditions) : undefined;
+
+    const [actions, totalResult] = await Promise.all([
+      db
+        .select()
+        .from(studentAcademicActions)
+        .where(whereClause)
+        .orderBy(desc(studentAcademicActions.performedAt))
+        .limit(limit)
+        .offset(offset),
+      db
+        .select({ count: count() })
+        .from(studentAcademicActions)
+        .where(whereClause),
+    ]);
+
+    return {
+      actions,
+      total: totalResult[0]?.count || 0,
+    };
+  }
+
+  async validateAcademicAction(
+    studentId: string,
+    actionType: 'Promote' | 'Demote' | 'Detain',
+    performedBy: string
+  ): Promise<{ valid: boolean; message: string }> {
+    // Get student
+    const student = await this.getStudent(studentId);
+    if (!student) {
+      return { valid: false, message: "Student not found" };
+    }
+
+    // Get performer
+    const performer = await this.getUser(performedBy);
+    if (!performer) {
+      return { valid: false, message: "Invalid user performing action" };
+    }
+
+    // Check role permissions
+    if (performer.role === "ClassTeacher") {
+      // ClassTeacher can only act on their own class students
+      if (performer.classSection !== student.classSection || performer.schoolId !== student.schoolId) {
+        return { valid: false, message: "You can only perform academic actions on students from your assigned class" };
+      }
+    } else if (!["Headmaster", "Admin"].includes(performer.role)) {
+      return { valid: false, message: "Insufficient permissions to perform academic actions" };
+    }
+
+    // Check if student is active
+    if (!student.isActive) {
+      return { valid: false, message: "Cannot perform actions on inactive students" };
+    }
+
+    // Check for duplicate actions in the same academic year
+    const currentYear = new Date().getFullYear();
+    const existingActions = await db
+      .select()
+      .from(studentAcademicActions)
+      .where(
+        and(
+          eq(studentAcademicActions.studentId, studentId),
+          eq(studentAcademicActions.academicYear, currentYear),
+          eq(studentAcademicActions.actionType, actionType)
+        )
+      );
+
+    if (existingActions.length > 0) {
+      return { valid: false, message: `Student has already been ${actionType.toLowerCase()}d this academic year` };
+    }
+
+    // Validate class boundaries
+    if (actionType === 'Promote') {
+      const nextClass = this.calculateNextClass(student.classSection);
+      if (nextClass === student.classSection) {
+        return { valid: false, message: "Student is already in the highest class" };
+      }
+    } else if (actionType === 'Demote') {
+      const prevClass = this.calculatePreviousClass(student.classSection);
+      if (prevClass === student.classSection) {
+        return { valid: false, message: "Student is already in the lowest class" };
+      }
+    }
+
+    return { valid: true, message: "Action is valid" };
+  }
+
+  private calculateNextClass(currentClass: string): string {
+    // Extract class number from formats like "Class 1-A", "1st Grade", "Grade 1", etc.
+    const classMatch = currentClass.match(/(\d+)/);
+    if (!classMatch) return currentClass;
+
+    const currentNumber = parseInt(classMatch[1]);
+    if (currentNumber >= 12) return currentClass; // Max class
+
+    const newNumber = currentNumber + 1;
+    return currentClass.replace(/\d+/, newNumber.toString());
+  }
+
+  private calculatePreviousClass(currentClass: string): string {
+    // Extract class number from formats like "Class 1-A", "1st Grade", "Grade 1", etc.
+    const classMatch = currentClass.match(/(\d+)/);
+    if (!classMatch) return currentClass;
+
+    const currentNumber = parseInt(classMatch[1]);
+    if (currentNumber <= 1) return currentClass; // Min class
+
+    const newNumber = currentNumber - 1;
+    return currentClass.replace(/\d+/, newNumber.toString());
   }
 }
 

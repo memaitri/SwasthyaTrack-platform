@@ -28,6 +28,12 @@ export type FlowCategory = typeof flowCategoryEnum[number];
 export const schoolTypeEnum = ["Government", "Aided"] as const;
 export type SchoolType = typeof schoolTypeEnum[number];
 
+export const academicStatusEnum = ["Active", "Promoted", "Demoted", "Detained"] as const;
+export type AcademicStatus = typeof academicStatusEnum[number];
+
+export const academicActionEnum = ["Promote", "Demote", "Detain"] as const;
+export type AcademicAction = typeof academicActionEnum[number];
+
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   username: text("username").notNull().unique(),
@@ -97,6 +103,10 @@ export const students = pgTable("students", {
   // Menstruation marking: set once by ClassTeacher when first cycle starts
   menstruationStartedAt: timestamp("menstruation_started_at"),
   menstruationMarkedBy: varchar("menstruation_marked_by"),
+  // Academic status tracking
+  academicStatus: text("academic_status").notNull().$type<AcademicStatus>().default("Active"),
+  academicYear: integer("academic_year").default(sql`EXTRACT(YEAR FROM CURRENT_DATE)`),
+  previousClassSection: text("previous_class_section"),
 });
 
 export const annualHealthCards = pgTable("annual_health_cards", {
@@ -669,6 +679,24 @@ export const auditLogs = pgTable("audit_logs", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const studentAcademicActions = pgTable("student_academic_actions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  studentId: varchar("student_id").notNull(),
+  actionType: text("action_type").notNull().$type<AcademicAction>(),
+  oldStatus: text("old_status").notNull().$type<AcademicStatus>(),
+  newStatus: text("new_status").notNull().$type<AcademicStatus>(),
+  oldClassSection: text("old_class_section").notNull(),
+  newClassSection: text("new_class_section").notNull(),
+  oldTeacherId: varchar("old_teacher_id"),
+  newTeacherId: varchar("new_teacher_id"),
+  reason: text("reason").notNull(),
+  academicYear: integer("academic_year").notNull(),
+  performedBy: varchar("performed_by").notNull(),
+  performedByRole: text("performed_by_role").notNull().$type<Role>(),
+  performedAt: timestamp("performed_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 export const refreshTokens = pgTable("refresh_tokens", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull(),
@@ -1215,6 +1243,17 @@ export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({
   createdAt: true,
 });
 
+export const insertStudentAcademicActionSchema = createInsertSchema(studentAcademicActions).omit({
+  id: true,
+  createdAt: true,
+  performedAt: true,
+}).extend({
+  actionType: z.enum(academicActionEnum),
+  oldStatus: z.enum(academicStatusEnum),
+  newStatus: z.enum(academicStatusEnum),
+  performedByRole: z.enum(roleEnum),
+});
+
 export const insertReferralSchema = createInsertSchema(referrals).omit({
   id: true,
   createdAt: true,
@@ -1311,6 +1350,9 @@ export type HostelAttendance = typeof hostelAttendance.$inferSelect;
 
 export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
 export type AuditLog = typeof auditLogs.$inferSelect;
+
+export type InsertStudentAcademicAction = typeof studentAcademicActions.$inferInsert;
+export type StudentAcademicAction = typeof studentAcademicActions.$inferSelect;
 
 export type InsertReferral = z.infer<typeof insertReferralSchema>;
 export type Referral = typeof referrals.$inferSelect;

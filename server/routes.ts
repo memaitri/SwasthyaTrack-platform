@@ -2017,7 +2017,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/students/:id", authenticateToken, denyAdmin, async (req: AuthRequest, res) => {
+  app.get("/api/students/:id", authenticateToken, async (req: AuthRequest, res) => {
     try {
       const { id } = req.params;
       const student = await storage.getStudent(id);
@@ -2340,6 +2340,103 @@ export async function registerRoutes(
     } catch (error: any) {
       console.error("Mark menstruation error:", error?.message || String(error));
       res.status(500).json({ message: error?.message || "Failed to mark menstruation" });
+    }
+  });
+
+  // Student Academic Actions (Promote/Demote/Detain)
+  app.post("/api/students/:id/academic-action", authenticateToken, authorizeRoles("ClassTeacher", "Headmaster", "Admin"), async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+      const { actionType, reason } = req.body;
+
+      // Validate input
+      if (!actionType || !['Promote', 'Demote', 'Detain'].includes(actionType)) {
+        return res.status(400).json({ message: "Invalid action type. Must be Promote, Demote, or Detain" });
+      }
+
+      if (!reason || reason.trim().length < 10) {
+        return res.status(400).json({ message: "Reason is required and must be at least 10 characters long" });
+      }
+
+      // Perform the academic action
+      const result = await storage.performStudentAcademicAction({
+        studentId: id,
+        actionType,
+        reason: reason.trim(),
+        performedBy: req.user!.id,
+        performedByRole: req.user!.role,
+      });
+
+      if (!result.success) {
+        return res.status(400).json({ message: result.message });
+      }
+
+      res.json({
+        message: result.message,
+        student: result.student,
+      });
+    } catch (error: any) {
+      console.error("Academic action error:", error?.message || String(error));
+      res.status(500).json({ message: error?.message || "Failed to perform academic action" });
+    }
+  });
+
+  // Get student academic action history
+  app.get("/api/students/:id/academic-actions", authenticateToken, async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      const academicYear = req.query.academicYear ? parseInt(req.query.academicYear as string) : undefined;
+
+      // Verify access to student
+      const student = await storage.getStudent(id);
+      if (!student) {
+        return res.status(404).json({ message: "Student not found" });
+      }
+
+      // Role-based access control
+      if (req.user?.role === "ClassTeacher") {
+        const teacher = await storage.getUser(req.user.id);
+        if (teacher?.schoolId !== student.schoolId || 
+            (teacher?.classSection && student.classSection !== teacher.classSection)) {
+          return res.status(403).json({ message: "You can only view academic actions for students in your assigned class" });
+        }
+      } else if (req.user?.role === "Headmaster") {
+        if (req.user.schoolId !== student.schoolId) {
+          return res.status(403).json({ message: "You can only view academic actions for students in your school" });
+        }
+      }
+
+      const result = await storage.getStudentAcademicActions({
+        studentId: id,
+        academicYear,
+        page,
+        limit,
+      });
+
+      res.json(result);
+    } catch (error: any) {
+      console.error("Get academic actions error:", error?.message || String(error));
+      res.status(500).json({ message: error?.message || "Failed to get academic actions" });
+    }
+  });
+
+  // Validate academic action (for frontend validation)
+  app.post("/api/students/:id/validate-academic-action", authenticateToken, authorizeRoles("ClassTeacher", "Headmaster", "Admin"), async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+      const { actionType } = req.body;
+
+      if (!actionType || !['Promote', 'Demote', 'Detain'].includes(actionType)) {
+        return res.status(400).json({ message: "Invalid action type" });
+      }
+
+      const validation = await storage.validateAcademicAction(id, actionType, req.user!.id);
+      res.json(validation);
+    } catch (error: any) {
+      console.error("Validate academic action error:", error?.message || String(error));
+      res.status(500).json({ message: error?.message || "Failed to validate academic action" });
     }
   });
 

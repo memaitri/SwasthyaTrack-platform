@@ -16,6 +16,7 @@ import HostelWardenDashboard from "@/pages/HostelWardenDashboard";
 import LadySuperintendentDashboard from "@/pages/LadySuperintendentDashboard";
 import StudentsPage from "@/pages/StudentsPage";
 import StudentFormPage from "@/pages/StudentFormPage";
+import StudentAcademicActionsPage from "@/pages/StudentAcademicActionsPage";
 import HealthCardsPage from "@/pages/HealthCardsPage";
 import ApprovalsPage from "@/pages/ApprovalsPage";import PendingSchoolsPage from "./pages/PendingSchoolsPage";import MonthlyCheckupsPage from "@/pages/MonthlyCheckupsPage";
 import MealLogsPage from "@/pages/MealLogsPage";
@@ -145,6 +146,12 @@ function Router() {
       <Route path="/students/:id">
         <ProtectedRoute allowedRoles={["ClassTeacher"]}>
           <StudentFormPage />
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/students/:id/academic-actions">
+        <ProtectedRoute allowedRoles={["ClassTeacher", "Headmaster", "Admin"]}>
+          <StudentAcademicActionsPage />
         </ProtectedRoute>
       </Route>
 
