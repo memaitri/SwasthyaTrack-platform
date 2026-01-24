@@ -11,10 +11,12 @@
     "dev:server": "cross-env NODE_ENV=development tsx server/index.ts",
     "dev:client": "cd client && vite",
     "dev": "concurrently \"npm run dev:client\" \"npm run dev:server\"",
-    "build:client": "vite build client",
-    "build:server": "mkdir -p server/dist && cp server/*.js server/dist/ && cp -r shared server/dist/ && cp -r lib server/dist/",
-    "build": "npm run build:client && npm run build:server",
-    "start": "node server/dist/index.js",
+  
+    "build:server": "tsc -p tsconfig.json",
+    "build:client": "vite build",
+    "build": "npm run build:server && npm run build:client",
+    "start": "node dist/server/index.js",
+  
     "railway:build": "npm run build",
     "railway:start": "npm start",
     "check": "tsc",
