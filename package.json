@@ -5,15 +5,15 @@
   "license": "MIT",
   "scripts": {
     "dev:server": "cross-env NODE_ENV=development tsx server/index.ts",
-    "build:server": "tsx script/build.ts",
-    "start": "cross-env NODE_ENV=production node dist/index.cjs",
+    "dev:client": "cd client && vite",
+    "dev": "concurrently \"npm run dev:client\" \"npm run dev:server\"",
+    "build:client": "cd client && npm install && npm run build",
+    "build:server": "tsc -p server",
+    "build": "npm run build:client && npm run build:server",
+    "start": "node server/dist/index.js",
     "check": "tsc",
     "test": "vitest",
-    "db:push": "drizzle-kit push",
-    "build:client": "vite build",
-    "dev:client": "vite",
-    "dev": "concurrently \"npm run dev:client\" \"npm run dev:server\"",
-    "build": "npm run build:client"
+    "db:push": "drizzle-kit push"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
