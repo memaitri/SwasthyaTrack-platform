@@ -133,7 +133,7 @@ httpServer.listen(port, "0.0.0.0", () => {
       // DB compatibility migrations
       try {
         await db.execute(`
-DO $
+DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='students' AND column_name='pran_no') THEN
     IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='students' AND column_name='mcts_no') THEN
@@ -154,7 +154,7 @@ BEGIN
       ALTER TABLE annual_health_cards ADD COLUMN pran_no text;
     END IF;
   END IF;
-END $;
+END $$;
         `);
         log("DB compatibility: ensured pran_no columns exist and migrated from mcts_no when present");
       } catch (compatErr) {
