@@ -6,6 +6,8 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { db } from "./db";
 import ws from "ws";
+import path from "path";
+import { fileURLToPath } from "url";
 
 // ✅ Add this import
 import authRoutes from "./auth";
@@ -37,6 +39,9 @@ process.on('uncaughtException', (error: Error) => {
 
 const app = express();
 const httpServer = createServer(app);
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 
 // Optional: attach rawBody for webhook use
 declare module "http" {
@@ -170,9 +175,16 @@ END $$;
 
     // Serve frontend: Vite in dev, static in prod
     if (process.env.NODE_ENV === "production") {
-      // Register all app routes FIRST, before static serving
+      // Register API routes FIRST
       await registerRoutes(httpServer, app);
-      serveStatic(app);
+      // Path to built frontend
+      const clientDist = path.join(__dirname, "../../client/dist");
+      // Serve frontend
+      app.use(express.static(clientDist));
+      // SPA fallback
+      app.get("*", (req, res) => {
+        res.sendFile(path.join(clientDist, "index.html"));
+      });
     } else {
       const { setupVite } = await import("./vite");
       await setupVite(httpServer, app);
