@@ -50,6 +50,8 @@ export interface IStorage {
   updateUser(id: string, data: Partial<InsertUser>): Promise<User | undefined>;
   getUserProfile(id: string): Promise<User | undefined>;
   deleteUser(id: string): Promise<void>;
+  deleteStudent(id: string): Promise<void>;
+  deleteSchool(id: string): Promise<void>;
   getUsers(page?: number, limit?: number): Promise<{ users: User[]; total: number }>;
 
   getSchool(id: string, includePending?: boolean): Promise<School | undefined>;
@@ -267,6 +269,14 @@ export class DatabaseStorage implements IStorage {
 
   async deleteUser(id: string): Promise<void> {
     await db.delete(users).where(eq(users.id, id));
+  }
+
+  async deleteStudent(id: string): Promise<void> {
+    await db.delete(students).where(eq(students.id, id));
+  }
+
+  async deleteSchool(id: string): Promise<void> {
+    await db.delete(schools).where(eq(schools.id, id));
   }
 
   async getUsers(page = 1, limit = 10): Promise<{ users: User[]; total: number }> {

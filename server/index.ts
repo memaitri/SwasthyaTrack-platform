@@ -80,6 +80,9 @@ process.on('uncaughtException', (error: Error) => {
   if (process.env.NODE_ENV === 'production') process.exit(1);
 });
 
+// Export app for testing
+export { app };
+
 // --- Main Async Bootstrap ---
 (async () => {
   try {
@@ -95,8 +98,8 @@ process.on('uncaughtException', (error: Error) => {
     // --- Mount all API routes ---
     let registerRoutes: typeof import("./routes").registerRoutes;
     if (process.env.NODE_ENV === "production") {
-      // Load compiled JS in production
-      registerRoutes = (await import("./dist/routes.js")).registerRoutes;
+      // Load compiled JS in production (routes.js will be in same directory as index.js)
+      registerRoutes = (await import("./routes.js")).registerRoutes;
     } else {
       // Load TS directly in development
       registerRoutes = (await import("./routes.js")).registerRoutes;
