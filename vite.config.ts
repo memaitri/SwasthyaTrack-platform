@@ -21,20 +21,21 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
-      "@": path.resolve(import.meta.dirname, "client", "src"),
-      "@shared": path.resolve(import.meta.dirname, "shared"),
-      "@assets": path.resolve(import.meta.dirname, "attached_assets"),
+      "@": path.resolve(import.meta.url, "../client/src"),
+      "@shared": path.resolve(import.meta.url, "../shared"),
+      "@assets": path.resolve(import.meta.url, "../attached_assets"),
     },
   },
-  root: path.resolve(import.meta.dirname, "client"),
+  root: path.resolve("./client"),
   build: {
-    outDir: path.resolve(import.meta.dirname, "dist/public"),
+    outDir: path.resolve("./client/dist"), // flattened build for Vercel
     emptyOutDir: true,
+    sourcemap: false,
   },
   server: {
     fs: {
       strict: true,
-      allow: [path.resolve(import.meta.dirname, "lib")],
+      allow: [path.resolve("./lib")],
       deny: ["**/.*"],
     },
     allowedHosts: true,
