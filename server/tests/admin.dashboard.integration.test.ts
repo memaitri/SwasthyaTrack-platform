@@ -1,7 +1,7 @@
 import request from 'supertest';
 import { describe, it, beforeAll, afterAll, expect } from 'vitest';
-import { app } from '../index';
-import { storage } from '../storage';
+import { app } from '../index.js';
+import { storage } from '../storage.js';
 
 let adminUser: any;
 let accessToken: string;

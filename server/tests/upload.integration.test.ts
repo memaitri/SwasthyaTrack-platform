@@ -2,8 +2,8 @@ import { describe, it, beforeAll, afterAll, expect } from 'vitest';
 import express from 'express';
 import { createServer } from 'http';
 import request from 'supertest';
-import { registerRoutes } from '../routes';
-import { storage } from '../storage';
+import { registerRoutes } from '../routes.js';
+import { storage } from '../storage.js';
 import jwt from 'jsonwebtoken';
 
 process.env.NODE_ENV = 'test';

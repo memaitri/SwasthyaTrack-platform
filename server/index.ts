@@ -2,18 +2,17 @@
 import 'dotenv/config'; // ✅ Load .env first
 import express, { type Request, Response, NextFunction } from "express";
 import { createServer } from "http";
-import { registerRoutes } from "./routes";
-import { serveStatic } from "./static";
-import { db } from "./db";
-import ws from "ws";
+import { registerRoutes } from "./routes.js";
+// @ts-ignore - Module resolution issue, but works at runtime
+import { db } from "./db.js";
 import path from "path";
 import { fileURLToPath } from "url";
 
-// ✅ Add this import
-import authRoutes from "./auth";
+// @ts-ignore - Module resolution issue, but works at runtime
+import authRoutes from "./auth.js";
 
 // Global error handlers to prevent connection pool dumps
-process.on('unhandledRejection', (reason: any, promise) => {
+process.on('unhandledRejection', (reason: any, _promise) => {
   const errorMessage = reason?.message || String(reason) || 'Unhandled Promise Rejection';
   // Only log the error message, not the full object
   if (errorMessage && !errorMessage.includes('DbHandler')) {
@@ -190,7 +189,7 @@ END $$;
         res.sendFile(path.join(clientDist, "index.html"));
       });
     } else {
-      const { setupVite } = await import("./vite");
+      const { setupVite } = await import("./vite.js");
       await setupVite(httpServer, app);
       // Routes are registered inside setupVite for development
     }

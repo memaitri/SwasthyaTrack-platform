@@ -1,5 +1,5 @@
 import { describe, it, beforeAll, expect } from 'vitest';
-import { storage } from '../storage';
+import { storage } from '../storage.js';
 
 let school: any;
 let student: any;

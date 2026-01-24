@@ -2,10 +2,10 @@ import { describe, it, beforeAll, afterAll, expect } from 'vitest';
 import request from 'supertest';
 import express from 'express';
 import { createServer } from 'http';
-import { registerRoutes } from '../routes';
-import { storage } from '../storage';
-import { db } from '../db';
-import { notifications } from '@shared/schema';
+import { registerRoutes } from '../routes.js';
+import { storage } from '../storage.js';
+import { db } from '../db.js';
+import { notifications } from '../shared/schema.js';
 import { eq, and, desc } from 'drizzle-orm';
 
 let app: express.Express;

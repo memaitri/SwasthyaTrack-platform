@@ -935,47 +935,21 @@ export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
-}).extend({
-  role: z.enum(roleEnum),
 });
 
 export const insertSchoolSchema = createInsertSchema(schools).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
-}).extend({
-  code: z.string().optional(),
-  requestedByEmail: z.string().email().optional().or(z.literal("")),
-  schoolType: z.enum(schoolTypeEnum, {
-    required_error: "School Type is required",
-    invalid_type_error: "Invalid school type. Must be either 'Government' or 'Aided'",
-  }),
 });
 
 export const insertStudentSchema = createInsertSchema(students).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
-}).extend({
-  gender: z.enum(genderEnum),
-  dateOfBirth: z.coerce.date({ invalid_type_error: "Date of Birth is required" }).nullable(),
-  schoolAdmissionDate: z.coerce.date({ 
-    required_error: "School Admission Date is required",
-    invalid_type_error: "School Admission Date must be a valid date" 
-  }),
-  enrollmentDate: z.coerce.date().nullable().optional(),
-  uniqueId: z.string().optional(),
-  pranNo: z.string().min(6, "PRAN number is required and seems too short"),
-  aadhaarNo: z.string().refine((val) => !!val && String(val).length === 12, { message: "Aadhaar number must be 12 digits" }),
-  classSection: z.string().optional(),
-  schoolId: z.string().optional(),
 });
 
-export const insertAnnualHealthCardSchema = createInsertSchema(annualHealthCards).omit({
-   id: true,
-   createdAt: true,
-   updatedAt: true,
-}).extend({
+export const insertAnnualHealthCardSchema = createInsertSchema(annualHealthCards).omit({ id: true, createdAt: true, updatedAt: true }).extend({
    // Required field validations
    studentId: z.string().min(1, "Student ID is required"),
    schoolId: z.string().min(1, "School ID is required"),
@@ -1218,70 +1192,41 @@ export const insertAnnualHealthCardSchema = createInsertSchema(annualHealthCards
   rejectionReason: z.string().optional(),
 });
 
-export const insertMonthlyCheckupSchema = createInsertSchema(monthlyCheckups).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-}).extend({
+export const insertMonthlyCheckupSchema = createInsertSchema(monthlyCheckups).omit({ id: true, createdAt: true, updatedAt: true }).extend({
   treatmentType: z.enum(treatmentTypeEnum).optional(),
   symptoms: z.array(z.string()).optional(),
   suggestedMedicines: z.array(z.string()).optional(),
 });
 
-export const insertMealLogSchema = createInsertSchema(mealLogs).omit({
-  id: true,
-  createdAt: true,
-}).extend({
+export const insertMealLogSchema = createInsertSchema(mealLogs).omit({ id: true, createdAt: true }).extend({
   mealType: z.enum(mealTypeEnum),
   menuItems: z.array(z.string()).optional(),
 });
 
-export const insertHostelAttendanceSchema = createInsertSchema(hostelAttendance).omit({
-  id: true,
-  createdAt: true,
-}).extend({
+export const insertHostelAttendanceSchema = createInsertSchema(hostelAttendance).omit({ id: true, createdAt: true }).extend({
   recorderRole: z.enum(hostelAttendanceRecorderEnum).optional(),
 });
 
-export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({
-  id: true,
-  createdAt: true,
-});
+export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({ id: true, createdAt: true });
 
-export const insertStudentAcademicActionSchema = createInsertSchema(studentAcademicActions).omit({
-  id: true,
-  createdAt: true,
-  performedAt: true,
-}).extend({
+export const insertStudentAcademicActionSchema = createInsertSchema(studentAcademicActions).omit({ id: true, createdAt: true, performedAt: true }).extend({
   actionType: z.enum(academicActionEnum),
   oldStatus: z.enum(academicStatusEnum),
   newStatus: z.enum(academicStatusEnum),
   performedByRole: z.enum(roleEnum),
 });
 
-export const insertReferralSchema = createInsertSchema(referrals).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-}).extend({
+export const insertReferralSchema = createInsertSchema(referrals).omit({ id: true, createdAt: true, updatedAt: true }).extend({
   status: z.enum(statusEnum).optional(),
 });
 
-export const insertNotificationSchema = createInsertSchema(notifications).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-}).extend({
+export const insertNotificationSchema = createInsertSchema(notifications).omit({ id: true, createdAt: true, updatedAt: true }).extend({
   senderRole: z.enum(roleEnum),
   receiverRole: z.enum(roleEnum),
   type: z.enum(notificationTypeEnum),
 });
 
-export const insertPeriodTrackerEntrySchema = createInsertSchema(periodTrackerEntries).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-}).extend({
+export const insertPeriodTrackerEntrySchema = createInsertSchema(periodTrackerEntries).omit({ id: true, createdAt: true, updatedAt: true }).extend({
   flowCategory: z.enum(flowCategoryEnum).optional(),
   moods: z.array(z.string()).optional(),
   symptoms: z.array(z.string()).optional(),

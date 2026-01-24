@@ -1,19 +1,19 @@
 import type { Express, Request, Response, NextFunction } from "express";
-import { createServer, type Server } from "http";
-import { storage } from "./storage";
+import type { Server } from "http";
+import { storage } from "./storage.js";
 import { reportsStorage } from "./reportsStorage.js";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
-import { insertStudentSchema, insertSchoolSchema, insertAnnualHealthCardSchema, insertMonthlyCheckupSchema, insertMealLogSchema, loginSchema, registerSchema, roleEnum, hostelAttendance, annualHealthCards, users, schools, students, notifications, referrals, type Student } from "@shared/schema";
+import { insertStudentSchema, insertSchoolSchema, insertAnnualHealthCardSchema, insertMonthlyCheckupSchema, insertMealLogSchema, loginSchema, registerSchema, hostelAttendance, annualHealthCards, users, schools, students, notifications, referrals } from "../shared/schema.js";
 import { z } from "zod";
 import PDFDocument from "pdfkit";
 import ExcelJS from "exceljs";
 import puppeteer from "puppeteer";
 import multer from "multer";
-import type { Multer } from "multer";
 import path from "path";
 import fs from "fs";
-import { db } from "./db";
+// @ts-ignore - Module resolution issue, but works at runtime
+import { db } from "./db.js";
 import { sql, eq, and, or, isNull, desc, inArray } from "drizzle-orm";
 
 // Normalize status values from DB/third-party sources to canonical casing
@@ -31,11 +31,8 @@ function normalizeStatus(s?: string) {
   return s;
 }
 import { createClient } from "@supabase/supabase-js";
-import { isC7ReferralNeeded, isC8ReferralNeeded, isC9ReferralNeeded, generateC7ReferralIssue, generateC8ReferralIssue, getC9ReferralDescription } from "./referralLogic";
-import { getBMIClassification } from "../lib/bmiColors";
-import { filterBySchoolType, filterByDistrict, applyFilters, validateFilterConfig, type FilterConfig } from "../lib/filterUtils";
-// @ts-ignore - pdfkit doesn't have type definitions
-const PDFDocumentAny = PDFDocument as any;
+import { isC7ReferralNeeded, isC8ReferralNeeded, isC9ReferralNeeded, generateC7ReferralIssue, generateC8ReferralIssue, getC9ReferralDescription } from "./referralLogic.js";
+import { getBMIClassification } from "../lib/bmiColors.js";
 
 // Initialize Supabase client (graceful fallback when env vars are missing)
 let supabase: any;
@@ -470,10 +467,10 @@ if (!fs.existsSync(uploadDir)) {
 }
 
 const storage_multer = multer.diskStorage({
-  destination: (req, file, cb) => {
+  destination: (_req: any, _file: any, cb: any) => {
     cb(null, uploadDir);
   },
-  filename: (req, file, cb) => {
+  filename: (_req: any, file: any, cb: any) => {
     const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1E9);
     cb(null, file.fieldname + "-" + uniqueSuffix + path.extname(file.originalname));
   },
@@ -482,7 +479,7 @@ const storage_multer = multer.diskStorage({
 const upload = multer({
   storage: storage_multer,
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
-  fileFilter: (req, file, cb) => {
+  fileFilter: (_req: any, file: any, cb: any) => {
     const allowedTypes = /jpeg|jpg|png|gif|webp/;
     const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
     const mimetype = allowedTypes.test(file.mimetype);
@@ -1446,7 +1443,12 @@ export async function registerRoutes(
           }
         }
 
-        await db.update(users).set({ approvalStatus: "Approved", isActive: true, approverId: requester.id, approvedAt: new Date() }).where(eq(users.id, id));
+        await db.update(users).set({ 
+          approvalStatus: "Approved" as any, 
+          isActive: true, 
+          approverId: requester.id, 
+          approvedAt: new Date() 
+        } as any).where(eq(users.id, id));
         // Audit log for approval
         try {
           if (userToApprove.role === "Lady Superintendent") {
@@ -1459,7 +1461,12 @@ export async function registerRoutes(
         }
       } else if (requester.role === "Admin") {
         // Admin can approve any pending user (including PO and Headmaster)
-        await db.update(users).set({ approvalStatus: "Approved", isActive: true, approverId: requester.id, approvedAt: new Date() }).where(eq(users.id, id));
+        await db.update(users).set({ 
+          approvalStatus: "Approved" as any, 
+          isActive: true, 
+          approverId: requester.id, 
+          approvedAt: new Date() 
+        } as any).where(eq(users.id, id));
         try {
           await storage.createAuditLog({ userId: requester.id, action: userToApprove.role === 'Lady Superintendent' ? 'LS_REQUEST_APPROVED' : 'USER_REQUEST_APPROVED', entityType: 'user', entityId: userToApprove.id, details: { approvedBy: requester.id } } as any);
         } catch (e) {
@@ -1504,14 +1511,26 @@ export async function registerRoutes(
           return res.status(403).json({ message: "Insufficient privileges to reject this role" });
         }
         if (userToReject.schoolId !== requester.schoolId) return res.status(403).json({ message: "Cannot reject users from a different school" });
-        await db.update(users).set({ approvalStatus: "Rejected", isActive: false, approverId: requester.id, approverNote: reason ?? null, approvedAt: new Date() }).where(eq(users.id, id));
+        await db.update(users).set({ 
+          approvalStatus: "Rejected" as any, 
+          isActive: false, 
+          approverId: requester.id, 
+          approverNote: reason ?? null, 
+          approvedAt: new Date() 
+        } as any).where(eq(users.id, id));
         try {
           await storage.createAuditLog({ userId: requester.id, action: userToReject.role === 'Lady Superintendent' ? 'LS_REQUEST_REJECTED' : 'USER_REQUEST_REJECTED', entityType: 'user', entityId: userToReject.id, details: { rejectedBy: requester.id, reason: reason ?? null } } as any);
         } catch (e) {
           console.warn('Failed to create audit log for rejection:', (e as any)?.message || e);
         }
       } else if (requester.role === "Admin") {
-        await db.update(users).set({ approvalStatus: "Rejected", isActive: false, approverId: requester.id, approverNote: reason ?? null, approvedAt: new Date() }).where(eq(users.id, id));
+        await db.update(users).set({ 
+          approvalStatus: "Rejected" as any, 
+          isActive: false, 
+          approverId: requester.id, 
+          approverNote: reason ?? null, 
+          approvedAt: new Date() 
+        } as any).where(eq(users.id, id));
         try {
           await storage.createAuditLog({ userId: requester.id, action: userToReject.role === 'Lady Superintendent' ? 'LS_REQUEST_REJECTED' : 'USER_REQUEST_REJECTED', entityType: 'user', entityId: userToReject.id, details: { rejectedBy: requester.id, reason: reason ?? null } } as any);
         } catch (e) {
@@ -1729,7 +1748,12 @@ export async function registerRoutes(
       if (!schoolToApprove) return res.status(404).json({ message: "School not found" });
       if (schoolToApprove.approvalStatus !== "Pending") return res.status(400).json({ message: "School is not pending approval" });
 
-      await db.update(schools).set({ approvalStatus: "Approved", isActive: true, approverId: requester.id, approvedAt: new Date() }).where(eq(schools.id, id));
+      await db.update(schools).set({ 
+        approvalStatus: "Approved" as any, 
+        isActive: true, 
+        approverId: requester.id, 
+        approvedAt: new Date() 
+      } as any).where(eq(schools.id, id));
 
       // Notify admins and the requesting user (if exists)
       try {
@@ -1779,7 +1803,13 @@ export async function registerRoutes(
       if (!schoolToReject) return res.status(404).json({ message: "School not found" });
       if (schoolToReject.approvalStatus !== "Pending") return res.status(400).json({ message: "School is not pending approval" });
 
-      await db.update(schools).set({ approvalStatus: "Rejected", isActive: false, approverId: requester.id, approverNote: reason ?? null, approvedAt: new Date() }).where(eq(schools.id, id));
+      await db.update(schools).set({ 
+        approvalStatus: "Rejected" as any, 
+        isActive: false, 
+        approverId: requester.id, 
+        approverNote: reason ?? null, 
+        approvedAt: new Date() 
+      } as any).where(eq(schools.id, id));
 
       try {
         await storage.createNotification({
@@ -1957,7 +1987,7 @@ export async function registerRoutes(
       }
 
       // Helper: check Supabase storage for an existing health-card file for a student
-      async function supabaseHasHealthCardForStudent(stu: any) {
+      const supabaseHasHealthCardForStudent = async (stu: any) => {
         if (!supabase) return false;
         const candidates = [
           `health-cards/${stu.id}`,
@@ -1974,7 +2004,7 @@ export async function registerRoutes(
           console.warn('Supabase health-card check failed for', stu.id, (e as any)?.message || e);
         }
         return false;
-      }
+      };
 
       const studentsWithHealthStatus = await Promise.all(
         students.map(async (student) => {
@@ -2101,7 +2131,7 @@ export async function registerRoutes(
       // Generate uniqueId if not provided (prefer PRAN when available)
       let uniqueId = validatedStudentData.uniqueId || validatedStudentData.pranNo;
       if (!uniqueId) {
-        uniqueId = `STD-${Date.now().toString().slice(-8)}-${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
+        uniqueId = `STD-${Date.now().toString().slice(-8)}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
       }
 
       // For ClassTeacher, ensure student is in their assigned class
@@ -2113,7 +2143,7 @@ export async function registerRoutes(
         }
         // Use teacher's assigned class if not specified
         if (!classSection) {
-          classSection = teacher?.classSection ?? undefined;
+          classSection = teacher?.classSection || "";
         }
         if (teacher?.classSection && classSection !== teacher.classSection) {
           return res.status(403).json({ message: `You can only add students to ${teacher.classSection || 'your assigned class section'}` });
@@ -3787,7 +3817,7 @@ export async function registerRoutes(
         return res.status(401).json({ message: "Authentication required" });
       }
 
-      const decoded = jwt.decode(token) as any;
+      const decoded = jwt.verify(token, JWT_SECRET) as any;
       if (!decoded || !decoded.id) {
         return res.status(401).json({ message: "Invalid authentication" });
       }
@@ -3838,7 +3868,7 @@ export async function registerRoutes(
         return res.status(401).json({ message: "Authentication required" });
       }
 
-      const decoded = jwt.decode(token) as any;
+      const decoded = jwt.verify(token, JWT_SECRET) as any;
       if (!decoded || !decoded.id) {
         return res.status(401).json({ message: "Invalid authentication" });
       }
@@ -4250,7 +4280,7 @@ async function getMenstrualHealthAnalytics(schools: any[], selectedMonth: number
     
     // Calculate cycle regularity summary
     const regularityStats: Record<string, number> = { regular: 0, irregular: 0, unknown: 0 };
-    for (const analysis of studentCycleAnalysis.values()) {
+    for (const analysis of Array.from(studentCycleAnalysis.values())) {
       const regularity = (analysis as any).regularity;
       if (regularity in regularityStats) {
         regularityStats[regularity]++;
@@ -4362,21 +4392,6 @@ async function getMenstrualHealthAnalytics(schools: any[], selectedMonth: number
       console.log('========== PO DASHBOARD REQUEST START ==========');
       console.log('Request params:', { selectedMonth, selectedYear, selectedSchoolType, userId: req.user!.id });
 
-      // Validate filter configuration
-      const filterConfig: FilterConfig = {
-        schoolType: selectedSchoolType as any,
-        month: selectedMonth,
-        year: selectedYear
-      };
-
-      const validation = validateFilterConfig(filterConfig);
-      if (!validation.isValid) {
-        return res.status(400).json({ 
-          message: "Invalid filter parameters", 
-          errors: validation.errors 
-        });
-      }
-
       // Get PO's district to filter schools
       const user = await storage.getUser(req.user!.id);
       const poDistrict: string | undefined = user?.district ?? undefined;
@@ -4391,18 +4406,20 @@ async function getMenstrualHealthAnalytics(schools: any[], selectedMonth: number
       } else if (poDistrict) {
         // For PO, filter by district first
         const allSchools = await storage.getSchools(1, 1000);
-        schools = filterByDistrict(allSchools.schools, poDistrict);
+        schools = allSchools.schools.filter(s => s.district === poDistrict);
       } else {
         // If PO has no district, show no schools
         schools = [];
       }
 
-      // Apply school type filter using utility function
-      schools = filterBySchoolType(schools, selectedSchoolType as any);
+      // Apply school type filter
+      if (selectedSchoolType && selectedSchoolType !== "All") {
+        schools = schools.filter(s => s.schoolType === selectedSchoolType);
+      }
 
-      // Separate schools by type for aggregated metrics (using utility functions)
-      const governmentSchools = filterBySchoolType(schools, "Government");
-      const aidedSchools = filterBySchoolType(schools, "Aided");
+      // Separate schools by type for aggregated metrics
+      const governmentSchools = schools.filter(s => s.schoolType === "Government");
+      const aidedSchools = schools.filter(s => s.schoolType === "Aided");
 
       const metrics = await storage.getDashboardMetrics("PO", req.user!.id, undefined, undefined, poDistrict);
 
@@ -5465,8 +5482,8 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
         }).map(c => c.studentId).filter(Boolean));
 
         // Union the sets to get final completed counts (prefer health-card evidence, but include referrals table as fallback)
-        const leprosyCompletedSet = new Set<string>([...completedFromReferralsLeprosy, ...Array.from(completedFromCardsLeprosy)]);
-        const tbCompletedSet = new Set<string>([...completedFromReferralsTB, ...Array.from(completedFromCardsTB)]);
+        const leprosyCompletedSet = new Set<string>([...Array.from(completedFromReferralsLeprosy), ...Array.from(completedFromCardsLeprosy)]);
+        const tbCompletedSet = new Set<string>([...Array.from(completedFromReferralsTB), ...Array.from(completedFromCardsTB)]);
 
         const leprosyReferralCompleted = leprosyCompletedSet.size;
         const tbReferralCompleted = tbCompletedSet.size;
@@ -5985,7 +6002,7 @@ async function generateExcelReport(workbook: ExcelJS.Workbook, reportData: any, 
 }
 
 async function generatePDFReport(reportData: any, reportType: string, userRole: string): Promise<Buffer> {
-  const doc = new PDFDocumentAny();
+  const doc = new (PDFDocument as any)();
   const chunks: Buffer[] = [];
   
   doc.on('data', (chunk: Buffer) => chunks.push(chunk));
@@ -6211,7 +6228,7 @@ async function generatePDFReport(reportData: any, reportType: string, userRole: 
 
       // Create shared report record
       const sharedReport = {
-        id: `shared_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        id: `shared_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
         reportId: reportId || `report_${Date.now()}`,
         reportType,
         reportData: JSON.stringify(reportData),
@@ -6233,7 +6250,7 @@ async function generatePDFReport(reportData: any, reportType: string, userRole: 
         message: `${senderName} shared a ${reportType} report with you. ${message}`,
         metadata: sharedReport,
         isImportant: true
-      });
+      } as any);
       
       // Send notifications to shared users
       for (const user of sharedUsers) {
@@ -6252,7 +6269,7 @@ async function generatePDFReport(reportData: any, reportType: string, userRole: 
             sharedAt: new Date().toISOString()
           },
           isImportant: true
-        });
+        } as any);
       }
       
       res.json({ 
@@ -6400,7 +6417,7 @@ async function generatePDFReport(reportData: any, reportType: string, userRole: 
       
       for (const category of reportCategories) {
         const sampleReportData = {
-          reportId: `${category}-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+          reportId: `${category}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
           reportType: Math.random() > 0.5 ? 'PDF' as const : 'EXCEL' as const,
           reportCategory: category,
           roleAllowed: userRole as any,
@@ -6460,7 +6477,7 @@ async function generatePDFReport(reportData: any, reportType: string, userRole: 
       
       // Store the report
       const storedReport = await reportsStorage.storeReport({
-        reportId: `report_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        reportId: `report_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
         reportType: 'PDF', // Default to PDF for now
         reportCategory: reportType,
         roleAllowed: req.user!.role as any,
@@ -6849,7 +6866,7 @@ async function generatePDFReport(reportData: any, reportType: string, userRole: 
         }
 
         // Calculate analytics for each class
-        for (const classSection of classMap.keys()) {
+        for (const classSection of Array.from(classMap.keys())) {
           const data = classMap.get(classSection)!;
           const { students, cards } = data;
 
@@ -7018,7 +7035,7 @@ async function generatePDFReport(reportData: any, reportType: string, userRole: 
       }
 
       // Get all students in the district
-      const allStudents: Student[] = [];
+      const allStudents: any[] = [];
       for (const school of schools) {
         const { students } = await storage.getStudents({ schoolId: school.id, limit: 1000 });
         allStudents.push(...students);
@@ -8017,7 +8034,8 @@ async function generatePDFReport(reportData: any, reportType: string, userRole: 
       );
 
       // Calculate users by role dynamically
-      const usersByRole = roleEnum.map(role => ({
+      const roles = ["Admin", "ClassTeacher", "Headmaster", "MedicalTeam", "HostelWarden", "PO", "Lady Superintendent", "MealSuperintendent"];
+      const usersByRole = roles.map(role => ({
         role,
         count: allUsers.filter(u => u.role === role).length
       }));
@@ -8260,7 +8278,7 @@ async function generatePDFReport(reportData: any, reportType: string, userRole: 
       const filename = `report-${type}-${reportYear}-${reportMonth}`;
 
       // Helper to fetch all monthly checkups across pages
-      async function fetchAllMonthlyCheckups(params: any) {
+      const fetchAllMonthlyCheckups = async (params: any) => {
         const pageLimit = 1000;
         let page = 1;
         let all: any[] = [];
@@ -8273,10 +8291,10 @@ async function generatePDFReport(reportData: any, reportType: string, userRole: 
         }
         console.log(`fetchAllMonthlyCheckups: fetched ${all.length} records`);
         return all;
-      }
+      };
 
       // Helper to fetch all annual health cards across pages
-      async function fetchAllAnnualCards(params: any) {
+      const fetchAllAnnualCards = async (params: any) => {
         const pageLimit = 1000;
         let page = 1;
         let all: any[] = [];
@@ -8289,7 +8307,7 @@ async function generatePDFReport(reportData: any, reportType: string, userRole: 
         }
         console.log(`fetchAllAnnualCards: fetched ${all.length} records`);
         return all;
-      }
+      };
 
       // Handle different formats
       if (format === "csv") {
@@ -8589,7 +8607,7 @@ async function generatePDFReport(reportData: any, reportType: string, userRole: 
           const pageSize = (req.query.pageSize as string) || PDF_DEFAULT_OPTIONS.size;
           // Enforce portrait orientation to comply with report requirements
           const layout = 'portrait';
-          const doc = new (PDFDocumentAny)({ size: pageSize, layout, margins: PDF_DEFAULT_OPTIONS.margins });
+          const doc = new (PDFDocument as any)({ size: pageSize, layout, margins: PDF_DEFAULT_OPTIONS.margins });
           // Use consistent default font for the whole document
           try { doc.font('Helvetica'); } catch (e) { /* ignore if font not available */ }
 

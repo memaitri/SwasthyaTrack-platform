@@ -2,8 +2,8 @@ import { describe, it, beforeAll, afterAll, expect } from 'vitest';
 import request from 'supertest';
 import express from 'express';
 import { createServer } from 'http';
-import { registerRoutes } from '../routes';
-import { storage } from '../storage';
+import { registerRoutes } from '../routes.js';
+import { storage } from '../storage.js';
 
 let app: express.Express;
 let server: any;

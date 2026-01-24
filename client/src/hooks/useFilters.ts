@@ -4,7 +4,10 @@
  */
 
 import { useState, useMemo, useCallback } from "react";
-import { schoolTypeEnum, type SchoolType } from "@shared/schema";
+
+// Local copy of schema types to avoid build issues
+export const schoolTypeEnum = ["Government", "Aided"] as const;
+export type SchoolType = typeof schoolTypeEnum[number];
 
 export interface FilterState {
   schoolType: SchoolType | "all";

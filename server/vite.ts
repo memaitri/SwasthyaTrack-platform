@@ -1,7 +1,7 @@
 import { type Express } from "express";
 import { createServer as createViteServer, createLogger } from "vite";
 import { type Server } from "http";
-import viteConfig from "../vite.config";
+import viteConfig from "../vite.config.js";
 import fs from "fs";
 import path from "path";
 import { nanoid } from "nanoid";
@@ -12,7 +12,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url)); // ✅ Fix for N
 
 export async function setupVite(server: Server, app: Express) {
   // Register API routes here, before Vite middlewares
-  const { registerRoutes } = await import("./routes");
+  const { registerRoutes } = await import("./routes.js");
   await registerRoutes(server, app);
 
   const serverOptions = {

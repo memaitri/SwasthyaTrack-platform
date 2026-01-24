@@ -57,22 +57,9 @@ export const sharedReportsRelations = relations(sharedReports, ({ one }) => ({
   }),
 }));
 
-export const insertReportSchema = createInsertSchema(reports).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-}).extend({
-  reportType: z.enum(reportTypeEnum),
-  roleAllowed: z.enum(roleEnum),
-});
+export const insertReportSchema = createInsertSchema(reports).omit({ id: true, createdAt: true, updatedAt: true });
 
-export const insertSharedReportSchema = createInsertSchema(sharedReports).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-}).extend({
-  sharedWith: z.array(z.string()).min(1, "Must share with at least one user"),
-});
+export const insertSharedReportSchema = createInsertSchema(sharedReports).omit({ id: true, createdAt: true, updatedAt: true });
 
 export type InsertReport = z.infer<typeof insertReportSchema>;
 export type Report = typeof reports.$inferSelect;

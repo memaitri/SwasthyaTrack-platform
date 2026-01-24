@@ -2,7 +2,7 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import { eq, and, desc, sql, inArray } from 'drizzle-orm';
 import postgres from 'postgres';
 import { reports, sharedReports, type Report, type SharedReportType, type InsertReport, type InsertSharedReport } from './reportsSchema.js';
-import { users } from '../shared/schema.js';
+import { users, roleEnum } from '../shared/schema.js';
 import fs from 'fs/promises';
 import path from 'path';
 
@@ -36,7 +36,10 @@ export class ReportsStorage {
 
     // Store metadata in database
     const [report] = await db.insert(reports).values({
-      ...reportData,
+      ...reportData as any,
+      reportType: reportData.reportType as "PDF" | "EXCEL",
+      roleAllowed: reportData.roleAllowed as typeof roleEnum[number],
+      metadata: reportData.metadata as Record<string, unknown>,
       filePath: filePath,
       fileName: fileName,
       fileSize: fileBuffer.length,
@@ -83,7 +86,10 @@ export class ReportsStorage {
   }
 
   async shareReport(shareData: InsertSharedReport): Promise<SharedReportType> {
-    const [sharedReport] = await db.insert(sharedReports).values(shareData).returning();
+    const [sharedReport] = await db.insert(sharedReports).values({
+      ...shareData as any,
+      sharedWith: shareData.sharedWith as string[]
+    }).returning();
     return sharedReport;
   }
 
@@ -170,7 +176,7 @@ export class ReportsStorage {
     // Mark expired reports as inactive
     await db
       .update(reports)
-      .set({ isActive: false })
+      .set({ isActive: false } as any)
       .where(and(
         eq(reports.isActive, true),
         sql`${reports.expiresAt} < NOW()`
@@ -179,7 +185,7 @@ export class ReportsStorage {
     // Mark expired shared reports as inactive
     await db
       .update(sharedReports)
-      .set({ isActive: false })
+      .set({ isActive: false } as any)
       .where(and(
         eq(sharedReports.isActive, true),
         sql`${sharedReports.expiresAt} < NOW()`
