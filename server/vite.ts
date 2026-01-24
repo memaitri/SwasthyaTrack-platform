@@ -5,8 +5,10 @@ import viteConfig from "../vite.config";
 import fs from "fs";
 import path from "path";
 import { nanoid } from "nanoid";
+import { fileURLToPath } from "url";
 
 const viteLogger = createLogger();
+const __dirname = path.dirname(fileURLToPath(import.meta.url)); // ✅ Fix for Node/Railway
 
 export async function setupVite(server: Server, app: Express) {
   // Register API routes here, before Vite middlewares
@@ -45,18 +47,19 @@ export async function setupVite(server: Server, app: Express) {
 
     try {
       const clientTemplate = path.resolve(
-        import.meta.dirname,
+        __dirname, // ✅ Use __dirname instead of import.meta.dirname
         "..",
         "client",
         "index.html",
       );
 
-      // always reload the index.html file from disk incase it changes
+      // always reload the index.html file from disk in case it changes
       let template = await fs.promises.readFile(clientTemplate, "utf-8");
       template = template.replace(
         `src="/src/main.tsx"`,
         `src="/src/main.tsx?v=${nanoid()}"`,
       );
+
       const page = await vite.transformIndexHtml(url, template);
       res.status(200).set({ "Content-Type": "text/html" }).end(page);
     } catch (e: any) {

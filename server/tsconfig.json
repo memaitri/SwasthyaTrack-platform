@@ -1,0 +1,28 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "..",
+    "noEmit": false,
+
+    "module": "NodeNext",
+    "target": "ES2020",
+    "moduleResolution": "NodeNext",
+
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "allowImportingTsExtensions": false,
+
+    "strict": false,
+    "noImplicitAny": false,
+    "skipLibCheck": true,
+
+    "baseUrl": "..",
+    "paths": {
+      "@/*": ["*"],              // server code
+      "@shared/*": ["../shared/*"] // shared code
+    }
+  },
+  "include": ["../server/**/*", "../shared/**/*", "../lib/**/*"],
+  "exclude": ["../node_modules", "dist", "**/*.test.ts"]
+}
