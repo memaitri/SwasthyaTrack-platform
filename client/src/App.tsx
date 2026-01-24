@@ -16,17 +16,19 @@ import HostelWardenDashboard from "@/pages/HostelWardenDashboard";
 import LadySuperintendentDashboard from "@/pages/LadySuperintendentDashboard";
 import StudentsPage from "@/pages/StudentsPage";
 import StudentFormPage from "@/pages/StudentFormPage";
+import StudentAcademicActionsPage from "@/pages/StudentAcademicActionsPage";
 import HealthCardsPage from "@/pages/HealthCardsPage";
 import ApprovalsPage from "@/pages/ApprovalsPage";import PendingSchoolsPage from "./pages/PendingSchoolsPage";import MonthlyCheckupsPage from "@/pages/MonthlyCheckupsPage";
 import MealLogsPage from "@/pages/MealLogsPage";
 import MealOptionsPage from "@/pages/MealOptionsPage";
 import HostelAttendancePage from "@/pages/HostelAttendancePage";
+
+import PeriodTrackerPage from "@/pages/PeriodTrackerPage";
 import ReportsPage from "@/pages/ReportsPage";
 import UsersPage from "@/pages/UsersPage";
 import SchoolsPage from "@/pages/SchoolsPage";
 import ProfilePage from "@/pages/ProfilePage";
 import POSchoolDetailPage from "@/pages/POSchoolDetailPage";
-import DataManagementPage from "@/pages/DataManagementPage";
 import DataQualityDashboard from "@/pages/DataQualityDashboard";
 import NotificationsPage from "@/pages/NotificationsPage";
 import type { Role } from "@shared/schema";
@@ -136,31 +138,37 @@ function Router() {
       </Route>
 
       <Route path="/students/new">
-        <ProtectedRoute allowedRoles={["Admin", "ClassTeacher"]}>
+        <ProtectedRoute allowedRoles={["ClassTeacher"]}>
           <StudentFormPage />
         </ProtectedRoute>
       </Route>
 
       <Route path="/students/:id">
-        <ProtectedRoute>
+        <ProtectedRoute allowedRoles={["ClassTeacher"]}>
           <StudentFormPage />
         </ProtectedRoute>
       </Route>
 
+      <Route path="/students/:id/academic-actions">
+        <ProtectedRoute allowedRoles={["ClassTeacher", "Headmaster", "Admin"]}>
+          <StudentAcademicActionsPage />
+        </ProtectedRoute>
+      </Route>
+
       <Route path="/health-cards">
-        <ProtectedRoute>
+        <ProtectedRoute allowedRoles={["Admin", "PO", "Headmaster", "ClassTeacher", "MedicalTeam", "HostelWarden", "MealSuperintendent"]}>
           <HealthCardsPage />
         </ProtectedRoute>
       </Route>
 
       <Route path="/health-cards/:id">
-        <ProtectedRoute>
+        <ProtectedRoute allowedRoles={["Admin", "PO", "Headmaster", "ClassTeacher", "MedicalTeam", "HostelWarden", "MealSuperintendent"]}>
           <HealthCardsPage />
         </ProtectedRoute>
       </Route>
 
       <Route path="/health-cards/view/:id">
-        <ProtectedRoute>
+        <ProtectedRoute allowedRoles={["Admin", "PO", "Headmaster", "ClassTeacher", "MedicalTeam", "HostelWarden", "MealSuperintendent"]}>
           <HealthCardsPage />
         </ProtectedRoute>
       </Route>
@@ -186,6 +194,14 @@ function Router() {
       <Route path="/meals">
         <ProtectedRoute allowedRoles={["Admin", "PO", "MedicalTeam", "HostelWarden", "MealSuperintendent"]}>
           <MealLogsPage />
+        </ProtectedRoute>
+      </Route>
+
+
+
+      <Route path="/period-tracker">
+        <ProtectedRoute allowedRoles={["Lady Superintendent", "Admin"]}>
+          <PeriodTrackerPage />
         </ProtectedRoute>
       </Route>
 
@@ -228,12 +244,6 @@ function Router() {
       <Route path="/reports">
         <ProtectedRoute>
           <ReportsPage />
-        </ProtectedRoute>
-      </Route>
-
-      <Route path="/data-management">
-        <ProtectedRoute allowedRoles={["Admin", "PO"]}>
-          <DataManagementPage />
         </ProtectedRoute>
       </Route>
 

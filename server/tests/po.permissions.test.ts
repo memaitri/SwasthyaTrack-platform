@@ -31,7 +31,7 @@ describe('PO permission restrictions (read-only)', () => {
     const poUser = await storage.createUser({ username: `po-${Date.now()}`, password: 'p', email: `po${Date.now()}@example.com`, fullName: 'PO User', role: 'PO', district: 'D-TEST', isActive: true } as any);
     poToken = jwt.sign({ id: poUser.id, username: poUser.username, role: poUser.role }, secret, { expiresIn: '1h' });
 
-    school = await storage.createSchool({ name: 'PO Perm Test School', district: 'D-TEST' } as any);
+    school = await storage.createSchool({ name: 'PO Perm Test School', district: 'D-TEST', schoolType: 'Government' } as any);
     student = await storage.createStudent({ fullName: 'Perm Student', uniqueId: `PS-${Date.now()}`, gender: 'F', classSection: '9-A', schoolId: school.id, dateOfBirth: new Date('2010-06-01') } as any);
 
     // Create an annual health card as Admin
@@ -87,7 +87,7 @@ describe('PO permission restrictions (read-only)', () => {
 
   it('prevents PO from viewing meals from other districts and restricts aggregated totals', async () => {
     // Create a school in another district and a meal there
-    const otherSchool = await storage.createSchool({ name: 'Other District School', district: 'OTHER' } as any);
+    const otherSchool = await storage.createSchool({ name: 'Other District School', district: 'OTHER', schoolType: 'Government' } as any);
     await request(app)
       .post('/api/meals')
       .set('Authorization', `Bearer ${adminToken}`)
@@ -109,7 +109,7 @@ describe('PO permission restrictions (read-only)', () => {
   });
 
   it('disallows PO from viewing student details in another district (GET /api/students/:id)', async () => {
-    const otherSchool = await storage.createSchool({ name: 'Other District School 2', district: 'OTHER' } as any);
+    const otherSchool = await storage.createSchool({ name: 'Other District School 2', district: 'OTHER', schoolType: 'Aided' } as any);
     const otherStudent = await storage.createStudent({ fullName: 'Other Student', uniqueId: `OS-${Date.now()}`, gender: 'M', classSection: '9-A', schoolId: otherSchool.id, dateOfBirth: new Date('2010-05-01') } as any);
 
     const res = await request(app)
@@ -120,7 +120,7 @@ describe('PO permission restrictions (read-only)', () => {
   });
 
   it('disallows PO from viewing annual health cards in another district (GET /api/annual-cards/:id)', async () => {
-    const otherSchool = await storage.createSchool({ name: 'Other District School 3', district: 'OTHER' } as any);
+    const otherSchool = await storage.createSchool({ name: 'Other District School 3', district: 'OTHER', schoolType: 'Government' } as any);
     const otherStudent = await storage.createStudent({ fullName: 'Other Student 2', uniqueId: `OS2-${Date.now()}`, gender: 'F', classSection: '9-A', schoolId: otherSchool.id, dateOfBirth: new Date('2011-05-01') } as any);
     const otherCard = await storage.createAnnualHealthCard({ studentId: otherStudent.id, schoolId: otherSchool.id, year: new Date().getFullYear(), nameOfChild: otherStudent.fullName, classSection: otherStudent.classSection, gender: otherStudent.gender, weightKg: 28, heightCm: 130, bmi: 16 } as any);
 
@@ -138,7 +138,7 @@ describe('PO permission restrictions (read-only)', () => {
     const jwt = require('jsonwebtoken');
     const poNoDistrictToken = jwt.sign({ id: poNoDistrict.id, username: poNoDistrict.username, role: poNoDistrict.role }, secret, { expiresIn: '1h' });
 
-    const otherSchool = await storage.createSchool({ name: 'Other District School 4', district: 'OTHER' } as any);
+    const otherSchool = await storage.createSchool({ name: 'Other District School 4', district: 'OTHER', schoolType: 'Aided' } as any);
     const res = await request(app)
       .get(`/api/students?schoolId=${otherSchool.id}`)
       .set('Authorization', `Bearer ${poNoDistrictToken}`);
@@ -153,7 +153,7 @@ describe('PO permission restrictions (read-only)', () => {
     const jwt2 = require('jsonwebtoken');
     const poNoDistrictToken2 = jwt2.sign({ id: poNoDistrict2.id, username: poNoDistrict2.username, role: poNoDistrict2.role }, secret2, { expiresIn: '1h' });
 
-    const otherSchool = await storage.createSchool({ name: 'Other District School 5', district: 'OTHER' } as any);
+    const otherSchool = await storage.createSchool({ name: 'Other District School 5', district: 'OTHER', schoolType: 'Government' } as any);
 
     const res = await request(app)
       .get(`/api/meals?date=${new Date().toISOString().split('T')[0]}&schoolId=${otherSchool.id}`)

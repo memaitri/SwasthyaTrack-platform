@@ -22,6 +22,18 @@ export type MealType = typeof mealTypeEnum[number];
 export const notificationTypeEnum = ["system", "manual", "health_alert", "meal_alert"] as const;
 export type NotificationType = typeof notificationTypeEnum[number];
 
+export const flowCategoryEnum = ["none", "spotting", "light", "medium", "heavy"] as const;
+export type FlowCategory = typeof flowCategoryEnum[number];
+
+export const schoolTypeEnum = ["Government", "Aided"] as const;
+export type SchoolType = typeof schoolTypeEnum[number];
+
+export const academicStatusEnum = ["Active", "Promoted", "Demoted", "Detained"] as const;
+export type AcademicStatus = typeof academicStatusEnum[number];
+
+export const academicActionEnum = ["Promote", "Demote", "Detain"] as const;
+export type AcademicAction = typeof academicActionEnum[number];
+
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   username: text("username").notNull().unique(),
@@ -47,6 +59,7 @@ export const schools = pgTable("schools", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
   code: text("code").unique(),
+  schoolType: text("school_type").notNull().$type<SchoolType>(),
   region: text("region").notNull(), // Region for PO matching
   district: text("district").notNull(),
   block: text("block").notNull(),
@@ -73,7 +86,7 @@ export const students = pgTable("students", {
   schoolId: varchar("school_id").notNull(),
   uniqueId: text("unique_id").notNull().unique(),
   aadhaarNo: text("aadhaar_no"),
-  mctsNo: text("mcts_no"),
+  pranNo: text("pran_no"),
   fullName: text("full_name").notNull(),
   dateOfBirth: date("date_of_birth"),
   gender: text("gender").notNull().$type<Gender>(),
@@ -84,9 +97,17 @@ export const students = pgTable("students", {
   motherContact: text("mother_contact"),
   address: text("address"),
   enrollmentDate: date("enrollment_date"),
+  schoolAdmissionDate: date("school_admission_date").notNull(),
   isActive: boolean("is_active").default(true),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+  // Menstruation marking: set once by ClassTeacher when first cycle starts
+  menstruationStartedAt: timestamp("menstruation_started_at"),
+  menstruationMarkedBy: varchar("menstruation_marked_by"),
+  // Academic status tracking
+  academicStatus: text("academic_status").notNull().$type<AcademicStatus>().default("Active"),
+  academicYear: integer("academic_year").default(sql`EXTRACT(YEAR FROM CURRENT_DATE)`),
+  previousClassSection: text("previous_class_section"),
 });
 
 export const annualHealthCards = pgTable("annual_health_cards", {
@@ -104,7 +125,7 @@ export const annualHealthCards = pgTable("annual_health_cards", {
   gender: text("gender").$type<Gender>(),
   classSection: text("class_section"),
   aadhaarNo: text("aadhaar_no"),
-  mctsNo: text("mcts_no"),
+  pranNo: text("pran_no"),
   uniqueId: text("unique_id"),
   fatherGuardianName: text("father_guardian_name"),
   fatherContact: text("father_contact"),
@@ -374,6 +395,33 @@ export const annualHealthCards = pgTable("annual_health_cards", {
   c8_referral_facility: text("c8_referral_facility"),
   c8_referral_date: date("c8_referral_date"),
 
+  /* Section C9: Sickle Cell Anaemia */
+  c9_suspected: boolean("c9_suspected").default(false),
+  
+  /* C9.1 Clinical Features */
+  c9_clinical_features: jsonb("c9_clinical_features").$type<{
+    pain_crisis?: boolean;
+    swelling_hands_feet?: boolean;
+    shortness_breath?: boolean;
+    fatigue?: boolean;
+    jaundice?: boolean;
+    delayed_growth?: boolean;
+    severe_infections?: boolean;
+  }>().default({}),
+  
+  /* C9.2 Hemoglobin Type Classification */
+  c9_hemoglobin_type: jsonb("c9_hemoglobin_type").$type<{
+    hbss?: boolean;
+    hbsc?: boolean;
+    hbs_beta_thalassemia?: boolean;
+    hbsd?: boolean;
+    hbse?: boolean;
+  }>().default({}),
+  
+  /* C9 Referral */
+  c9_referral_facility: text("c9_referral_facility"),
+  c9_referral_date: date("c9_referral_date"),
+
   /* Section C: Summary of Diseases */
   summary_disease_skin_conditions: boolean("summary_disease_skin_conditions").default(false),
   summary_disease_vision_impairment: boolean("summary_disease_vision_impairment").default(false),
@@ -389,6 +437,7 @@ export const annualHealthCards = pgTable("annual_health_cards", {
   summary_disease_behavioral_disorder: boolean("summary_disease_behavioral_disorder").default(false),
   summary_disease_tuberculosis: boolean("summary_disease_tuberculosis").default(false),
   summary_disease_leprosy: boolean("summary_disease_leprosy").default(false),
+  summary_disease_sickle_cell_anaemia: boolean("summary_disease_sickle_cell_anaemia").default(false),
   summary_disease_other: text("summary_disease_other"),
 
   /* Section D: Developmental Delay/Disability — D1 to D9 with detailed referral */
@@ -439,32 +488,55 @@ export const annualHealthCards = pgTable("annual_health_cards", {
 
   e2_peer_pressure_substance: boolean("e2_peer_pressure_substance").default(false),
   e3_persistent_sadness: boolean("e3_persistent_sadness").default(false),
+  e5_pain_urination: boolean("e5_pain_urination").default(false),
+  e6_foul_discharge: boolean("e6_foul_discharge").default(false),
+  e2_referral_suggested: boolean("e2_referral_suggested").default(false),
+  e3_referral_suggested: boolean("e3_referral_suggested").default(false),
+  e5_referral_suggested: boolean("e5_referral_suggested").default(false),
+  e6_referral_suggested: boolean("e6_referral_suggested").default(false),
+  e2_referral_facility: text("e2_referral_facility"),
+  e2_referral_date: date("e2_referral_date"),
+  e3_referral_facility: text("e3_referral_facility"),
+  e3_referral_date: date("e3_referral_date"),
+  e5_referral_facility: text("e5_referral_facility"),
+  e5_referral_date: date("e5_referral_date"),
+  e6_referral_facility: text("e6_referral_facility"),
+  e6_referral_date: date("e6_referral_date"),
+
+  /* E4 & E7: Female-only menstrual health fields */
   e4_menstruation_started: boolean("e4_menstruation_started").default(false),
-  e4_last_menstrual_period: date("e4_last_menstrual_period"),
-  e4_cycle_length_days: integer("e4_cycle_length_days"),
-  e4_cycle_regular: boolean("e4_cycle_regular").default(true),
-  e4_menstrual_pain_level: text("e4_menstrual_pain_level"), // 'mild', 'moderate', 'severe'
-  e4_menstrual_symptoms: jsonb("e4_menstrual_symptoms").$type<string[]>().default([]),
-  e4_irregularities: text("e4_irregularities"), // Description of irregularities
-  e4_educational_resources_accessed: boolean("e4_educational_resources_accessed").default(false),
-  menstrual_cycle_regular: boolean("menstrual_cycle_regular").default(true),
+  e4_referral_suggested: boolean("e4_referral_suggested").default(false),
+  e4_referral_facility: text("e4_referral_facility"),
+  e4_referral_date: date("e4_referral_date"),
+  
+  e7_severe_menstrual_pain: boolean("e7_severe_menstrual_pain").default(false),
+  e7_referral_suggested: boolean("e7_referral_suggested").default(false),
+  e7_referral_facility: text("e7_referral_facility"),
+  e7_referral_date: date("e7_referral_date"),
+
+  /* Detailed Menstrual Cycle Tracking (Female students aged 10+) */
+  menstrual_cycle_regular: boolean("menstrual_cycle_regular").default(false),
   menstrual_cycle_length_days: integer("menstrual_cycle_length_days"),
   menstrual_period_duration_days: integer("menstrual_period_duration_days"),
   menstrual_last_period_date: date("menstrual_last_period_date"),
   menstrual_irregularities: jsonb("menstrual_irregularities").$type<{
+    irregular_periods?: boolean;
     missed_periods?: boolean;
     heavy_bleeding?: boolean;
-    spotting?: boolean;
-    prolonged_bleeding?: boolean;
+    prolonged_periods?: boolean;
+    frequent_periods?: boolean;
+    painful_periods?: boolean;
     other?: string;
   }>().default({}),
   menstrual_symptoms: jsonb("menstrual_symptoms").$type<{
-    cramps?: boolean;
-    headache?: boolean;
-    nausea?: boolean;
-    fatigue?: boolean;
+    severe_cramps?: boolean;
+    heavy_bleeding?: boolean;
+    nausea_vomiting?: boolean;
+    headaches?: boolean;
     mood_changes?: boolean;
-    back_pain?: boolean;
+    fatigue?: boolean;
+    bloating?: boolean;
+    breast_tenderness?: boolean;
     other?: string;
   }>().default({}),
   menstrual_hygiene_practices: jsonb("menstrual_hygiene_practices").$type<{
@@ -473,35 +545,13 @@ export const annualHealthCards = pgTable("annual_health_cards", {
     menstrual_cup?: boolean;
     cloth?: boolean;
     adequate_facilities?: boolean;
-    privacy_concerns?: boolean;
+    proper_disposal?: boolean;
   }>().default({}),
   menstrual_educational_resources_accessed: boolean("menstrual_educational_resources_accessed").default(false),
-  e5_pain_urination: boolean("e5_pain_urination").default(false),
-  e6_foul_discharge: boolean("e6_foul_discharge").default(false),
-  e7_severe_menstrual_pain: boolean("e7_severe_menstrual_pain").default(false),
-  e2_referral_suggested: boolean("e2_referral_suggested").default(false),
-  e3_referral_suggested: boolean("e3_referral_suggested").default(false),
-  e4_referral_suggested: boolean("e4_referral_suggested").default(false),
-  e5_referral_suggested: boolean("e5_referral_suggested").default(false),
-  e6_referral_suggested: boolean("e6_referral_suggested").default(false),
-  e7_referral_suggested: boolean("e7_referral_suggested").default(false),
-  e2_referral_facility: text("e2_referral_facility"),
-  e2_referral_date: date("e2_referral_date"),
-  e3_referral_facility: text("e3_referral_facility"),
-  e3_referral_date: date("e3_referral_date"),
-  e4_referral_facility: text("e4_referral_facility"),
-  e4_referral_date: date("e4_referral_date"),
-  e5_referral_facility: text("e5_referral_facility"),
-  e5_referral_date: date("e5_referral_date"),
-  e6_referral_facility: text("e6_referral_facility"),
-  e6_referral_date: date("e6_referral_date"),
-  e7_referral_facility: text("e7_referral_facility"),
-  e7_referral_date: date("e7_referral_date"),
 
 
 
   /* Section E: Summary of Adolescent Health Concerns */
-  summary_adolescent_menstrual_issues: boolean("summary_adolescent_menstrual_issues").default(false),
   summary_adolescent_substance_use: boolean("summary_adolescent_substance_use").default(false),
   summary_adolescent_depressed: boolean("summary_adolescent_depressed").default(false),
   summary_adolescent_burning_urination: boolean("summary_adolescent_burning_urination").default(false),
@@ -512,7 +562,6 @@ export const annualHealthCards = pgTable("annual_health_cards", {
   defects_summary: jsonb("defects_summary").$type<Record<string, unknown>>().default({}),
   deficiencies_summary: jsonb("deficiencies_summary").$type<Record<string, unknown>>().default({}),
   diseases_summary: jsonb("diseases_summary").$type<Record<string, unknown>>().default({}),
-  adolescent_health_summary: jsonb("adolescent_health_summary").$type<Record<string, unknown>>().default({}),
   referral_summary: jsonb("referral_summary").$type<Record<string, unknown>>().default({}),
 
   /* BMI Classification and BP Classification */
@@ -555,6 +604,7 @@ export const annualHealthCards = pgTable("annual_health_cards", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
+
 
 export const monthlyCheckups = pgTable("monthly_checkups", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -630,6 +680,24 @@ export const auditLogs = pgTable("audit_logs", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const studentAcademicActions = pgTable("student_academic_actions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  studentId: varchar("student_id").notNull(),
+  actionType: text("action_type").notNull().$type<AcademicAction>(),
+  oldStatus: text("old_status").notNull().$type<AcademicStatus>(),
+  newStatus: text("new_status").notNull().$type<AcademicStatus>(),
+  oldClassSection: text("old_class_section").notNull(),
+  newClassSection: text("new_class_section").notNull(),
+  oldTeacherId: varchar("old_teacher_id"),
+  newTeacherId: varchar("new_teacher_id"),
+  reason: text("reason").notNull(),
+  academicYear: integer("academic_year").notNull(),
+  performedBy: varchar("performed_by").notNull(),
+  performedByRole: text("performed_by_role").notNull().$type<Role>(),
+  performedAt: timestamp("performed_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 export const refreshTokens = pgTable("refresh_tokens", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull(),
@@ -673,6 +741,45 @@ export const notifications = pgTable("notifications", {
   relatedStudentId: varchar("related_student_id"), // For health/meal alerts
   relatedSchoolId: varchar("related_school_id"), // For school-specific alerts
   metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}), // Additional data
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const periodTrackerEntries = pgTable("period_tracker_entries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  studentId: varchar("student_id").notNull(),
+  schoolId: varchar("school_id").notNull(),
+  entryDate: date("entry_date").notNull(),
+  
+  // Mood tracking (multiple selections)
+  moods: jsonb("moods").$type<string[]>().default([]),
+  // Options: happy, sad, anxious, irritable, energetic, tired, calm, stressed, emotional, normal
+  
+  // Physical measurements
+  bodyTemperatureCelsius: decimal("body_temperature_celsius", { precision: 4, scale: 2 }),
+  
+  // Pain intensity (0-10 scale)
+  painIntensity: integer("pain_intensity"),
+  
+  // Flow category
+  flowCategory: text("flow_category").$type<FlowCategory>(),
+  
+  // Detailed symptoms (multiple selections)
+  symptoms: jsonb("symptoms").$type<string[]>().default([]),
+  // Options: cramps, headache, nausea, bloating, breast_tenderness, back_pain, 
+  //          fatigue, dizziness, acne, food_cravings, insomnia, diarrhea, constipation
+  
+  // Optional notes
+  notes: text("notes"),
+  
+  // Referral fields
+  isReferred: boolean("is_referred").default(false),
+  referredDate: date("referred_date"),
+  referralFacility: text("referral_facility"),
+  
+  // Tracking metadata
+  recordedBy: varchar("recorded_by"),
+  
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -809,6 +916,21 @@ export const notificationsRelations = relations(notifications, ({ one }) => ({
   }),
 }));
 
+export const periodTrackerEntriesRelations = relations(periodTrackerEntries, ({ one }) => ({
+  student: one(students, {
+    fields: [periodTrackerEntries.studentId],
+    references: [students.id],
+  }),
+  school: one(schools, {
+    fields: [periodTrackerEntries.schoolId],
+    references: [schools.id],
+  }),
+  recordedByUser: one(users, {
+    fields: [periodTrackerEntries.recordedBy],
+    references: [users.id],
+  }),
+}));
+
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
   createdAt: true,
@@ -824,6 +946,10 @@ export const insertSchoolSchema = createInsertSchema(schools).omit({
 }).extend({
   code: z.string().optional(),
   requestedByEmail: z.string().email().optional().or(z.literal("")),
+  schoolType: z.enum(schoolTypeEnum, {
+    required_error: "School Type is required",
+    invalid_type_error: "Invalid school type. Must be either 'Government' or 'Aided'",
+  }),
 });
 
 export const insertStudentSchema = createInsertSchema(students).omit({
@@ -832,9 +958,15 @@ export const insertStudentSchema = createInsertSchema(students).omit({
   updatedAt: true,
 }).extend({
   gender: z.enum(genderEnum),
-  dateOfBirth: z.coerce.date().nullable().optional(),
+  dateOfBirth: z.coerce.date({ invalid_type_error: "Date of Birth is required" }).nullable(),
+  schoolAdmissionDate: z.coerce.date({ 
+    required_error: "School Admission Date is required",
+    invalid_type_error: "School Admission Date must be a valid date" 
+  }),
   enrollmentDate: z.coerce.date().nullable().optional(),
   uniqueId: z.string().optional(),
+  pranNo: z.string().min(6, "PRAN number is required and seems too short"),
+  aadhaarNo: z.string().refine((val) => !!val && String(val).length === 12, { message: "Aadhaar number must be 12 digits" }),
   classSection: z.string().optional(),
   schoolId: z.string().optional(),
 });
@@ -843,39 +975,6 @@ export const insertAnnualHealthCardSchema = createInsertSchema(annualHealthCards
    id: true,
    createdAt: true,
    updatedAt: true,
-   b1_referral_date: true,
-   b2_referral_date: true,
-   b3_referral_date: true,
-   b4_referral_date: true,
-   b5_referral_date: true,
-   b6_referral_date: true,
-   b7_referral_date: true,
-   b8_referral_date: true,
-   c1_referral_date: true,
-   c2_referral_date: true,
-   c3_referral_date: true,
-   c4_referral_date: true,
-   c5_referral_date: true,
-   c6_referral_date: true,
-   c8_referral_date: true,
-   d1_referral_date: true,
-   d2_referral_date: true,
-   d3_referral_date: true,
-   d4_referral_date: true,
-   d5_referral_date: true,
-   d6_referral_date: true,
-   d7_referral_date: true,
-   d8_referral_date: true,
-   d9_referral_date: true,
-   e1_referral_date: true,
-   e2_referral_date: true,
-   e3_referral_date: true,
-   e4_referral_date: true,
-   e5_referral_date: true,
-   e6_referral_date: true,
-   e7_referral_date: true,
-   doctor_signature_date: true,
-   date_of_visit: true,
 }).extend({
    // Required field validations
    studentId: z.string().min(1, "Student ID is required"),
@@ -886,8 +985,8 @@ export const insertAnnualHealthCardSchema = createInsertSchema(annualHealthCards
    gender: z.enum(genderEnum, { required_error: "Gender is required" }),
    weightKg: z.number().min(1, "Weight must be at least 1kg").max(200, "Weight seems unrealistic"),
    heightCm: z.number().min(30, "Height must be at least 30cm").max(250, "Height seems unrealistic"),
-   aadhaarNo: z.string().optional().refine((val) => !val || val.length === 12, "Aadhaar number must be 12 digits"),
-   mctsNo: z.string().optional().refine((val) => !val || val.length >= 8, "MCTS number seems invalid"),
+  aadhaarNo: z.string().optional().refine((val) => !val || val.length === 12, "Aadhaar number must be 12 digits"),
+  pranNo: z.string().optional().refine((val) => !val || val.length >= 6, "PRAN number seems invalid"),
    fatherGuardianName: z.string().optional().refine((val) => !val || val.length <= 100, "Name too long"),
    fatherContact: z.string().optional().refine((val) => !val || /^\d{10}$/.test(val), "Contact must be 10 digits"),
    motherName: z.string().optional().refine((val) => !val || val.length <= 100, "Name too long"),
@@ -897,10 +996,7 @@ export const insertAnnualHealthCardSchema = createInsertSchema(annualHealthCards
    bloodPressure: z.string().optional().refine((val) => !val || /^\d{2,3}\/\d{2,3}$/.test(val), "BP format should be systolic/diastolic"),
    sbp: z.number().optional().refine((val) => !val || (val >= 60 && val <= 250), "SBP out of normal range"),
    dbp: z.number().optional().refine((val) => !val || (val >= 40 && val <= 150), "DBP out of normal range"),
-   // Menstrual cycle validations
-   menstrual_cycle_length_days: z.number().optional().refine((val) => !val || (val >= 21 && val <= 35), "Cycle length should be 21-35 days"),
-   menstrual_period_duration_days: z.number().optional().refine((val) => !val || (val >= 2 && val <= 10), "Period duration should be 2-10 days"),
-   menstrual_last_period_date: z.date().optional().refine((val) => !val || val <= new Date(), "Last period date cannot be in the future"),
+   // Menstrual cycle validations removed
   c7_clinical_features: z.object({
     sensory_deficit_in_lesion: z.boolean().optional(),
     hypopigmented_anaesthetic_patches: z.boolean().optional(),
@@ -987,28 +1083,34 @@ export const insertAnnualHealthCardSchema = createInsertSchema(annualHealthCards
   e6_referral_date: z.coerce.date().nullable().optional(),
   e7_referral_date: z.coerce.date().nullable().optional(),
 
-  // Client field names for adolescent health
+  // Client field names for adolescent health (non-menstrual)
   e1_difficulty_life_events: z.boolean().optional(),
   e2_peer_pressure: z.boolean().optional(),
   e3_persistent_sadness: z.boolean().optional(),
-  e4_menstruation_started: z.boolean().optional(),
-  e4_last_menstrual_period: z.coerce.date().nullable().optional(),
-  e4_cycle_length_days: z.number().nullable().optional(),
-  e4_cycle_regular: z.boolean().optional(),
-  e4_menstrual_pain_level: z.enum(['mild', 'moderate', 'severe']).optional(),
-  e4_menstrual_symptoms: z.array(z.string()).optional(),
-  e4_irregularities: z.string().optional(),
-  e4_educational_resources_accessed: z.boolean().optional(),
   e5_pain_urination: z.boolean().optional(),
   e6_foul_smell_discharge: z.boolean().optional(),
-  e7_severe_menstrual_pain: z.boolean().optional(),
   e1_referral_suggested: z.boolean().optional(),
   e2_referral_suggested: z.boolean().optional(),
   e3_referral_suggested: z.boolean().optional(),
-  e4_referral_suggested: z.boolean().optional(),
   e5_referral_suggested: z.boolean().optional(),
   e6_referral_suggested: z.boolean().optional(),
+
+  // E4 & E7: Female-only menstrual health fields
+  e4_menstruation_started: z.boolean().optional(),
+  e4_referral_suggested: z.boolean().optional(),
+  e4_referral_facility: z.string().nullable().optional(),
+  e7_severe_menstrual_pain: z.boolean().optional(),
   e7_referral_suggested: z.boolean().optional(),
+
+  // Detailed Menstrual Cycle Tracking
+  menstrual_cycle_regular: z.boolean().optional(),
+  menstrual_cycle_length_days: z.number().min(20).max(40).optional(),
+  menstrual_period_duration_days: z.number().min(1).max(10).optional(),
+  menstrual_last_period_date: z.coerce.date().nullable().optional(),
+  menstrual_irregularities: z.record(z.any()).optional(),
+  menstrual_symptoms: z.record(z.any()).optional(),
+  menstrual_hygiene_practices: z.record(z.any()).optional(),
+  menstrual_educational_resources_accessed: z.boolean().optional(),
 
 
   // Additional fields
@@ -1074,6 +1176,11 @@ export const insertAnnualHealthCardSchema = createInsertSchema(annualHealthCards
   c6_referral_facility: z.string().nullable().optional(),
   c7_referral_facility: z.string().nullable().optional(),
   c8_referral_facility: z.string().nullable().optional(),
+  c9_suspected: z.boolean().optional(),
+  c9_clinical_features: z.record(z.boolean()).optional(),
+  c9_hemoglobin_type: z.record(z.boolean()).optional(),
+  c9_referral_facility: z.string().nullable().optional(),
+  c9_referral_date: z.coerce.date().nullable().optional(),
   d1_seeing_difficulty: z.boolean().optional(),
   d2_walking_delay: z.boolean().optional(),
   d3_reading_writing: z.boolean().optional(),
@@ -1095,7 +1202,6 @@ export const insertAnnualHealthCardSchema = createInsertSchema(annualHealthCards
   e1_referral_facility: z.string().nullable().optional(),
   e2_referral_facility: z.string().nullable().optional(),
   e3_referral_facility: z.string().nullable().optional(),
-  e4_referral_facility: z.string().nullable().optional(),
   e5_referral_facility: z.string().nullable().optional(),
   e6_referral_facility: z.string().nullable().optional(),
   e7_referral_facility: z.string().nullable().optional(),
@@ -1142,6 +1248,17 @@ export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({
   createdAt: true,
 });
 
+export const insertStudentAcademicActionSchema = createInsertSchema(studentAcademicActions).omit({
+  id: true,
+  createdAt: true,
+  performedAt: true,
+}).extend({
+  actionType: z.enum(academicActionEnum),
+  oldStatus: z.enum(academicStatusEnum),
+  newStatus: z.enum(academicStatusEnum),
+  performedByRole: z.enum(roleEnum),
+});
+
 export const insertReferralSchema = createInsertSchema(referrals).omit({
   id: true,
   createdAt: true,
@@ -1158,6 +1275,19 @@ export const insertNotificationSchema = createInsertSchema(notifications).omit({
   senderRole: z.enum(roleEnum),
   receiverRole: z.enum(roleEnum),
   type: z.enum(notificationTypeEnum),
+});
+
+export const insertPeriodTrackerEntrySchema = createInsertSchema(periodTrackerEntries).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  flowCategory: z.enum(flowCategoryEnum).optional(),
+  moods: z.array(z.string()).optional(),
+  symptoms: z.array(z.string()).optional(),
+  painIntensity: z.number().min(0).max(10).optional(),
+  bodyTemperatureCelsius: z.number().min(35).max(42).optional(),
+  entryDate: z.coerce.date(),
 });
 
 export const updateAnnualHealthCardSchema = insertAnnualHealthCardSchema.partial();
@@ -1226,10 +1356,16 @@ export type HostelAttendance = typeof hostelAttendance.$inferSelect;
 export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
 export type AuditLog = typeof auditLogs.$inferSelect;
 
+export type InsertStudentAcademicAction = typeof studentAcademicActions.$inferInsert;
+export type StudentAcademicAction = typeof studentAcademicActions.$inferSelect;
+
 export type InsertReferral = z.infer<typeof insertReferralSchema>;
 export type Referral = typeof referrals.$inferSelect;
 
 export type InsertNotification = z.infer<typeof insertNotificationSchema>;
 export type Notification = typeof notifications.$inferSelect;
+
+export type InsertPeriodTrackerEntry = z.infer<typeof insertPeriodTrackerEntrySchema>;
+export type PeriodTrackerEntry = typeof periodTrackerEntries.$inferSelect;
 
 export type UpdateAnnualHealthCard = z.infer<typeof updateAnnualHealthCardSchema>;

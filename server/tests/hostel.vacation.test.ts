@@ -22,7 +22,7 @@ describe('Hostel vacation permissions', () => {
     server = httpServer.listen(0);
 
     // create school and students
-    school = await storage.createSchool({ name: 'Vacation Test School', district: 'D-TEST' } as any);
+    school = await storage.createSchool({ name: 'Vacation Test School', district: 'D-TEST', schoolType: 'Government' } as any);
     studentA = await storage.createStudent({ fullName: 'Vacation Student A', uniqueId: `VS-A-${Date.now()}`, gender: 'M', classSection: '5-A', schoolId: school.id } as any);
     studentB = await storage.createStudent({ fullName: 'Vacation Student B', uniqueId: `VS-B-${Date.now()}`, gender: 'F', classSection: '5-B', schoolId: school.id } as any);
 

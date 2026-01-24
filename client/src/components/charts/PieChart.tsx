@@ -4,21 +4,38 @@ import { Pie, Doughnut } from "react-chartjs-2";
 ChartJS.register(ArcElement, Tooltip, Legend);
 
 interface PieChartProps {
-  labels: string[];
-  data: number[];
-  backgroundColor: string[];
+  labels?: string[];
+  data?: number[];
+  backgroundColor?: string[];
   borderColor?: string[];
   doughnut?: boolean;
 }
 
 export function PieChart({ labels, data, backgroundColor, borderColor, doughnut = false }: PieChartProps) {
+  // Provide default values to prevent runtime errors
+  const safeLabels = labels || [];
+  const safeData = data || [];
+  const safeBackgroundColor = backgroundColor || [];
+
+  // Show empty state if no data is provided
+  if (safeLabels.length === 0 || safeData.length === 0 || safeBackgroundColor.length === 0) {
+    return (
+      <div className="h-[300px] w-full flex items-center justify-center text-muted-foreground">
+        <div className="text-center">
+          <p className="text-sm">No data available</p>
+          <p className="text-xs mt-1">Chart will appear when data is loaded</p>
+        </div>
+      </div>
+    );
+  }
+
   const chartData = {
-    labels,
+    labels: safeLabels,
     datasets: [
       {
-        data,
-        backgroundColor,
-        borderColor: borderColor || backgroundColor.map((c) => c.replace("0.8", "1")),
+        data: safeData,
+        backgroundColor: safeBackgroundColor,
+        borderColor: borderColor || safeBackgroundColor.map((c) => c.replace("0.8", "1")),
         borderWidth: 2,
       },
     ],

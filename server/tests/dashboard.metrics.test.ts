@@ -10,8 +10,8 @@ let referralA: any;
 describe('Dashboard metrics - referrals counts', () => {
   beforeAll(async () => {
     // Create two schools in same district
-    schoolA = await storage.createSchool({ name: `School A ${Date.now()}`, district: 'D1', region: 'R1' } as any);
-    schoolB = await storage.createSchool({ name: `School B ${Date.now()}`, district: 'D1', region: 'R1' } as any);
+    schoolA = await storage.createSchool({ name: `School A ${Date.now()}`, district: 'D1', region: 'R1', schoolType: 'Government' } as any);
+    schoolB = await storage.createSchool({ name: `School B ${Date.now()}`, district: 'D1', region: 'R1', schoolType: 'Aided' } as any);
 
     // Create students in those schools
     studentA = await storage.createStudent({ fullName: 'Student A', uniqueId: `SA-${Date.now()}`, gender: 'M', classSection: '1-A', schoolId: schoolA.id } as any);

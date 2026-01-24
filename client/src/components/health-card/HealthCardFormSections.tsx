@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
+import React, { useState } from "react";
 import { getBMIClassification, getBMIClassificationLabel } from "@/lib/bmiColors";
 import { DEFAULT_REFERRAL_FACILITIES, REFERRAL_FACILITIES, REFERRAL_FACILITY_OPTIONS } from "@/lib/referralFacilities";
 
@@ -26,6 +26,9 @@ export function HealthCardFormSections({
   const showAdolescentSection = studentAge >= 10;
   const isFemale = studentGender === "F";
   const canViewMenstrualHealth = userRole === "Lady Superintendent" || userRole === "Admin";
+  // Allow ClassTeacher to access menstrual health for female students aged 10+
+  const canAccessMenstrualTracking = isFemale && showAdolescentSection && 
+    (userRole === "ClassTeacher" || userRole === "Lady Superintendent" || userRole === "Admin");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Calculate BMI when weight or height changes
@@ -34,16 +37,20 @@ export function HealthCardFormSections({
   const calculatedBMI = weight && height ? (parseFloat(weight) / Math.pow(parseFloat(height) / 100, 2)).toFixed(2) : "";
   const calculatedBMIValue = calculatedBMI ? parseFloat(calculatedBMI) : null;
 
-  // Update BMI field when calculated
-  if (calculatedBMI && calculatedBMI !== form.getValues("bmi")) {
-    form.setValue("bmi", calculatedBMI);
-  }
+  // Use useEffect to update BMI field to prevent infinite re-renders
+  React.useEffect(() => {
+    if (calculatedBMI && calculatedBMI !== form.getValues("bmi")) {
+      form.setValue("bmi", calculatedBMI);
+    }
+  }, [calculatedBMI, form]);
 
   // Auto-calculate BMI category
   const bmiCategory = calculatedBMIValue ? getBMIClassification(calculatedBMIValue) : "";
-  if (bmiCategory && bmiCategory !== form.getValues("bmi_category")) {
-    form.setValue("bmi_category", bmiCategory);
-  }
+  React.useEffect(() => {
+    if (bmiCategory && bmiCategory !== form.getValues("bmi_category")) {
+      form.setValue("bmi_category", bmiCategory);
+    }
+  }, [bmiCategory, form]);
 
   // Calculate blood pressure category when blood pressure changes
   const bloodPressure = form.watch("bloodPressure");
@@ -62,9 +69,11 @@ export function HealthCardFormSections({
   };
 
   const bpCategory = bloodPressure ? calculateBPCategory(bloodPressure) : "";
-  if (bpCategory && bpCategory !== form.getValues("bpClassification")) {
-    form.setValue("bpClassification", bpCategory);
-  }
+  React.useEffect(() => {
+    if (bpCategory && bpCategory !== form.getValues("bpClassification")) {
+      form.setValue("bpClassification", bpCategory);
+    }
+  }, [bpCategory, form]);
 
   return (
     <div className="space-y-6">
@@ -2182,7 +2191,136 @@ export function HealthCardFormSections({
             )}
           </div>
 
-          {/* Summary checkboxes for Section C */}
+          {/* C9: Sickle Cell Anaemia */}
+          <div className="space-y-3 border-l-4 border-red-300 pl-4">
+            <FormField
+              control={form.control}
+              name="c9_suspected"
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                  <FormControl>
+                    <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                  </FormControl>
+                  <div>
+                    <FormLabel className="text-sm font-bold text-red-700">
+                      C9: Sickle Cell Anaemia - (If suspected - REFER)
+                    </FormLabel>
+                    <p className="text-xs text-red-600 mt-1">Screening for sickle cell disease and hemoglobin variants</p>
+                  </div>
+                </FormItem>
+              )}
+            />
+
+            {form.watch("c9_suspected") && (
+              <div className="ml-6 space-y-6 bg-white p-4 rounded border">
+                {/* C9.1 Clinical Features */}
+                <div className="border-l-2 border-red-300 pl-3">
+                  <FormLabel className="text-sm font-bold text-red-700">9.1 Clinical Features</FormLabel>
+                  <p className="text-xs text-gray-600 mt-1">Check all signs/symptoms present:</p>
+                  <div className="grid grid-cols-2 gap-2 mt-2">
+                    {[
+                      { key: "pain_crisis", label: "Vaso-occlusive pain crisis" },
+                      { key: "swelling_hands_feet", label: "Hand-foot swelling (dactylitis)" },
+                      { key: "shortness_breath", label: "Shortness of breath (acute chest syndrome)" },
+                      { key: "fatigue", label: "Severe fatigue/lethargy" },
+                      { key: "jaundice", label: "Jaundice (yellowing)" },
+                      { key: "delayed_growth", label: "Delayed growth/development" },
+                      { key: "severe_infections", label: "Recurrent severe infections" },
+                    ].map((feature) => (
+                      <FormField
+                        key={feature.key}
+                        control={form.control}
+                        name={`c9_clinical_features.${feature.key}` as any}
+                        render={({ field }) => (
+                          <FormItem className="flex flex-row items-center space-x-2 space-y-0">
+                            <FormControl>
+                              <Checkbox
+                                checked={field.value}
+                                onCheckedChange={(checked) => {
+                                  const current = form.getValues("c9_clinical_features") || {};
+                                  form.setValue("c9_clinical_features", { ...current, [feature.key]: checked });
+                                }}
+                              />
+                            </FormControl>
+                            <FormLabel className="text-xs">{feature.label}</FormLabel>
+                          </FormItem>
+                        )}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                {/* C9.2 Hemoglobin Type Classification */}
+                <div className="border-l-2 border-red-300 pl-3">
+                  <FormLabel className="text-sm font-bold text-red-700">9.2 Hemoglobin Type Classification</FormLabel>
+                  <p className="text-xs text-gray-600 mt-1">If sickle cell anaemia confirmed by tests, select type:</p>
+                  <div className="grid grid-cols-1 gap-2 mt-2">
+                    {[
+                      { key: "hbss", label: "Hemoglobin SS (HbSS) - Sickle Cell Disease" },
+                      { key: "hbsc", label: "Hemoglobin SC (HbSC) - SC Disease" },
+                      { key: "hbs_beta_thalassemia", label: "Hemoglobin S Beta-Thalassemia (HbS/β-Thalassemia)" },
+                      { key: "hbsd", label: "Rare Forms: Hemoglobin SD (HbSD)" },
+                      { key: "hbse", label: "Rare Forms: Hemoglobin SE (HbSE)" },
+                    ].map((type) => (
+                      <FormField
+                        key={type.key}
+                        control={form.control}
+                        name={`c9_hemoglobin_type.${type.key}` as any}
+                        render={({ field }) => (
+                          <FormItem className="flex flex-row items-center space-x-2 space-y-0">
+                            <FormControl>
+                              <Checkbox
+                                checked={field.value}
+                                onCheckedChange={(checked) => {
+                                  const current = form.getValues("c9_hemoglobin_type") || {};
+                                  form.setValue("c9_hemoglobin_type", { ...current, [type.key]: checked });
+                                }}
+                              />
+                            </FormControl>
+                            <FormLabel className="text-xs">{type.label}</FormLabel>
+                          </FormItem>
+                        )}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                {/* Note about referral */}
+                <div className="bg-red-50 p-3 rounded border border-red-200">
+                  <p className="text-xs text-red-700">
+                    <strong>Important:</strong> All children with confirmed sickle cell disease should be referred for specialized hematology care, genetic counseling, and comprehensive disease management.
+                  </p>
+                </div>
+
+                {/* Referral Facility */}
+                <FormField
+                  control={form.control}
+                  name="c9_referral_facility"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-sm font-bold text-red-700">Refer to facility: *</FormLabel>
+                      <Select value={field.value || ""} onValueChange={field.onChange}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select referral facility" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {["Medical College/Teaching Hospital", "District Hospital - Hemato-oncology", "Tertiary Care Center - Pediatric Hematology", "Blood Bank/Hemophilia Center", "PHC/CHC", "Pediatrician"].map((facility) => (
+                            <SelectItem key={facility} value={facility}>
+                              {facility}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Summary checkboxes for Section C */
+}
           <div className="mt-4 pt-4 border-t">
             <FormLabel className="text-sm font-semibold">Summary of Findings - Diseases</FormLabel>
             <div className="mt-2 grid grid-cols-3 gap-2">
@@ -2201,6 +2339,7 @@ export function HealthCardFormSections({
                 { key: "summary_disease_behavioral_disorder", label: "Behavioral disorder (Autism/ADHD)" },
                 { key: "summary_disease_tuberculosis", label: "Tuberculosis (Pulmonary/Extra-pulmonary)" },
                 { key: "summary_disease_leprosy", label: "Leprosy" },
+                { key: "summary_disease_sickle_cell_anaemia", label: "Sickle Cell Anaemia" },
               ].map((item) => (
                 <FormField
                   key={item.key}
@@ -2551,8 +2690,8 @@ export function HealthCardFormSections({
               />
             </div>
 
-            {/* E4: Female-only */}
-            {isFemale && (
+            {/* E4: Female-only - Menstruation started (Age 10+ restriction) */}
+            {canAccessMenstrualTracking && (
               <div className="space-y-3 border-l-4 border-pink-300 pl-4">
                 <FormField
                   control={form.control}
@@ -2564,7 +2703,7 @@ export function HealthCardFormSections({
                       </FormControl>
                       <div>
                         <FormLabel className="text-sm">
-                          E4: Menstruation started? (female only)
+                          E4: Menstruation started? (female students aged 10+ only)
                         </FormLabel>
                         <div className="mt-2 grid grid-cols-3 gap-2">
                           <FormField
@@ -2791,8 +2930,8 @@ export function HealthCardFormSections({
               />
             </div>
 
-            {/* E7: Female-only */}
-            {isFemale && (
+            {/* E7: Female-only - Severe menstrual pain (Age 10+ restriction) */}
+            {canAccessMenstrualTracking && (
               <div className="space-y-3 border-l-4 border-pink-300 pl-4">
                 <FormField
                   control={form.control}
@@ -2804,7 +2943,7 @@ export function HealthCardFormSections({
                       </FormControl>
                       <div>
                         <FormLabel className="text-sm">
-                          E7: Severe pain during menstruation interfering with activities (female only)
+                          E7: Severe pain during menstruation interfering with activities (female students aged 10+ only)
                         </FormLabel>
                         {field.value && (
                           <div className="mt-2 grid grid-cols-3 gap-2">
@@ -2873,11 +3012,18 @@ export function HealthCardFormSections({
             )}
 
             {/* Detailed Menstrual Cycle Tracking for Adolescent Females */}
-            {isFemale && showAdolescentSection && canViewMenstrualHealth && (
+            {canAccessMenstrualTracking && (
               <Card className="mt-6">
                 <CardHeader>
                   <CardTitle className="text-lg text-pink-700">Detailed Menstrual Cycle Tracking</CardTitle>
-                  <p className="text-sm text-gray-600">Comprehensive tracking for adolescent female health concerns</p>
+                  <p className="text-sm text-gray-600">
+                    Comprehensive tracking for female students aged 10+ years
+                    {!canViewMenstrualHealth && (
+                      <span className="block text-xs text-orange-600 mt-1">
+                        Note: Full menstrual health management is handled by Lady Superintendent
+                      </span>
+                    )}
+                  </p>
                 </CardHeader>
                 <CardContent className="space-y-6">
                   <div className="grid grid-cols-2 gap-4">
@@ -3289,6 +3435,7 @@ export function HealthCardFormSections({
             { category: "Disease", yesField: "disease_any", facilityField: "disease_facility", defaultFacility: "PHC/CHC/DH/DEIC" },
             { category: "Leprosy", yesField: "c7_suspected", facilityField: "c7_referral_facility", defaultFacility: "PHC/CHC/DH/Leprosy Clinic" },
             { category: "TB", yesField: "c8_suspected", facilityField: "c8_referral_facility", defaultFacility: "PHC/DOTS centre/DH" },
+            { category: "Sickle Cell Anaemia", yesField: "c9_suspected", facilityField: "c9_referral_facility", defaultFacility: "Medical College/District Hospital" },
             { category: "Developmental Delay", yesField: "developmental_any", facilityField: "developmental_facility", defaultFacility: "DEIC" },
             { category: "Adolescent Health Concern", yesField: "adolescent_any", facilityField: "adolescent_facility", defaultFacility: "CHC/AFHC/Mental Health" },
           ].map((item) => (

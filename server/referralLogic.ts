@@ -173,3 +173,80 @@ export function generateC8ReferralIssue(healthCardData: any): string {
 
   return issues.length > 0 ? `Tuberculosis suspected: ${issues.join('; ')}` : "Tuberculosis suspected";
 }
+
+export function isC9ReferralNeeded(healthCardData: any): boolean {
+  // C9 Referral Rule: If suspected → REFER FOR HEMATOLOGY EVALUATION & SPECIALIZED CARE
+  // Sickle cell disease is a serious condition requiring specialist management
+  
+  // Check if C9 is suspected
+  if (healthCardData.c9_suspected === true) {
+    return true;
+  }
+
+  // Check if any clinical features are present
+  const clinicalFeatures = healthCardData.c9_clinical_features || {};
+  const hasAnyFeature = Object.values(clinicalFeatures).some((v: any) => v === true);
+  if (hasAnyFeature) {
+    return true;
+  }
+
+  // Check if hemoglobin type is documented (indicates confirmed diagnosis)
+  const hemoglobinType = healthCardData.c9_hemoglobin_type || {};
+  const hasTypeConfirmed = Object.values(hemoglobinType).some((v: any) => v === true);
+  if (hasTypeConfirmed) {
+    return true;
+  }
+
+  return false;
+}
+
+export function getC9ReferralDescription(healthCardData: any): string {
+  const issues: string[] = [];
+
+  if (healthCardData.c9_suspected === true) {
+    issues.push("Sickle cell anaemia suspected");
+  }
+
+  const clinicalFeatures = healthCardData.c9_clinical_features || {};
+  if (clinicalFeatures.pain_crisis) {
+    issues.push("Vaso-occlusive pain crisis");
+  }
+  if (clinicalFeatures.swelling_hands_feet) {
+    issues.push("Hand-foot swelling (dactylitis)");
+  }
+  if (clinicalFeatures.shortness_breath) {
+    issues.push("Acute chest syndrome");
+  }
+  if (clinicalFeatures.fatigue) {
+    issues.push("Severe fatigue/lethargy");
+  }
+  if (clinicalFeatures.jaundice) {
+    issues.push("Jaundice");
+  }
+  if (clinicalFeatures.delayed_growth) {
+    issues.push("Delayed growth/development");
+  }
+  if (clinicalFeatures.severe_infections) {
+    issues.push("Recurrent severe infections");
+  }
+
+  const hemoglobinType = healthCardData.c9_hemoglobin_type || {};
+  if (hemoglobinType.hbss) {
+    issues.push("HbSS disease confirmed");
+  }
+  if (hemoglobinType.hbsc) {
+    issues.push("HbSC disease confirmed");
+  }
+  if (hemoglobinType.hbs_beta_thalassemia) {
+    issues.push("HbS/β-Thalassemia confirmed");
+  }
+  if (hemoglobinType.hbsd) {
+    issues.push("HbSD variant");
+  }
+  if (hemoglobinType.hbse) {
+    issues.push("HbSE variant");
+  }
+
+  return issues.length > 0 ? `Sickle cell disease: ${issues.join('; ')}` : "Sickle cell disease evaluation needed";
+}
+

@@ -26,7 +26,7 @@ describe('PO Dashboard disease and adolescent data', () => {
     const jwt = require('jsonwebtoken');
     poToken = jwt.sign({ id: poUser.id, username: poUser.username, role: poUser.role }, secret, { expiresIn: '1h' });
 
-    school = await storage.createSchool({ name: 'PO Test School', district: 'D-TEST' } as any);
+    school = await storage.createSchool({ name: 'PO Test School', district: 'D-TEST', schoolType: 'Government' } as any);
     student = await storage.createStudent({ fullName: 'Adol Student', uniqueId: `AS-${Date.now()}`, gender: 'F', classSection: '9-A', schoolId: school.id, dateOfBirth: new Date('2010-06-01') } as any);
 
     // Create an annual health card with TB and adolescent flags

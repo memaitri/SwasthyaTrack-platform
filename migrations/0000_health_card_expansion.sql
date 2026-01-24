@@ -13,7 +13,7 @@ CREATE TABLE "annual_health_cards" (
 	"gender" text,
 	"class_section" text,
 	"aadhaar_no" text,
-	"mcts_no" text,
+	"pran_no" text,
 	"unique_id" text,
 	"father_guardian_name" text,
 	"father_contact" text,
@@ -197,14 +197,10 @@ CREATE TABLE "annual_health_cards" (
 	"c7_hypopigmented_patches" boolean DEFAULT false,
 	"c7_thickened_nerves" boolean DEFAULT false,
 	"c7_ulceration" boolean DEFAULT false,
-	"c7_referral_facility" text,
-	"c7_referral_date" date,
 	"c8_persistent_cough" boolean DEFAULT false,
 	"c8_fever" boolean DEFAULT false,
 	"c8_weight_loss" boolean DEFAULT false,
 	"c8_lymph_node_enlargement" boolean DEFAULT false,
-	"c8_referral_facility" text,
-	"c8_referral_date" date,
 	CONSTRAINT "check_gender_specific_fields"
 	CHECK (
   ("gender" = 'Female' AND ("e4_menstruation_started" IS NOT NULL OR "e7_severe_menstrual_pain" IS NOT NULL))
@@ -321,7 +317,7 @@ CREATE TABLE "students" (
 	"school_id" varchar NOT NULL,
 	"unique_id" text NOT NULL,
 	"aadhaar_no" text,
-	"mcts_no" text,
+	"pran_no" text,
 	"full_name" text NOT NULL,
 	"date_of_birth" date,
 	"gender" text NOT NULL,

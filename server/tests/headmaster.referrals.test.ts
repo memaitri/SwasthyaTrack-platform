@@ -26,7 +26,7 @@ describe('Headmaster dashboard referral fallback', () => {
     const jwt = require('jsonwebtoken');
     hmToken = jwt.sign({ id: hmUser.id, username: hmUser.username, role: hmUser.role }, secret, { expiresIn: '1h' });
 
-    school = await storage.createSchool({ name: 'HM Test School', district: 'D-TEST' } as any);
+    school = await storage.createSchool({ name: 'HM Test School', district: 'D-TEST', schoolType: 'Government' } as any);
     student = await storage.createStudent({ fullName: 'Referral Student', uniqueId: `RS-${Date.now()}`, gender: 'M', classSection: '5-A', schoolId: school.id, dateOfBirth: new Date('2016-06-01') } as any);
 
     // Create an annual health card with referral flags (no explicit referral row created)

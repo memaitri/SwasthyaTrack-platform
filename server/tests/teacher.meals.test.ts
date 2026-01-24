@@ -20,7 +20,7 @@ describe('ClassTeacher meal participation metrics', () => {
     server = httpServer.listen(0);
 
     // create school and student
-    school = await storage.createSchool({ name: 'Meal Test School', district: 'D-TEST' } as any);
+    school = await storage.createSchool({ name: 'Meal Test School', district: 'D-TEST', schoolType: 'Government' } as any);
     student = await storage.createStudent({ fullName: 'Meal Student', uniqueId: `MS-${Date.now()}`, gender: 'M', classSection: '9-A', schoolId: school.id } as any);
 
     // create class teacher user

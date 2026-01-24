@@ -48,6 +48,7 @@ import { exportToCSV } from "@/lib/csvExport";
 import { exportToPDF, exportToExcel } from "@/lib/exportService";
 import { useAuth } from "@/lib/auth"; // Corrected the import path for useAuth
 import { useToast } from "@/hooks/use-toast";
+import { formatGenderDisplay, formatGenderWithIcon } from "@/lib/genderUtils";
 
 type TeacherDashboardData = {
   metrics: any;
@@ -250,7 +251,7 @@ export default function ClassTeacherDashboard() {
           "Student Name": student.fullName,
           "Unique ID": student.uniqueId,
           "Class": student.classSection,
-          "Gender": student.gender,
+          "Gender": formatGenderDisplay(student.gender),
           "Age": student.age || "N/A",
           "Health Card Status": student.healthCardStatus,
           "Weight (kg)": healthCard?.weightKg || "N/A",
@@ -333,7 +334,7 @@ export default function ClassTeacherDashboard() {
           "Student Name": student.fullName,
           "Unique ID": student.uniqueId,
           "Class": student.classSection,
-          "Gender": student.gender,
+          "Gender": formatGenderDisplay(student.gender),
           "Age": student.age || "N/A",
           "Health Card Status": student.healthCardStatus,
         }));
@@ -699,7 +700,22 @@ export default function ClassTeacherDashboard() {
                     </div>
                   ),
                 },
-                { key: "gender", header: "Gender", className: "text-center" },
+                { 
+                  key: "gender", 
+                  header: "Gender", 
+                  className: "text-center",
+                  render: (item: any) => {
+                    const genderInfo = formatGenderWithIcon(item.gender);
+                    return (
+                      <div className="flex items-center justify-center gap-1">
+                        <span className="text-sm">{genderInfo.icon}</span>
+                        <span className={`text-sm font-medium ${genderInfo.colorClass}`}>
+                          {genderInfo.label}
+                        </span>
+                      </div>
+                    );
+                  }
+                },
                 {
                   key: "healthCardStatus",
                   header: "Health Card",

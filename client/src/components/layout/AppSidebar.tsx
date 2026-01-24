@@ -30,6 +30,8 @@ import {
   UserCog,
   ClipboardList,
   User,
+  Heart,
+  Calendar,
 } from "lucide-react";
 
 const roleMenuItems = {
@@ -43,7 +45,6 @@ const roleMenuItems = {
     { title: "Schools", url: "/schools", icon: School },
     { title: "Students", url: "/students", icon: Users },
     { title: "Hostel Attendance", url: "/hostel", icon: Home },
-    { title: "Data Manager", url: "/data-management", icon: Settings },
     { title: "Reports", url: "/reports", icon: FileText },
   ],
   Headmaster: [
@@ -74,7 +75,7 @@ const roleMenuItems = {
   ],
   "Lady Superintendent": [
     { title: "Dashboard", url: "/", icon: LayoutDashboard },
-    { title: "Health Cards", url: "/health-cards", icon: FileHeart },
+    { title: "Period Tracker", url: "/period-tracker", icon: Calendar },
   ],
 };
 

@@ -9,6 +9,7 @@ import {
   hostelAttendance,
   auditLogs,
   refreshTokens,
+  studentAcademicActions,
   type User,
   type InsertUser,
   type School,
@@ -25,6 +26,8 @@ import {
   type InsertHostelAttendance,
   type AuditLog,
   type InsertAuditLog,
+  type StudentAcademicAction,
+  type InsertStudentAcademicAction,
   notifications,
   type Notification,
   type InsertNotification,
@@ -32,8 +35,12 @@ import {
   type Referral,
   type InsertReferral,
   annualHealthCards as annualHealthCardsTable,
+  periodTrackerEntries,
+  type PeriodTrackerEntry,
+  type InsertPeriodTrackerEntry,
 } from "@shared/schema";
 import { eq, and, like, or, desc, gte, lte, sql, count, inArray, isNull } from "drizzle-orm";
+import { predictMenstrualCycle, type CycleEntry } from "../lib/menstrualCyclePrediction";
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -58,6 +65,8 @@ export interface IStorage {
     page?: number;
     limit?: number;
     gender?: string;
+    menstruationStarted?: boolean;
+    minAge?: number;
   }): Promise<{ students: Student[]; total: number }>;
   createStudent(student: InsertStudent): Promise<Student>;
   updateStudent(id: string, data: Partial<InsertStudent>): Promise<Student | undefined>;
@@ -154,6 +163,38 @@ export interface IStorage {
     year: number;
     month: number;
   }): Promise<any[]>;
+
+  // Period Tracker methods
+  getPeriodTrackerEntry(id: string): Promise<PeriodTrackerEntry | undefined>;
+  getPeriodTrackerEntries(params: {
+    studentId: string;
+    startDate?: string;
+    endDate?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{ entries: PeriodTrackerEntry[]; total: number }>;
+  createPeriodTrackerEntry(entry: InsertPeriodTrackerEntry): Promise<PeriodTrackerEntry>;
+  upsertPeriodTrackerEntry(entry: InsertPeriodTrackerEntry): Promise<PeriodTrackerEntry>;
+  updatePeriodTrackerEntry(id: string, data: Partial<InsertPeriodTrackerEntry>): Promise<PeriodTrackerEntry | undefined>;
+  deletePeriodTrackerEntry(id: string): Promise<void>;
+  analyzeMoodTrends(studentId: string, days: number): Promise<any>;
+  predictNextCycle(studentId: string): Promise<any>;
+
+  // Student Academic Actions methods
+  performStudentAcademicAction(params: {
+    studentId: string;
+    actionType: 'Promote' | 'Demote' | 'Detain';
+    reason: string;
+    performedBy: string;
+    performedByRole: string;
+  }): Promise<{ success: boolean; message: string; student?: Student }>;
+  getStudentAcademicActions(params: {
+    studentId?: string;
+    academicYear?: number;
+    page?: number;
+    limit?: number;
+  }): Promise<{ actions: StudentAcademicAction[]; total: number }>;
+  validateAcademicAction(studentId: string, actionType: 'Promote' | 'Demote' | 'Detain', performedBy: string): Promise<{ valid: boolean; message: string }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -312,8 +353,11 @@ export class DatabaseStorage implements IStorage {
     search?: string;
     page?: number;
     limit?: number;
+    gender?: string;
+    menstruationStarted?: boolean;
+    minAge?: number;
   }): Promise<{ students: Student[]; total: number }> {
-    const { schoolId, classSection, search, page = 1, limit = 10 } = params || {};
+    const { schoolId, classSection, search, page = 1, limit = 10, gender, menstruationStarted, minAge } = params || {};
     const offset = (page - 1) * limit;
 
     let query = db.select().from(students);
@@ -321,6 +365,16 @@ export class DatabaseStorage implements IStorage {
     const conditions = [];
     if (schoolId) conditions.push(eq(students.schoolId, schoolId));
     if (classSection && classSection !== "all") conditions.push(eq(students.classSection, classSection));
+    if (gender) conditions.push(sql`${students.gender} = ${gender}`);
+    if (menstruationStarted !== undefined) {
+      // Filter for students who have menstruation started (menstruationStartedAt is NOT NULL)
+      conditions.push(sql`${students.menstruationStartedAt} IS NOT NULL`);
+    }
+    if (minAge !== undefined) {
+      // Filter students by age (calculated from dateOfBirth)
+      // SQL: EXTRACT(YEAR FROM AGE(CURRENT_DATE, date_of_birth)) >= minAge
+      conditions.push(sql`EXTRACT(YEAR FROM AGE(CURRENT_DATE, ${students.dateOfBirth})) >= ${minAge}`);
+    }
     if (search) {
       conditions.push(
         or(
@@ -1350,7 +1404,7 @@ export class DatabaseStorage implements IStorage {
           if (monthlyCard?.symptoms?.some(s => s.toLowerCase().includes('menstrual'))) {
             conditionMet = true;
           } else if (annualCard) {
-            conditionMet = annualCard.summary_adolescent_menstrual_issues === true || annualCard.e7_severe_menstrual_pain === true;
+            conditionMet = annualCard.summary_adolescent_substance_use === true || annualCard.summary_adolescent_depressed === true;
           }
           break;
         case "referrals":
@@ -1431,6 +1485,552 @@ export class DatabaseStorage implements IStorage {
     }));
 
     return studentDetailsWithCards;
+  }
+
+  // Period Tracker Methods
+  async getPeriodTrackerEntry(id: string): Promise<PeriodTrackerEntry | undefined> {
+    const [entry] = await db.select().from(periodTrackerEntries).where(eq(periodTrackerEntries.id, id));
+    return entry;
+  }
+
+  async getPeriodTrackerEntries(params: {
+    studentId: string;
+    startDate?: string;
+    endDate?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{ entries: PeriodTrackerEntry[]; total: number }> {
+    const { studentId, startDate, endDate, page = 1, limit = 100 } = params;
+    const offset = (page - 1) * limit;
+
+    const conditions = [eq(periodTrackerEntries.studentId, studentId)];
+    
+    if (startDate) {
+      conditions.push(gte(periodTrackerEntries.entryDate, startDate));
+    }
+    if (endDate) {
+      conditions.push(lte(periodTrackerEntries.entryDate, endDate));
+    }
+
+    let query = db.select().from(periodTrackerEntries).where(and(...conditions));
+    
+    // Get total count
+    const [totalResult] = await db
+      .select({ count: count() })
+      .from(periodTrackerEntries)
+      .where(and(...conditions));
+
+    const entries = await query
+      .orderBy(desc(periodTrackerEntries.entryDate))
+      .limit(limit)
+      .offset(offset);
+
+    return { entries, total: totalResult?.count || 0 };
+  }
+
+  async createPeriodTrackerEntry(entry: InsertPeriodTrackerEntry): Promise<PeriodTrackerEntry> {
+    const insertData: any = { ...entry };
+    
+    // Convert date to string format if needed
+    if (entry.entryDate instanceof Date) {
+      insertData.entryDate = entry.entryDate.toISOString().split('T')[0];
+    }
+    
+    // Convert referral date to string format if needed
+    if (entry.referredDate && typeof entry.referredDate !== 'string') {
+      insertData.referredDate = (entry.referredDate as Date).toISOString().split('T')[0];
+    }
+
+    const [newEntry] = await db.insert(periodTrackerEntries).values(insertData).returning();
+    return newEntry;
+  }
+
+  async upsertPeriodTrackerEntry(entry: InsertPeriodTrackerEntry): Promise<PeriodTrackerEntry> {
+    const insertData: any = { ...entry };
+    
+    // Convert date to string format if needed
+    if (entry.entryDate instanceof Date) {
+      insertData.entryDate = entry.entryDate.toISOString().split('T')[0];
+    }
+    
+    // Convert referral date to string format if needed
+    if (entry.referredDate && typeof entry.referredDate !== 'string') {
+      insertData.referredDate = (entry.referredDate as Date).toISOString().split('T')[0];
+    }
+
+    console.log(`[UPSERT] Attempting upsert for student ${entry.studentId} on date ${insertData.entryDate}`);
+
+    try {
+      // First, try to find existing entry for this student and date
+      const existingEntry = await db
+        .select()
+        .from(periodTrackerEntries)
+        .where(
+          and(
+            eq(periodTrackerEntries.studentId, entry.studentId),
+            eq(periodTrackerEntries.entryDate, insertData.entryDate)
+          )
+        )
+        .limit(1);
+
+      if (existingEntry.length > 0) {
+        console.log(`[UPSERT] Found existing entry ${existingEntry[0].id}, updating...`);
+        // Update existing entry
+        const updateData = { ...insertData, updatedAt: new Date() };
+        delete updateData.id; // Remove id from update data
+        
+        const [updatedEntry] = await db
+          .update(periodTrackerEntries)
+          .set(updateData)
+          .where(eq(periodTrackerEntries.id, existingEntry[0].id))
+          .returning();
+        
+        console.log(`[UPSERT] Successfully updated entry ${updatedEntry.id}`);
+        return updatedEntry;
+      } else {
+        console.log(`[UPSERT] No existing entry found, creating new...`);
+        // Create new entry
+        const [newEntry] = await db.insert(periodTrackerEntries).values(insertData).returning();
+        console.log(`[UPSERT] Successfully created new entry ${newEntry.id}`);
+        return newEntry;
+      }
+    } catch (error: any) {
+      console.error(`[UPSERT] Error during upsert:`, error);
+      throw error;
+    }
+  }
+
+  async updatePeriodTrackerEntry(id: string, data: Partial<InsertPeriodTrackerEntry>): Promise<PeriodTrackerEntry | undefined> {
+    const updateData: any = { ...data, updatedAt: new Date() };
+
+    // Convert date to string format if needed
+    if (data.entryDate instanceof Date) {
+      updateData.entryDate = data.entryDate.toISOString().split('T')[0];
+    }
+    
+    // Convert referral date to string format if needed
+    if (data.referredDate && typeof data.referredDate !== 'string') {
+      updateData.referredDate = (data.referredDate as Date).toISOString().split('T')[0];
+    }
+
+    const [entry] = await db
+      .update(periodTrackerEntries)
+      .set(updateData)
+      .where(eq(periodTrackerEntries.id, id))
+      .returning();
+    
+    return entry;
+  }
+
+  async deletePeriodTrackerEntry(id: string): Promise<void> {
+    await db.delete(periodTrackerEntries).where(eq(periodTrackerEntries.id, id));
+  }
+
+  async analyzeMoodTrends(studentId: string, days: number = 30): Promise<any> {
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+    const startDateStr = startDate.toISOString().split('T')[0];
+
+    const entries = await db
+      .select()
+      .from(periodTrackerEntries)
+      .where(
+        and(
+          eq(periodTrackerEntries.studentId, studentId),
+          gte(periodTrackerEntries.entryDate, startDateStr)
+        )
+      )
+      .orderBy(desc(periodTrackerEntries.entryDate));
+
+    // Analyze mood frequency
+    const moodCounts: Record<string, number> = {};
+    const symptomCounts: Record<string, number> = {};
+    let totalPainIntensity = 0;
+    let painEntries = 0;
+    let avgTemperature = 0;
+    let tempEntries = 0;
+
+    entries.forEach(entry => {
+      // Count moods
+      if (entry.moods && Array.isArray(entry.moods)) {
+        (entry.moods as string[]).forEach(mood => {
+          moodCounts[mood] = (moodCounts[mood] || 0) + 1;
+        });
+      }
+
+      // Count symptoms
+      if (entry.symptoms && Array.isArray(entry.symptoms)) {
+        (entry.symptoms as string[]).forEach(symptom => {
+          symptomCounts[symptom] = (symptomCounts[symptom] || 0) + 1;
+        });
+      }
+
+      // Average pain intensity
+      if (entry.painIntensity !== null && entry.painIntensity !== undefined) {
+        totalPainIntensity += entry.painIntensity;
+        painEntries++;
+      }
+
+      // Average temperature
+      if (entry.bodyTemperatureCelsius) {
+        avgTemperature += parseFloat(entry.bodyTemperatureCelsius);
+        tempEntries++;
+      }
+    });
+
+    return {
+      period: `Last ${days} days`,
+      totalEntries: entries.length,
+      moodFrequency: Object.entries(moodCounts)
+        .map(([mood, count]) => ({ mood, count, percentage: ((count / entries.length) * 100).toFixed(1) }))
+        .sort((a, b) => b.count - a.count),
+      symptomFrequency: Object.entries(symptomCounts)
+        .map(([symptom, count]) => ({ symptom, count, percentage: ((count / entries.length) * 100).toFixed(1) }))
+        .sort((a, b) => b.count - a.count),
+      averagePainIntensity: painEntries > 0 ? (totalPainIntensity / painEntries).toFixed(1) : null,
+      averageTemperature: tempEntries > 0 ? (avgTemperature / tempEntries).toFixed(1) : null,
+      entries: entries.slice(0, 10), // Return last 10 entries for timeline
+    };
+  }
+
+  async predictNextCycle(studentId: string): Promise<any> {
+    // Get last 6 months of entries to analyze cycle patterns
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+    const startDateStr = sixMonthsAgo.toISOString().split('T')[0];
+
+    const entries = await db
+      .select()
+      .from(periodTrackerEntries)
+      .where(
+        and(
+          eq(periodTrackerEntries.studentId, studentId),
+          gte(periodTrackerEntries.entryDate, startDateStr)
+        )
+      )
+      .orderBy(periodTrackerEntries.entryDate);
+
+    // Convert to CycleEntry format for the prediction utility
+    const cycleEntries: CycleEntry[] = entries.map(entry => ({
+      date: new Date(entry.entryDate),
+      flowIntensity: entry.flowCategory as any,
+      moods: entry.moods,
+      symptoms: entry.symptoms,
+      painIntensity: entry.painIntensity,
+      bodyTemperature: entry.bodyTemperatureCelsius,
+    }));
+
+    // Use the reusable prediction utility
+    const result = predictMenstrualCycle(cycleEntries, {
+      dateField: 'date',
+      flowField: 'flowIntensity',
+      minPeriodsRequired: 2,
+      lookbackMonths: 6,
+      periodStartFlowLevels: ['medium', 'heavy'],
+      minDaysBetweenPeriods: 7,
+    });
+
+    // Return formatted response
+    if (!result.prediction) {
+      return {
+        prediction: null,
+        message: result.message || "Not enough data to predict cycle. Need at least 2 recorded periods.",
+        recordedPeriods: result.statistics.recordedPeriods,
+        warnings: result.warnings,
+      };
+    }
+
+    return {
+      prediction: {
+        nextPeriodDate: result.prediction.nextPeriodDate.toISOString().split('T')[0],
+        confidence: result.prediction.confidence,
+        averageCycleLength: result.prediction.averageCycleLength,
+        cycleRegularity: result.prediction.cycleRegularity,
+        standardDeviation: result.prediction.standardDeviation.toFixed(1),
+        dataSource: result.prediction.dataSource,
+      },
+      fertileWindow: result.fertileWindow ? {
+        start: result.fertileWindow.fertileWindowStart.toISOString().split('T')[0],
+        end: result.fertileWindow.fertileWindowEnd.toISOString().split('T')[0],
+        ovulationDate: result.fertileWindow.ovulationDate.toISOString().split('T')[0],
+        confidence: result.fertileWindow.confidence,
+      } : null,
+      historicalData: {
+        recordedPeriods: result.statistics.recordedPeriods,
+        cycleLengths: result.statistics.cycleLengths,
+        lastPeriodStart: result.statistics.lastPeriodStart?.toISOString().split('T')[0] || null,
+        averagePeriodDuration: result.statistics.averagePeriodDuration,
+        isRegular: result.statistics.isRegular,
+      },
+      warnings: result.warnings,
+    };
+  }
+
+  // Student Academic Actions methods
+  async performStudentAcademicAction(params: {
+    studentId: string;
+    actionType: 'Promote' | 'Demote' | 'Detain';
+    reason: string;
+    performedBy: string;
+    performedByRole: string;
+  }): Promise<{ success: boolean; message: string; student?: Student }> {
+    const { studentId, actionType, reason, performedBy, performedByRole } = params;
+
+    // Validate the action first
+    const validation = await this.validateAcademicAction(studentId, actionType, performedBy);
+    if (!validation.valid) {
+      return { success: false, message: validation.message };
+    }
+
+    // Get current student data
+    const student = await this.getStudent(studentId);
+    if (!student) {
+      return { success: false, message: "Student not found" };
+    }
+
+    // Get current class teacher (if any)
+    const currentTeacher = await db
+      .select()
+      .from(users)
+      .where(
+        and(
+          eq(users.schoolId, student.schoolId),
+          eq(users.classSection, student.classSection),
+          eq(users.role, "ClassTeacher"),
+          eq(users.isActive, true)
+        )
+      )
+      .limit(1);
+
+    // Calculate new class and status
+    const oldStatus = student.academicStatus || 'Active';
+    const oldClassSection = student.classSection;
+    let newClassSection = oldClassSection;
+    let newStatus: 'Active' | 'Promoted' | 'Demoted' | 'Detained' = 'Active';
+
+    if (actionType === 'Promote') {
+      newStatus = 'Promoted';
+      newClassSection = this.calculateNextClass(oldClassSection);
+    } else if (actionType === 'Demote') {
+      newStatus = 'Demoted';
+      newClassSection = this.calculatePreviousClass(oldClassSection);
+    } else if (actionType === 'Detain') {
+      newStatus = 'Detained';
+      // Class remains the same for detention
+    }
+
+    // Get new class teacher (if class changed)
+    let newTeacher = null;
+    if (newClassSection !== oldClassSection) {
+      const newTeacherResult = await db
+        .select()
+        .from(users)
+        .where(
+          and(
+            eq(users.schoolId, student.schoolId),
+            eq(users.classSection, newClassSection),
+            eq(users.role, "ClassTeacher"),
+            eq(users.isActive, true)
+          )
+        )
+        .limit(1);
+      newTeacher = newTeacherResult[0] || null;
+    }
+
+    const currentYear = new Date().getFullYear();
+
+    try {
+      // Start transaction
+      await db.transaction(async (tx) => {
+        // Update student record
+        await tx
+          .update(students)
+          .set({
+            academicStatus: newStatus,
+            classSection: newClassSection,
+            previousClassSection: oldClassSection,
+            academicYear: currentYear,
+            updatedAt: new Date(),
+          })
+          .where(eq(students.id, studentId));
+
+        // Create audit log entry
+        await tx.insert(studentAcademicActions).values({
+          studentId,
+          actionType,
+          oldStatus: oldStatus as any,
+          newStatus,
+          oldClassSection,
+          newClassSection,
+          oldTeacherId: currentTeacher[0]?.id || null,
+          newTeacherId: newTeacher?.id || null,
+          reason,
+          academicYear: currentYear,
+          performedBy,
+          performedByRole: performedByRole as any,
+        });
+
+        // Create general audit log
+        await tx.insert(auditLogs).values({
+          userId: performedBy,
+          action: `Student ${actionType}`,
+          entityType: 'Student',
+          entityId: studentId,
+          details: {
+            studentName: student.fullName,
+            oldClass: oldClassSection,
+            newClass: newClassSection,
+            oldStatus,
+            newStatus,
+            reason,
+            actionType,
+          },
+        });
+      });
+
+      // Get updated student
+      const updatedStudent = await this.getStudent(studentId);
+
+      return {
+        success: true,
+        message: `Student ${actionType.toLowerCase()}d successfully from ${oldClassSection} to ${newClassSection}`,
+        student: updatedStudent,
+      };
+    } catch (error) {
+      console.error('Error performing academic action:', error);
+      return {
+        success: false,
+        message: 'Failed to perform academic action. Please try again.',
+      };
+    }
+  }
+
+  async getStudentAcademicActions(params: {
+    studentId?: string;
+    academicYear?: number;
+    page?: number;
+    limit?: number;
+  }): Promise<{ actions: StudentAcademicAction[]; total: number }> {
+    const { studentId, academicYear, page = 1, limit = 50 } = params;
+    const offset = (page - 1) * limit;
+
+    let whereConditions = [];
+    if (studentId) {
+      whereConditions.push(eq(studentAcademicActions.studentId, studentId));
+    }
+    if (academicYear) {
+      whereConditions.push(eq(studentAcademicActions.academicYear, academicYear));
+    }
+
+    const whereClause = whereConditions.length > 0 ? and(...whereConditions) : undefined;
+
+    const [actions, totalResult] = await Promise.all([
+      db
+        .select()
+        .from(studentAcademicActions)
+        .where(whereClause)
+        .orderBy(desc(studentAcademicActions.performedAt))
+        .limit(limit)
+        .offset(offset),
+      db
+        .select({ count: count() })
+        .from(studentAcademicActions)
+        .where(whereClause),
+    ]);
+
+    return {
+      actions,
+      total: totalResult[0]?.count || 0,
+    };
+  }
+
+  async validateAcademicAction(
+    studentId: string,
+    actionType: 'Promote' | 'Demote' | 'Detain',
+    performedBy: string
+  ): Promise<{ valid: boolean; message: string }> {
+    // Get student
+    const student = await this.getStudent(studentId);
+    if (!student) {
+      return { valid: false, message: "Student not found" };
+    }
+
+    // Get performer
+    const performer = await this.getUser(performedBy);
+    if (!performer) {
+      return { valid: false, message: "Invalid user performing action" };
+    }
+
+    // Check role permissions
+    if (performer.role === "ClassTeacher") {
+      // ClassTeacher can only act on their own class students
+      if (performer.classSection !== student.classSection || performer.schoolId !== student.schoolId) {
+        return { valid: false, message: "You can only perform academic actions on students from your assigned class" };
+      }
+    } else if (!["Headmaster", "Admin"].includes(performer.role)) {
+      return { valid: false, message: "Insufficient permissions to perform academic actions" };
+    }
+
+    // Check if student is active
+    if (!student.isActive) {
+      return { valid: false, message: "Cannot perform actions on inactive students" };
+    }
+
+    // Check for duplicate actions in the same academic year
+    const currentYear = new Date().getFullYear();
+    const existingActions = await db
+      .select()
+      .from(studentAcademicActions)
+      .where(
+        and(
+          eq(studentAcademicActions.studentId, studentId),
+          eq(studentAcademicActions.academicYear, currentYear),
+          eq(studentAcademicActions.actionType, actionType)
+        )
+      );
+
+    if (existingActions.length > 0) {
+      return { valid: false, message: `Student has already been ${actionType.toLowerCase()}d this academic year` };
+    }
+
+    // Validate class boundaries
+    if (actionType === 'Promote') {
+      const nextClass = this.calculateNextClass(student.classSection);
+      if (nextClass === student.classSection) {
+        return { valid: false, message: "Student is already in the highest class" };
+      }
+    } else if (actionType === 'Demote') {
+      const prevClass = this.calculatePreviousClass(student.classSection);
+      if (prevClass === student.classSection) {
+        return { valid: false, message: "Student is already in the lowest class" };
+      }
+    }
+
+    return { valid: true, message: "Action is valid" };
+  }
+
+  private calculateNextClass(currentClass: string): string {
+    // Extract class number from formats like "Class 1-A", "1st Grade", "Grade 1", etc.
+    const classMatch = currentClass.match(/(\d+)/);
+    if (!classMatch) return currentClass;
+
+    const currentNumber = parseInt(classMatch[1]);
+    if (currentNumber >= 12) return currentClass; // Max class
+
+    const newNumber = currentNumber + 1;
+    return currentClass.replace(/\d+/, newNumber.toString());
+  }
+
+  private calculatePreviousClass(currentClass: string): string {
+    // Extract class number from formats like "Class 1-A", "1st Grade", "Grade 1", etc.
+    const classMatch = currentClass.match(/(\d+)/);
+    if (!classMatch) return currentClass;
+
+    const currentNumber = parseInt(classMatch[1]);
+    if (currentNumber <= 1) return currentClass; // Min class
+
+    const newNumber = currentNumber - 1;
+    return currentClass.replace(/\d+/, newNumber.toString());
   }
 }
 

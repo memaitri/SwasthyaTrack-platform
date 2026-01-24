@@ -6,7 +6,7 @@ let student: any;
 
 describe('Dashboard metrics fields presence', () => {
   beforeAll(async () => {
-    school = await storage.createSchool({ name: `FieldTest School ${Date.now()}`, district: 'DT', region: 'RG' } as any);
+    school = await storage.createSchool({ name: `FieldTest School ${Date.now()}`, district: 'DT', region: 'RG', schoolType: 'Government' } as any);
     student = await storage.createStudent({ fullName: 'Field Student', uniqueId: `FS-${Date.now()}`, gender: 'M', classSection: '1-A', schoolId: school.id } as any);
   });
 

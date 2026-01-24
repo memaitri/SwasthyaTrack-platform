@@ -131,6 +131,37 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
         console.warn("Migration check: failed to adjust existing school approval statuses:", uqErr?.message || String(uqErr));
       }
 
+      // DB compatibility: ensure `pran_no` exists (migrate from `mcts_no` if present)
+      try {
+        await db.execute(`
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='students' AND column_name='pran_no') THEN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='students' AND column_name='mcts_no') THEN
+      ALTER TABLE students ADD COLUMN pran_no text;
+      UPDATE students SET pran_no = mcts_no WHERE pran_no IS NULL AND mcts_no IS NOT NULL;
+      ALTER TABLE students DROP COLUMN IF EXISTS mcts_no;
+    ELSE
+      ALTER TABLE students ADD COLUMN pran_no text;
+    END IF;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='annual_health_cards' AND column_name='pran_no') THEN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='annual_health_cards' AND column_name='mcts_no') THEN
+      ALTER TABLE annual_health_cards ADD COLUMN pran_no text;
+      UPDATE annual_health_cards SET pran_no = mcts_no WHERE pran_no IS NULL AND mcts_no IS NOT NULL;
+      ALTER TABLE annual_health_cards DROP COLUMN IF EXISTS mcts_no;
+    ELSE
+      ALTER TABLE annual_health_cards ADD COLUMN pran_no text;
+    END IF;
+  END IF;
+END $$;
+        `);
+        log("DB compatibility: ensured pran_no columns exist and migrated from mcts_no when present");
+      } catch (compatErr: any) {
+        console.warn("DB compatibility migration failed:", compatErr?.message || String(compatErr));
+      }
+
     } catch (dbError: any) {
       console.error("Database connection failed:", dbError?.message || String(dbError));
       console.error("Please check your DATABASE_URL and database availability");
@@ -139,9 +170,9 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
 
     // Serve frontend: Vite in dev, static in prod
     if (process.env.NODE_ENV === "production") {
-      serveStatic(app);
-      // Register all app routes
+      // Register all app routes FIRST, before static serving
       await registerRoutes(httpServer, app);
+      serveStatic(app);
     } else {
       const { setupVite } = await import("./vite");
       await setupVite(httpServer, app);

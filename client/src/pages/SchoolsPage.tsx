@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -22,7 +23,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
-import { School, Plus, Edit, Users, Eye, Loader2 } from "lucide-react";
+import { School, Plus, Edit, Users, Loader2 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 
 interface SchoolData {
@@ -34,6 +35,9 @@ interface SchoolData {
 const schoolFormSchema = z.object({
   name: z.string().min(3, "School name must be at least 3 characters"),
   code: z.string().optional(), // School code not compulsory
+  schoolType: z.enum(["Government", "Aided"], {
+    required_error: "School Type is required",
+  }),
   region: z.string().min(2, "Region is required"),
   district: z.string().min(2, "District is required"),
   block: z.string().min(2, "Block is required"),
@@ -73,6 +77,7 @@ export default function SchoolsPage() {
     defaultValues: {
       name: "",
       code: "",
+      schoolType: "Government",
       region: "",
       district: "",
       block: "",
@@ -132,6 +137,7 @@ export default function SchoolsPage() {
     form.reset({
       name: school.name,
       code: school.code || "",
+      schoolType: school.schoolType || "Government",
       region: school.region || "",
       district: school.district,
       block: school.block,
@@ -263,21 +269,6 @@ export default function SchoolsPage() {
               header: "",
               render: (item: any) => (
                 <div className="flex items-center gap-1">
-                  <Link href={`/schools/${item.id}`}>
-                    <Button variant="ghost" size="icon" data-testid={`button-view-${item.id}`}>
-                      <Eye className="h-4 w-4" />
-                    </Button>
-                  </Link>
-                  {canManage && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleEdit(item)}
-                      data-testid={`button-edit-${item.id}`}
-                    >
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                  )}
                 </div>
               ),
             },
@@ -313,6 +304,28 @@ export default function SchoolsPage() {
                     <FormControl>
                       <Input placeholder="Enter school name" {...field} data-testid="input-name" />
                     </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="schoolType"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>School Type *</FormLabel>
+                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <FormControl>
+                        <SelectTrigger data-testid="select-school-type">
+                          <SelectValue placeholder="Select school type" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="Government">Government</SelectItem>
+                        <SelectItem value="Aided">Aided</SelectItem>
+                      </SelectContent>
+                    </Select>
                     <FormMessage />
                   </FormItem>
                 )}

@@ -22,7 +22,7 @@ export default function NotificationsPage() {
     type: undefined as string | undefined,
   });
 
-  const { data: notificationsData, isLoading } = useQuery({
+  const { data: notificationsData, isLoading, error } = useQuery({
     queryKey: ["/api/notifications/by-role", filters],
     queryFn: async () => {
       const params = new URLSearchParams();
@@ -31,6 +31,7 @@ export default function NotificationsPage() {
       const res = await apiRequest("GET", `/api/notifications/by-role?${params}`);
       return res.json();
     },
+    retry: 1 // Retry once on failure
   });
 
   const markAsReadMutation = useMutation({
@@ -177,6 +178,10 @@ export default function NotificationsPage() {
           <CardContent>
             {isLoading ? (
               <div className="text-center py-8">Loading notifications...</div>
+            ) : error ? (
+              <div className="text-center py-8 text-red-500">
+                Error loading notifications: {error.message}
+              </div>
             ) : notifications.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
                 No notifications found

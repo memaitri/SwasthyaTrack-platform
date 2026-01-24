@@ -93,8 +93,8 @@
           "primaryKey": false,
           "notNull": false
         },
-        "mcts_no": {
-          "name": "mcts_no",
+        "pran_no": {
+          "name": "pran_no",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -1892,8 +1892,8 @@
           "primaryKey": false,
           "notNull": false
         },
-        "mcts_no": {
-          "name": "mcts_no",
+        "pran_no": {
+          "name": "pran_no",
           "type": "text",
           "primaryKey": false,
           "notNull": false
