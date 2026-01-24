@@ -2120,19 +2120,27 @@ export async function registerRoutes(
       const studentData = body.student || body;
       const healthCardData = body.healthCard;
 
-      // Validate student data with schema
-      const validatedStudentData = insertStudentSchema.parse(studentData);
-
-      let schoolId = req.user?.schoolId || validatedStudentData.schoolId;
+      // Set schoolId before validation
+      let schoolId = req.user?.schoolId || studentData.schoolId;
       if (!schoolId) {
         return res.status(400).json({ message: "School ID is required" });
       }
 
       // Generate uniqueId if not provided (prefer PRAN when available)
-      let uniqueId = validatedStudentData.uniqueId || validatedStudentData.pranNo;
+      let uniqueId = studentData.uniqueId || studentData.pranNo;
       if (!uniqueId) {
         uniqueId = `STD-${Date.now().toString().slice(-8)}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
       }
+
+      // Prepare student data with required fields before validation
+      const studentDataWithDefaults = {
+        ...studentData,
+        schoolId,
+        uniqueId
+      };
+
+      // Validate student data with schema
+      const validatedStudentData = insertStudentSchema.parse(studentDataWithDefaults);
 
       // For ClassTeacher, ensure student is in their assigned class
       let classSection = validatedStudentData.classSection;

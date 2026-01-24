@@ -429,6 +429,10 @@ export class DatabaseStorage implements IStorage {
       const enrollmentDate = typeof student.enrollmentDate === 'string' ? new Date(student.enrollmentDate) : student.enrollmentDate as Date;
       insertData.enrollmentDate = enrollmentDate.toISOString().split('T')[0];
     }
+    if (student.schoolAdmissionDate) {
+      const schoolAdmissionDate = typeof student.schoolAdmissionDate === 'string' ? new Date(student.schoolAdmissionDate) : student.schoolAdmissionDate as Date;
+      insertData.schoolAdmissionDate = schoolAdmissionDate.toISOString().split('T')[0];
+    }
 
     const [newStudent] = await db.insert(students).values(insertData).returning();
     return newStudent;
@@ -445,6 +449,10 @@ export class DatabaseStorage implements IStorage {
     if (data.enrollmentDate) {
       const enrollmentDate = typeof data.enrollmentDate === 'string' ? new Date(data.enrollmentDate) : data.enrollmentDate as Date;
       updateData.enrollmentDate = enrollmentDate.toISOString().split('T')[0];
+    }
+    if (data.schoolAdmissionDate) {
+      const schoolAdmissionDate = typeof data.schoolAdmissionDate === 'string' ? new Date(data.schoolAdmissionDate) : data.schoolAdmissionDate as Date;
+      updateData.schoolAdmissionDate = schoolAdmissionDate.toISOString().split('T')[0];
     }
     const [student] = await db
       .update(students)
