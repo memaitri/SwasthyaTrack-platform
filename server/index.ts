@@ -6,20 +6,6 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { db } from "./db.js"; // your DB connection
 import authRoutes from "./auth.js"; // authentication routes
-import { registerRoutes } from "./routes.js"; // all other API routes
-
-// --- Global Error Handlers ---
-process.on('unhandledRejection', (reason: any) => {
-  const msg = reason?.message || String(reason) || 'Unhandled Promise Rejection';
-  if (!msg.includes('DbHandler')) console.error('Unhandled Rejection:', msg);
-  if (process.env.NODE_ENV === 'production') process.exit(1);
-});
-
-process.on('uncaughtException', (error: Error) => {
-  const msg = error?.message || String(error) || 'Uncaught Exception';
-  if (!msg.includes('DbHandler')) console.error('Uncaught Exception:', msg);
-  if (process.env.NODE_ENV === 'production') process.exit(1);
-});
 
 // --- Setup Express ---
 const app = express();
@@ -81,6 +67,19 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
   log(`Error: ${message}`, "error");
 });
 
+// --- Global Error Handlers ---
+process.on('unhandledRejection', (reason: any) => {
+  const msg = reason?.message || String(reason) || 'Unhandled Promise Rejection';
+  if (!msg.includes('DbHandler')) console.error('Unhandled Rejection:', msg);
+  if (process.env.NODE_ENV === 'production') process.exit(1);
+});
+
+process.on('uncaughtException', (error: Error) => {
+  const msg = error?.message || String(error) || 'Uncaught Exception';
+  if (!msg.includes('DbHandler')) console.error('Uncaught Exception:', msg);
+  if (process.env.NODE_ENV === 'production') process.exit(1);
+});
+
 // --- Main Async Bootstrap ---
 (async () => {
   try {
@@ -93,7 +92,15 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
       process.exit(1);
     }
 
-    // Mount all real API routes after healthcheck & auth
+    // --- Mount all API routes ---
+    let registerRoutes: typeof import("./routes").registerRoutes;
+    if (process.env.NODE_ENV === "production") {
+      // Load compiled JS in production
+      registerRoutes = (await import("./dist/routes.js")).registerRoutes;
+    } else {
+      // Load TS directly in development
+      registerRoutes = (await import("./routes.js")).registerRoutes;
+    }
     await registerRoutes(httpServer, app);
 
     // --- Serve frontend SPA ---
@@ -101,7 +108,6 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
       const clientDist = path.join(__dirname, "../dist");
       app.use(express.static(clientDist));
 
-      // SPA fallback: serve index.html for non-API routes
       app.get("*", (req, res) => {
         if (req.path.startsWith("/api/")) return res.status(404).json({ message: 'API route not found' });
         res.sendFile(path.join(clientDist, "index.html"));
