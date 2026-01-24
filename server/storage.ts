@@ -126,6 +126,7 @@ export interface IStorage {
   saveRefreshToken(userId: string, token: string, expiresAt: Date): Promise<void>;
   getRefreshToken(token: string): Promise<{ userId: string; expiresAt: Date } | undefined>;
   deleteRefreshToken(token: string): Promise<void>;
+  deleteRefreshTokensByUserId(userId: string): Promise<void>;
 
   getDashboardMetrics(role: string, userId: string, schoolId?: string, classSection?: string, district?: string, month?: number, year?: number): Promise<any>;
 
@@ -762,6 +763,10 @@ export class DatabaseStorage implements IStorage {
 
   async deleteRefreshToken(token: string): Promise<void> {
     await db.delete(refreshTokens).where(eq(refreshTokens.token, token));
+  }
+
+  async deleteRefreshTokensByUserId(userId: string): Promise<void> {
+    await db.delete(refreshTokens).where(eq(refreshTokens.userId, userId));
   }
 
   async getPOAttendanceSummary(params: {
