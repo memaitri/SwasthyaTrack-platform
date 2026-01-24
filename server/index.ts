@@ -177,12 +177,16 @@ END $$;
     if (process.env.NODE_ENV === "production") {
       // Register API routes FIRST
       await registerRoutes(httpServer, app);
-      // Path to built frontend
-      const clientDist = path.join(__dirname, "../../client/dist");
-      // Serve frontend
+      // Path to built frontend - Railway builds to /dist at root
+      const clientDist = path.join(__dirname, "../dist");
+      // Serve frontend static files
       app.use(express.static(clientDist));
-      // SPA fallback
+      // SPA fallback for client-side routing
       app.get("*", (req, res) => {
+        // Don't serve index.html for API routes
+        if (req.path.startsWith('/api/')) {
+          return res.status(404).json({ message: 'API route not found' });
+        }
         res.sendFile(path.join(clientDist, "index.html"));
       });
     } else {

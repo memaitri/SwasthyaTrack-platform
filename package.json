@@ -3,14 +3,20 @@
   "version": "1.0.0",
   "type": "module",
   "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
   "scripts": {
     "dev:server": "cross-env NODE_ENV=development tsx server/index.ts",
     "dev:client": "cd client && vite",
     "dev": "concurrently \"npm run dev:client\" \"npm run dev:server\"",
-    "build:client": "cd client && npm install && npm run build",
+    "build:client": "cd client && npm install --production=false && npm run build",
     "build:server": "tsc -p server",
     "build": "npm run build:client && npm run build:server",
     "start": "node server/dist/index.js",
+    "railway:build": "npm run build",
+    "railway:start": "npm start",
     "check": "tsc",
     "test": "vitest",
     "db:push": "drizzle-kit push"

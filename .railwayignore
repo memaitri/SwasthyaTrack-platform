@@ -1,0 +1,50 @@
+# Development files
+.env
+.env.local
+.env.development
+.env.test
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Test files
+**/__tests__/
+**/*.test.*
+**/*.spec.*
+coverage/
+
+# Development dependencies
+node_modules/.cache/
+
+# Build artifacts (will be rebuilt)
+client/dist/
+server/dist/
+
+# Documentation
+*.md
+!README.md
+
+# Scripts that aren't needed in production
+script/
+scripts/
+debug_*.js
+check_*.js
+test_*.js
+fix.js
+replace.js
+update_cards.js
+
+# Uploads (should use external storage in production)
+uploads/
+
+# Storage (should use external storage in production)
+storage/

@@ -934,6 +934,24 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  // Health check endpoint for Railway
+  app.get("/", (req, res) => {
+    res.json({ 
+      status: "ok", 
+      message: "SwasthyaTrack API is running",
+      timestamp: new Date().toISOString(),
+      environment: process.env.NODE_ENV || "development"
+    });
+  });
+
+  app.get("/health", (req, res) => {
+    res.json({ 
+      status: "healthy", 
+      uptime: process.uptime(),
+      timestamp: new Date().toISOString()
+    });
+  });
+
   // Ensure new hostel attendance columns exist (for older databases without latest schema)
   try {
     await db.execute(sql`

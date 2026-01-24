@@ -3,11 +3,20 @@ import fs from "fs";
 import path from "path";
 
 export function serveStatic(app: Express) {
-  const distPath = path.resolve(__dirname, "public");
+  // In production, serve from dist (built client), in dev from public
+  const distPath = process.env.NODE_ENV === 'production' 
+    ? path.resolve(__dirname, "../dist") 
+    : path.resolve(__dirname, "public");
+    
   if (!fs.existsSync(distPath)) {
-    throw new Error(
-      `Could not find the build directory: ${distPath}, make sure to build the client first`,
-    );
+    console.warn(`Build directory not found: ${distPath}`);
+    // Don't throw error in development, just log warning
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error(
+        `Could not find the build directory: ${distPath}, make sure to build the client first`,
+      );
+    }
+    return;
   }
 
   app.use(express.static(distPath));
