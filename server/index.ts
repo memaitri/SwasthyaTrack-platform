@@ -108,7 +108,7 @@ export { app };
 
     // --- Serve frontend SPA ---
     if (process.env.NODE_ENV === "production") {
-      const clientDist = path.join(__dirname, "../dist");
+      const clientDist = path.join(__dirname, "..", "client");
       app.use(express.static(clientDist));
 
       app.get("*", (req, res) => {
