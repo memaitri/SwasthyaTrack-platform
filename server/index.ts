@@ -1,6 +1,6 @@
 // server/index.ts
 import 'dotenv/config';
-import express, { type Request, Response, NextFunction } from "express";
+import express, { Request, Response, NextFunction } from "express";
 import { createServer } from "http";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -34,7 +34,7 @@ app.use(express.urlencoded({ extended: false }));
 // Serve uploaded files
 app.use("/uploads", express.static("uploads"));
 
-// --- Healthcheck ---
+// --- Healthcheck for Railway ---
 app.get("/", (_req, res) => res.send("OK"));
 
 // --- Auth routes ---
@@ -93,18 +93,21 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
       process.exit(1);
     }
 
-    // Mount all real routes after healthcheck & auth
+    // Mount all real API routes after healthcheck & auth
     await registerRoutes(httpServer, app);
 
-    // --- Serve frontend ---
+    // --- Serve frontend SPA ---
     if (process.env.NODE_ENV === "production") {
       const clientDist = path.join(__dirname, "../dist");
       app.use(express.static(clientDist));
+
+      // SPA fallback: serve index.html for non-API routes
       app.get("*", (req, res) => {
-        if (req.path.startsWith('/api/')) return res.status(404).json({ message: 'API route not found' });
+        if (req.path.startsWith("/api/")) return res.status(404).json({ message: 'API route not found' });
         res.sendFile(path.join(clientDist, "index.html"));
       });
     } else {
+      // Development with Vite
       const { setupVite } = await import("./vite.js");
       await setupVite(httpServer, app);
     }
