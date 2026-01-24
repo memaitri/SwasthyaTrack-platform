@@ -11,11 +11,9 @@ import authRoutes from "./auth.js";
 // Global error handlers to prevent connection pool dumps
 process.on('unhandledRejection', (reason, _promise) => {
   const errorMessage = reason?.message || String(reason) || 'Unhandled Promise Rejection';
-  // Only log the error message, not the full object
   if (errorMessage && !errorMessage.includes('DbHandler')) {
     console.error('Unhandled Rejection:', errorMessage);
   }
-  // Don't exit in development, just log
   if (process.env.NODE_ENV === 'production') {
     process.exit(1);
   }
@@ -23,11 +21,9 @@ process.on('unhandledRejection', (reason, _promise) => {
 
 process.on('uncaughtException', (error) => {
   const errorMessage = error?.message || String(error) || 'Uncaught Exception';
-  // Only log the error message, not the full object
   if (errorMessage && !errorMessage.includes('DbHandler')) {
     console.error('Uncaught Exception:', errorMessage);
   }
-  // Don't exit in development, just log
   if (process.env.NODE_ENV === 'production') {
     process.exit(1);
   }
@@ -46,10 +42,15 @@ app.use(express.json({
 }));
 app.use(express.urlencoded({ extended: false }));
 
+// Healthcheck route for Railway (must be BEFORE anything heavy)
+app.get("/", (_req, res) => {
+  res.status(200).send("OK");
+});
+
 // Serve uploaded files
 app.use("/uploads", express.static("uploads"));
 
-// ✅ Add this right after middlewares
+// Auth routes
 app.use("/api/auth", authRoutes);
 
 // Simple logger
@@ -80,10 +81,8 @@ app.use((req, res, next) => {
     if (path.startsWith("/api")) {
       let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
       if (capturedJsonResponse) {
-        // Limit JSON stringify to prevent huge dumps (like connection pools)
         try {
           const jsonStr = JSON.stringify(capturedJsonResponse);
-          // Truncate if too long (prevent connection pool dumps)
           if (jsonStr.length > 1000) {
             logLine += ` :: ${jsonStr.substring(0, 1000)}... (truncated)`;
           } else {
@@ -108,7 +107,14 @@ app.use((err, _req, res, _next) => {
   log(`Error: ${message}`, "error");
 });
 
-// Main async bootstrap
+// START SERVER FIRST (Railway healthcheck depends on this)
+const port = Number(process.env.PORT) || 3000;
+
+httpServer.listen(port, "0.0.0.0", () => {
+  log(`Server live on port ${port}`);
+});
+
+// Async bootstrap AFTER server is listening
 (async () => {
   try {
     // Test database connection
@@ -116,7 +122,7 @@ app.use((err, _req, res, _next) => {
       await db.execute("SELECT 1");
       log("Database connection successful");
 
-      // Fixup for approval workflow: mark existing active schools as Approved
+      // Fixup for approval workflow
       try {
         await db.execute("UPDATE schools SET approval_status = 'Approved' WHERE is_active = true");
         log("Migration check: existing active schools marked as Approved where necessary");
@@ -124,7 +130,7 @@ app.use((err, _req, res, _next) => {
         console.warn("Migration check: failed to adjust existing school approval statuses:", uqErr?.message || String(uqErr));
       }
 
-      // DB compatibility: ensure `pran_no` exists (migrate from `mcts_no` if present)
+      // DB compatibility migrations
       try {
         await db.execute(`
 DO $
@@ -158,20 +164,16 @@ END $;
     } catch (dbError) {
       console.error("Database connection failed:", dbError?.message || String(dbError));
       console.error("Please check your DATABASE_URL and database availability");
-      process.exit(1);
     }
 
-    // Serve frontend: Vite in dev, static in prod
+    // Serve frontend
     if (process.env.NODE_ENV === "production") {
-      // Register API routes FIRST
       await registerRoutes(httpServer, app);
-      // Path to built frontend - Railway builds to /dist at root
+
       const clientDist = path.join(__dirname, "../../dist");
-      // Serve frontend static files
       app.use(express.static(clientDist));
-      // SPA fallback for client-side routing
+
       app.get("*", (req, res) => {
-        // Don't serve index.html for API routes
         if (req.path.startsWith('/api/')) {
           return res.status(404).json({ message: 'API route not found' });
         }
@@ -180,18 +182,9 @@ END $;
     } else {
       const { setupVite } = await import("./vite.js");
       await setupVite(httpServer, app);
-      // Routes are registered inside setupVite for development
     }
 
-    const port = parseInt(process.env.PORT || "5000", 10);
-    const host = process.platform === "win32" ? "localhost" : "0.0.0.0";
-
-    httpServer.listen(port, host, () => {
-      log(`Server running on http://${host}:${port}`);
-    });
-
   } catch (err) {
-    console.error("Failed to start server:", err?.message || String(err));
-    process.exit(1);
+    console.error("Startup failed:", err?.message || String(err));
   }
 })();
