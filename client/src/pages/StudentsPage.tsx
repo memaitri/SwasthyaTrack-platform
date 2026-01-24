@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAuth } from "@/lib/auth";
 import { formatGenderDisplay, formatGenderWithIcon, getGenderBadgeVariant } from "@/lib/genderUtils";
+import { calculateYearsInSchool, formatYearsInSchool, getSchoolTenureLabel } from "@/lib/schoolUtils";
 import { UserPlus, Filter, FileHeart, Stethoscope, CheckCircle, Edit, GraduationCap } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
@@ -177,6 +178,22 @@ export default function StudentsPage() {
               },
             },
             { key: "classSection", header: "Class" },
+            {
+              key: "schoolAdmissionDate",
+              header: "Years in School",
+              render: (item: any) => {
+                if (!item.schoolAdmissionDate) return <span className="text-muted-foreground">-</span>;
+                const years = calculateYearsInSchool(item.schoolAdmissionDate);
+                const formattedYears = formatYearsInSchool(years);
+                const tenureLabel = getSchoolTenureLabel(years);
+                return (
+                  <div className="text-center">
+                    <p className="font-medium text-sm">{formattedYears}</p>
+                    <p className="text-xs text-muted-foreground">{tenureLabel}</p>
+                  </div>
+                );
+              },
+            },
             {
               key: "academicStatus",
               header: "Academic Status",

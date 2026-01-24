@@ -5,6 +5,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { format } from "date-fns";
+import { calculateYearsInSchool, formatYearsInSchool, getSchoolTenureLabel } from "@/lib/schoolUtils";
 
 interface StudentDetailDrawerProps {
   student: any | null;
@@ -56,6 +57,18 @@ export function StudentDetailDrawer({ student, isOpen, onClose }: StudentDetailD
                 <DetailItem label="Class Teacher" value={student.classTeacherName} />
                 <DetailItem label="Guardian" value={student.fatherGuardianName} />
                 <DetailItem label="Guardian Contact" value={student.fatherContact} />
+                {student.schoolAdmissionDate && (
+                  <DetailItem 
+                    label="Years in School" 
+                    value={
+                      <div>
+                        <p className="font-medium">{formatYearsInSchool(calculateYearsInSchool(student.schoolAdmissionDate))}</p>
+                        <p className="text-xs text-muted-foreground">{getSchoolTenureLabel(calculateYearsInSchool(student.schoolAdmissionDate))}</p>
+                        <p className="text-xs text-muted-foreground">Since {format(new Date(student.schoolAdmissionDate), 'MMM dd, yyyy')}</p>
+                      </div>
+                    } 
+                  />
+                )}
               </CardContent>
             </Card>
 

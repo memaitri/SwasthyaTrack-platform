@@ -15,6 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { HealthCardFormSections } from "@/components/health-card/HealthCardFormSections";
 import { calculateAge, getMenstrualTrackingValidationMessage } from "@/lib/menstrualHealthUtils";
+import { calculateYearsInSchool, formatYearsInSchool } from "@/lib/schoolUtils";
 import { Loader2, Save, ArrowLeft, User, FileHeart } from "lucide-react";
 import { Link } from "wouter";
 import { useAuth } from "@/lib/auth";
@@ -25,6 +26,7 @@ const studentFormSchema = z.object({
   pranNo: z.string().min(6, "PRAN is required"),
   aadhaarNo: z.string().min(12, "Aadhaar number must be 12 digits"),
   dateOfBirth: z.string().min(1, "Date of Birth is required"),
+  schoolAdmissionDate: z.string().min(1, "School Admission Date is required"),
   gender: z.enum(["M", "F", "O"]),
   classSection: z.string().min(1, "Class is required"),
   fatherGuardianName: z.string().optional(),
@@ -258,6 +260,7 @@ export default function StudentFormPage() {
       pranNo: "",
       aadhaarNo: "",
       dateOfBirth: "",
+      schoolAdmissionDate: "",
       gender: "M",
       classSection: isClassTeacher && assignedClass ? assignedClass : "",
       fatherGuardianName: "",
@@ -485,6 +488,7 @@ export default function StudentFormPage() {
         pranNo: studentData.pranNo || "",
         aadhaarNo: studentData.aadhaarNo || "",
         dateOfBirth: studentData.dateOfBirth ? new Date(studentData.dateOfBirth).toISOString().split("T")[0] : "",
+        schoolAdmissionDate: studentData.schoolAdmissionDate ? new Date(studentData.schoolAdmissionDate).toISOString().split("T")[0] : "",
         gender: studentData.gender || "M",
         classSection: studentData.classSection || (isClassTeacher ? (assignedClass || "") : ""),
         fatherGuardianName: studentData.fatherGuardianName || "",
@@ -656,6 +660,25 @@ export default function StudentFormPage() {
                           <FormControl>
                             <Input type="date" {...field} />
                           </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={studentForm.control}
+                      name="schoolAdmissionDate"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>School Admission Date *</FormLabel>
+                          <FormControl>
+                            <Input type="date" {...field} />
+                          </FormControl>
+                          {field.value && (
+                            <p className="text-sm text-muted-foreground">
+                              Years in school: {formatYearsInSchool(calculateYearsInSchool(field.value))}
+                            </p>
+                          )}
                           <FormMessage />
                         </FormItem>
                       )}

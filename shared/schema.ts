@@ -97,6 +97,7 @@ export const students = pgTable("students", {
   motherContact: text("mother_contact"),
   address: text("address"),
   enrollmentDate: date("enrollment_date"),
+  schoolAdmissionDate: date("school_admission_date").notNull(),
   isActive: boolean("is_active").default(true),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -958,6 +959,10 @@ export const insertStudentSchema = createInsertSchema(students).omit({
 }).extend({
   gender: z.enum(genderEnum),
   dateOfBirth: z.coerce.date({ invalid_type_error: "Date of Birth is required" }).nullable(),
+  schoolAdmissionDate: z.coerce.date({ 
+    required_error: "School Admission Date is required",
+    invalid_type_error: "School Admission Date must be a valid date" 
+  }),
   enrollmentDate: z.coerce.date().nullable().optional(),
   uniqueId: z.string().optional(),
   pranNo: z.string().min(6, "PRAN number is required and seems too short"),
