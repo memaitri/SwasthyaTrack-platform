@@ -12,7 +12,7 @@
     "dev:client": "cd client && vite",
     "dev": "concurrently \"npm run dev:client\" \"npm run dev:server\"",
     "build:client": "vite build client",
-    "build:server": "tsc -p server --skipLibCheck --noEmitOnError || echo 'Build completed with warnings'",
+    "build:server": "if not exist server\\dist mkdir server\\dist && copy server\\*.js server\\dist\\ && xcopy shared server\\dist\\shared\\ /E /I && xcopy lib server\\dist\\lib\\ /E /I",
     "build": "npm run build:client && npm run build:server",
     "start": "node server/dist/index.js",
     "railway:build": "npm run build",
