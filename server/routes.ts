@@ -4,7 +4,7 @@ import { storage } from "./storage.js";
 import { reportsStorage } from "./reportsStorage.js";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
-import { insertStudentSchema, insertSchoolSchema, insertAnnualHealthCardSchema, insertMonthlyCheckupSchema, insertMealLogSchema, loginSchema, registerSchema, hostelAttendance, annualHealthCards, users, schools, students, notifications, referrals } from "../shared/schema.js";
+import { insertStudentSchema, insertSchoolSchema, insertAnnualHealthCardSchema, insertMonthlyCheckupSchema, insertMealLogSchema, loginSchema, registerSchema, hostelAttendance, annualHealthCards, users, schools, students, notifications, referrals, usageTracking } from "../shared/schema.js";
 import { z } from "zod";
 import PDFDocument from "pdfkit";
 import ExcelJS from "exceljs";
@@ -10291,6 +10291,107 @@ async function generatePDFReport(reportData: any, reportType: string, userRole: 
     } catch (error: any) {
       console.error("Predict cycle error:", error?.message || String(error));
       res.status(500).json({ message: error?.message || "Failed to predict cycle" });
+    }
+  });
+
+  // Public Platform Statistics Endpoint (no authentication required)
+  app.get("/api/platform-stats", async (req: Request, res: Response) => {
+    try {
+      // Track this API call
+      const sessionId = req.headers['x-session-id'] as string || `anon-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const ipAddress = req.ip || req.connection.remoteAddress || 'unknown';
+      const userAgent = req.headers['user-agent'] || 'unknown';
+      
+      // Update or create usage tracking record
+      try {
+        const existingSession = await db.select().from(usageTracking).where(eq(usageTracking.sessionId, sessionId)).limit(1);
+        
+        if (existingSession.length > 0) {
+          // Update existing session
+          await db.update(usageTracking)
+            .set({
+              pageViews: sql`${usageTracking.pageViews} + 1`,
+              lastActivity: new Date(),
+              updatedAt: new Date()
+            })
+            .where(eq(usageTracking.sessionId, sessionId));
+        } else {
+          // Create new session
+          await db.insert(usageTracking).values({
+            sessionId,
+            ipAddress,
+            userAgent,
+            pageViews: 1,
+            firstVisit: new Date(),
+            lastActivity: new Date()
+          });
+        }
+      } catch (trackingError) {
+        console.warn('Usage tracking failed:', trackingError);
+        // Continue with stats even if tracking fails
+      }
+
+      // Get total users count
+      const { total: totalUsers } = await storage.getUsers(1, 1);
+      
+      // Get total students count
+      const studentsResult = await db.select({ count: sql<number>`count(*)` }).from(students);
+      const totalStudents = studentsResult[0]?.count || 0;
+      
+      // Get total schools count
+      const schoolsResult = await db.select({ count: sql<number>`count(*)` }).from(schools);
+      const totalSchools = schoolsResult[0]?.count || 0;
+      
+      // Get today's active users (users who logged in today)
+      const today = new Date();
+      const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
+      
+      // Count users updated today (approximation of daily activity)
+      const { users: allUsers } = await storage.getUsers(1, 1000);
+      const todaysActiveUsers = allUsers.filter(user => {
+        if (!user.updatedAt) return false;
+        const userDate = new Date(user.updatedAt);
+        return userDate >= todayStart && userDate < todayEnd;
+      }).length;
+
+      // Get health cards count for this year
+      const currentYear = new Date().getFullYear();
+      const healthCardsResult = await db.select({ count: sql<number>`count(*)` })
+        .from(annualHealthCards)
+        .where(eq(annualHealthCards.year, currentYear));
+      const totalHealthCards = healthCardsResult[0]?.count || 0;
+
+      // Get real usage statistics from tracking table
+      const totalVisitorsResult = await db.select({ count: sql<number>`count(distinct ${usageTracking.sessionId})` }).from(usageTracking);
+      const totalVisitors = totalVisitorsResult[0]?.count || 0;
+
+      const todayVisitorsResult = await db.select({ count: sql<number>`count(distinct ${usageTracking.sessionId})` })
+        .from(usageTracking)
+        .where(sql`${usageTracking.firstVisit} >= ${todayStart} AND ${usageTracking.firstVisit} < ${todayEnd}`);
+      const todayVisitors = todayVisitorsResult[0]?.count || 0;
+
+      const totalPageViewsResult = await db.select({ sum: sql<number>`sum(${usageTracking.pageViews})` }).from(usageTracking);
+      const totalPageViews = totalPageViewsResult[0]?.sum || 0;
+
+      const stats = {
+        totalUsers,
+        totalStudents,
+        totalSchools,
+        todaysActiveUsers,
+        totalHealthCards,
+        totalVisitors,
+        todayVisitors,
+        totalPageViews,
+        lastUpdated: new Date().toISOString()
+      };
+
+      // Set session ID in response header for client tracking
+      res.setHeader('X-Session-ID', sessionId);
+      res.json(stats);
+    } catch (error: any) {
+      console.error("Platform stats error:", error?.message || String(error));
+      res.status(500).json({ message: "Failed to fetch platform statistics" });
     }
   });
 

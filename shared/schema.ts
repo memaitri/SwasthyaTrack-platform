@@ -745,6 +745,39 @@ export const notifications = pgTable("notifications", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+export const usageTracking = pgTable("usage_tracking", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sessionId: varchar("session_id").notNull().unique(),
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  userId: varchar("user_id"), // null for anonymous visitors
+  
+  // Page/action tracking
+  pageViews: integer("page_views").default(1),
+  loginAttempts: integer("login_attempts").default(0),
+  successfulLogins: integer("successful_logins").default(0),
+  
+  // Timestamps
+  firstVisit: timestamp("first_visit").defaultNow(),
+  lastActivity: timestamp("last_activity").defaultNow(),
+  sessionDuration: integer("session_duration").default(0), // in seconds
+  
+  // Geographic/device info
+  country: text("country"),
+  city: text("city"),
+  deviceType: text("device_type"), // mobile, desktop, tablet
+  browserName: text("browser_name"),
+  
+  // Referrer information
+  referrer: text("referrer"),
+  utmSource: text("utm_source"),
+  utmMedium: text("utm_medium"),
+  utmCampaign: text("utm_campaign"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 export const periodTrackerEntries = pgTable("period_tracker_entries", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   studentId: varchar("student_id").notNull(),
@@ -1312,5 +1345,9 @@ export type Notification = typeof notifications.$inferSelect;
 
 export type InsertPeriodTrackerEntry = z.infer<typeof insertPeriodTrackerEntrySchema>;
 export type PeriodTrackerEntry = typeof periodTrackerEntries.$inferSelect;
+
+export const insertUsageTrackingSchema = createInsertSchema(usageTracking);
+export type InsertUsageTracking = z.infer<typeof insertUsageTrackingSchema>;
+export type UsageTracking = typeof usageTracking.$inferSelect;
 
 export type UpdateAnnualHealthCard = z.infer<typeof updateAnnualHealthCardSchema>;

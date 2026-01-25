@@ -39,9 +39,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = async (username: string, password: string) => {
+    // Get or create session ID
+    let sessionId = sessionStorage.getItem('swasthya-session-id');
+    if (!sessionId) {
+      sessionId = `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      sessionStorage.setItem('swasthya-session-id', sessionId);
+    }
+
     const response = await fetch("/api/auth/login", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { 
+        "Content-Type": "application/json",
+        "X-Session-ID": sessionId
+      },
       body: JSON.stringify({ username, password }),
     });
 
@@ -51,6 +61,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     const data = await response.json();
+    
+    // Update session ID from response if provided
+    const responseSessionId = response.headers.get('X-Session-ID');
+    if (responseSessionId && responseSessionId !== sessionId) {
+      sessionStorage.setItem('swasthya-session-id', responseSessionId);
+    }
+    
     const accessToken = data.accessToken || data.token; // Support both formats
     if (!accessToken) {
       throw new Error("No access token received from server");
