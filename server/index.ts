@@ -4,6 +4,7 @@ import express, { Request, Response, NextFunction } from "express";
 import { createServer } from "http";
 import path from "path";
 import { fileURLToPath } from "url";
+import cors from "cors";
 import { db } from "./db.js"; // your DB connection
 import authRoutes from "./auth.js"; // authentication routes
 
@@ -12,6 +13,17 @@ const app = express();
 const httpServer = createServer(app);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Trust proxy for Railway deployment
+app.set('trust proxy', true);
+
+// CORS configuration - allow all origins temporarily for mobile data issues
+app.use(cors({
+  origin: true, // Allow all origins
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+}));
 
 // Middleware
 app.use(express.json({ verify: (req, _res, buf) => { (req as any).rawBody = buf; } }));
