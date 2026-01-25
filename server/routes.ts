@@ -10297,101 +10297,151 @@ async function generatePDFReport(reportData: any, reportType: string, userRole: 
   // Public Platform Statistics Endpoint (no authentication required)
   app.get("/api/platform-stats", async (req: Request, res: Response) => {
     try {
-      // Track this API call
-      const sessionId = req.headers['x-session-id'] as string || `anon-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-      const ipAddress = req.ip || req.connection.remoteAddress || 'unknown';
-      const userAgent = req.headers['user-agent'] || 'unknown';
-      
-      // Update or create usage tracking record
-      try {
-        const existingSession = await db.select().from(usageTracking).where(eq(usageTracking.sessionId, sessionId)).limit(1);
-        
-        if (existingSession.length > 0) {
-          // Update existing session
-          await db.update(usageTracking)
-            .set({
-              pageViews: sql`${usageTracking.pageViews} + 1`,
-              lastActivity: new Date(),
-              updatedAt: new Date()
-            })
-            .where(eq(usageTracking.sessionId, sessionId));
-        } else {
-          // Create new session
-          await db.insert(usageTracking).values({
-            sessionId,
-            ipAddress,
-            userAgent,
-            pageViews: 1,
-            firstVisit: new Date(),
-            lastActivity: new Date()
-          });
-        }
-      } catch (trackingError) {
-        console.warn('Usage tracking failed:', trackingError);
-        // Continue with stats even if tracking fails
-      }
-
-      // Get total users count
-      const { total: totalUsers } = await storage.getUsers(1, 1);
-      
-      // Get total students count
-      const studentsResult = await db.select({ count: sql<number>`count(*)` }).from(students);
-      const totalStudents = studentsResult[0]?.count || 0;
-      
-      // Get total schools count
-      const schoolsResult = await db.select({ count: sql<number>`count(*)` }).from(schools);
-      const totalSchools = schoolsResult[0]?.count || 0;
-      
-      // Get today's active users (users who logged in today)
+      // Get current date boundaries for today's stats
       const today = new Date();
       const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
       const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
-      
-      // Count users updated today (approximation of daily activity)
-      const { users: allUsers } = await storage.getUsers(1, 1000);
-      const todaysActiveUsers = allUsers.filter(user => {
-        if (!user.updatedAt) return false;
-        const userDate = new Date(user.updatedAt);
-        return userDate >= todayStart && userDate < todayEnd;
-      }).length;
 
-      // Get health cards count for this year
-      const currentYear = new Date().getFullYear();
-      const healthCardsResult = await db.select({ count: sql<number>`count(*)` })
-        .from(annualHealthCards)
-        .where(eq(annualHealthCards.year, currentYear));
-      const totalHealthCards = healthCardsResult[0]?.count || 0;
+      // Execute all database queries in parallel for better performance
+      const [
+        usersResult,
+        studentsResult,
+        schoolsResult,
+        activeUsersResult,
+        healthCardsResult,
+        totalVisitorsResult,
+        todayVisitorsResult,
+        totalPageViewsResult,
+        loginAttemptsResult,
+        successfulLoginsResult,
+        todayLoginAttemptsResult,
+        todaySuccessfulLoginsResult
+      ] = await Promise.all([
+        // Total users count (active users only)
+        db.select({ count: sql<number>`count(*)` })
+          .from(users)
+          .where(eq(users.isActive, true)),
+        
+        // Total students count (active students only)
+        db.select({ count: sql<number>`count(*)` })
+          .from(students)
+          .where(eq(students.isActive, true)),
+        
+        // Total schools count (active schools only)
+        db.select({ count: sql<number>`count(*)` })
+          .from(schools)
+          .where(eq(schools.isActive, true)),
+        
+        // Today's active users (users updated today)
+        db.select({ count: sql<number>`count(*)` })
+          .from(users)
+          .where(sql`${users.updatedAt} >= ${todayStart} AND ${users.updatedAt} < ${todayEnd} AND ${users.isActive} = true`),
+        
+        // Health cards count for current year
+        db.select({ count: sql<number>`count(*)` })
+          .from(annualHealthCards)
+          .where(eq(annualHealthCards.year, new Date().getFullYear())),
+        
+        // Total unique visitors (all time) - if usageTracking table exists
+        db.select({ count: sql<number>`count(distinct ${usageTracking.sessionId})` })
+          .from(usageTracking)
+          .catch(() => ({ count: 0 })),
+        
+        // Today's unique visitors - if usageTracking table exists
+        db.select({ count: sql<number>`count(distinct ${usageTracking.sessionId})` })
+          .from(usageTracking)
+          .where(sql`${usageTracking.firstVisit} >= ${todayStart} AND ${usageTracking.firstVisit} < ${todayEnd}`)
+          .catch(() => ({ count: 0 })),
+        
+        // Total page views - if usageTracking table exists
+        db.select({ sum: sql<number>`coalesce(sum(${usageTracking.pageViews}), 0)` })
+          .from(usageTracking)
+          .catch(() => ({ sum: 0 })),
+        
+        // Total login attempts (all time) - if usageTracking table exists
+        db.select({ sum: sql<number>`coalesce(sum(${usageTracking.loginAttempts}), 0)` })
+          .from(usageTracking)
+          .catch(() => ({ sum: 0 })),
+        
+        // Total successful logins (all time) - if usageTracking table exists
+        db.select({ sum: sql<number>`coalesce(sum(${usageTracking.successfulLogins}), 0)` })
+          .from(usageTracking)
+          .catch(() => ({ sum: 0 })),
+        
+        // Today's login attempts - if usageTracking table exists
+        db.select({ sum: sql<number>`coalesce(sum(${usageTracking.loginAttempts}), 0)` })
+          .from(usageTracking)
+          .where(sql`${usageTracking.lastActivity} >= ${todayStart} AND ${usageTracking.lastActivity} < ${todayEnd}`)
+          .catch(() => ({ sum: 0 })),
+        
+        // Today's successful logins - if usageTracking table exists
+        db.select({ sum: sql<number>`coalesce(sum(${usageTracking.successfulLogins}), 0)` })
+          .from(usageTracking)
+          .where(sql`${usageTracking.lastActivity} >= ${todayStart} AND ${usageTracking.lastActivity} < ${todayEnd}`)
+          .catch(() => ({ sum: 0 }))
+      ]);
 
-      // Get real usage statistics from tracking table
-      const totalVisitorsResult = await db.select({ count: sql<number>`count(distinct ${usageTracking.sessionId})` }).from(usageTracking);
-      const totalVisitors = totalVisitorsResult[0]?.count || 0;
+      // Extract counts from query results with proper error handling
+      const totalUsers = Array.isArray(usersResult) ? (usersResult[0]?.count || 0) : 0;
+      const totalStudents = Array.isArray(studentsResult) ? (studentsResult[0]?.count || 0) : 0;
+      const totalSchools = Array.isArray(schoolsResult) ? (schoolsResult[0]?.count || 0) : 0;
+      const todaysActiveUsers = Array.isArray(activeUsersResult) ? (activeUsersResult[0]?.count || 0) : 0;
+      const totalHealthCards = Array.isArray(healthCardsResult) ? (healthCardsResult[0]?.count || 0) : 0;
+      const totalVisitors = Array.isArray(totalVisitorsResult) ? (totalVisitorsResult[0]?.count || 0) : 0;
+      const todayVisitors = Array.isArray(todayVisitorsResult) ? (todayVisitorsResult[0]?.count || 0) : 0;
+      const totalPageViews = Array.isArray(totalPageViewsResult) ? (totalPageViewsResult[0]?.sum || 0) : 0;
+      const totalLoginAttempts = Array.isArray(loginAttemptsResult) ? (loginAttemptsResult[0]?.sum || 0) : 0;
+      const totalSuccessfulLogins = Array.isArray(successfulLoginsResult) ? (successfulLoginsResult[0]?.sum || 0) : 0;
+      const todayLoginAttempts = Array.isArray(todayLoginAttemptsResult) ? (todayLoginAttemptsResult[0]?.sum || 0) : 0;
+      const todaySuccessfulLogins = Array.isArray(todaySuccessfulLoginsResult) ? (todaySuccessfulLoginsResult[0]?.sum || 0) : 0;
 
-      const todayVisitorsResult = await db.select({ count: sql<number>`count(distinct ${usageTracking.sessionId})` })
-        .from(usageTracking)
-        .where(sql`${usageTracking.firstVisit} >= ${todayStart} AND ${usageTracking.firstVisit} < ${todayEnd}`);
-      const todayVisitors = todayVisitorsResult[0]?.count || 0;
+      // Calculate success rate
+      const loginSuccessRate = totalLoginAttempts > 0 
+        ? Math.round((totalSuccessfulLogins / totalLoginAttempts) * 100) 
+        : 0;
 
-      const totalPageViewsResult = await db.select({ sum: sql<number>`sum(${usageTracking.pageViews})` }).from(usageTracking);
-      const totalPageViews = totalPageViewsResult[0]?.sum || 0;
+      const todayLoginSuccessRate = todayLoginAttempts > 0 
+        ? Math.round((todaySuccessfulLogins / todayLoginAttempts) * 100) 
+        : 0;
 
       const stats = {
-        totalUsers,
-        totalStudents,
-        totalSchools,
-        todaysActiveUsers,
-        totalHealthCards,
-        totalVisitors,
-        todayVisitors,
-        totalPageViews,
-        lastUpdated: new Date().toISOString()
+        // Core platform stats
+        totalUsers: Number(totalUsers),
+        totalStudents: Number(totalStudents),
+        totalSchools: Number(totalSchools),
+        todaysActiveUsers: Number(todaysActiveUsers),
+        totalHealthCards: Number(totalHealthCards),
+        
+        // Visitor stats
+        totalVisitors: Number(totalVisitors),
+        todayVisitors: Number(todayVisitors),
+        totalPageViews: Number(totalPageViews),
+        
+        // Login stats (bonus requirement)
+        totalLoginAttempts: Number(totalLoginAttempts),
+        totalSuccessfulLogins: Number(totalSuccessfulLogins),
+        todayLoginAttempts: Number(todayLoginAttempts),
+        todaySuccessfulLogins: Number(todaySuccessfulLogins),
+        loginSuccessRate,
+        todayLoginSuccessRate,
+        
+        // Metadata
+        lastUpdated: new Date().toISOString(),
+        serverTime: new Date().toISOString()
       };
 
-      // Set session ID in response header for client tracking
-      res.setHeader('X-Session-ID', sessionId);
+      // Set cache control headers
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+      
       res.json(stats);
     } catch (error: any) {
       console.error("Platform stats error:", error?.message || String(error));
-      res.status(500).json({ message: "Failed to fetch platform statistics" });
+      res.status(500).json({ 
+        message: "Failed to fetch platform statistics",
+        error: process.env.NODE_ENV === 'development' ? error?.message : undefined
+      });
     }
   });
 
