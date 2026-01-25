@@ -10,6 +10,8 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Captcha } from "@/components/ui/captcha";
+import { AboutSwasthyaTrackCompact } from "@/components/AboutSwasthyaTrackCompact";
 import { useToast } from "@/hooks/use-toast";
 import { FileHeart, Loader2, Eye, EyeOff, School, Plus } from "lucide-react";
 import { Brand } from "@/components/Brand";
@@ -29,6 +31,9 @@ const registerSchema = z.object({
   district: z.string().optional(), // For PO
   region: z.string().optional(), // For PO
   block: z.string().optional(), // For PO
+  captchaVerified: z.boolean().refine(val => val === true, {
+    message: "Please complete the security verification",
+  }),
 })
   // Password confirmation
   .refine((data) => data.password === data.confirmPassword, {
@@ -93,6 +98,7 @@ export default function RegisterPage() {
   const [showSchoolForm, setShowSchoolForm] = useState(false);
   const [selectedRegion, setSelectedRegion] = useState("");
   const [isCreatingSchool, setIsCreatingSchool] = useState(false);
+  const [captchaVerified, setCaptchaVerified] = useState(false);
 
   const { data: schoolsData, refetch: refetchSchools } = useQuery({
     queryKey: ["/api/schools", selectedRegion],
@@ -146,8 +152,18 @@ export default function RegisterPage() {
       region: "",
       district: "",
       block: "",
+      captchaVerified: false,
     },
   });
+
+  const handleCaptchaVerify = (isValid: boolean) => {
+    setCaptchaVerified(isValid);
+    form.setValue("captchaVerified", isValid);
+    
+    if (isValid) {
+      form.clearErrors("captchaVerified");
+    }
+  };
 
   const onCreateSchool = async (schoolData: z.infer<typeof schoolFormSchema>) => {
     setIsCreatingSchool(true);
@@ -194,9 +210,18 @@ export default function RegisterPage() {
   };
 
   const onSubmit = async (data: RegisterForm) => {
+    if (!captchaVerified) {
+      toast({
+        title: "Security verification required",
+        description: "Please complete the CAPTCHA verification before creating your account.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsLoading(true);
     try {
-      const { confirmPassword, ...registerData } = data;
+      const { confirmPassword, captchaVerified: _, ...registerData } = data;
       const result = await register(registerData);
       if (result && (result.pending || (result.status && result.status === 202))) {
         toast({
@@ -218,6 +243,9 @@ export default function RegisterPage() {
         description: error instanceof Error ? error.message : "Something went wrong",
         variant: "destructive",
       });
+      // Reset CAPTCHA on failed registration attempt
+      setCaptchaVerified(false);
+      form.setValue("captchaVerified", false);
     } finally {
       setIsLoading(false);
     }
@@ -225,6 +253,8 @@ export default function RegisterPage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-primary/5 via-background to-accent/10">
+      {/* About SwasthyaTrack Compact Component */}
+      <AboutSwasthyaTrackCompact />
 
       <div className="flex-1 flex items-center justify-center p-4">
         <Card className="w-full max-w-md">
@@ -588,10 +618,26 @@ export default function RegisterPage() {
                     </FormItem>
                   )}
                 />
+                
+                <FormField
+                  control={form.control}
+                  name="captchaVerified"
+                  render={() => (
+                    <FormItem>
+                      <FormControl>
+                        <Captcha
+                          onVerify={handleCaptchaVerify}
+                          disabled={isLoading}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
                 <Button
                   type="submit"
                   className="w-full"
-                  disabled={isLoading}
+                  disabled={isLoading || !captchaVerified}
                   data-testid="button-register"
                 >
                   {isLoading ? (

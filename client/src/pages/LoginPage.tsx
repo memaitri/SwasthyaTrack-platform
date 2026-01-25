@@ -9,12 +9,17 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Brand } from "@/components/Brand";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Captcha } from "@/components/ui/captcha";
+import { AboutSwasthyaTrackCompact } from "@/components/AboutSwasthyaTrackCompact";
 import { useToast } from "@/hooks/use-toast";
 import { FileHeart, Loader2, Eye, EyeOff } from "lucide-react";
 
 const loginSchema = z.object({
   username: z.string().min(1, "Username is required"),
   password: z.string().min(1, "Password is required"),
+  captchaVerified: z.boolean().refine(val => val === true, {
+    message: "Please complete the security verification",
+  }),
 });
 
 type LoginForm = z.infer<typeof loginSchema>;
@@ -25,16 +30,36 @@ export default function LoginPage() {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [captchaVerified, setCaptchaVerified] = useState(false);
 
   const form = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
       username: "",
       password: "",
+      captchaVerified: false,
     },
   });
 
+  const handleCaptchaVerify = (isValid: boolean) => {
+    setCaptchaVerified(isValid);
+    form.setValue("captchaVerified", isValid);
+    
+    if (isValid) {
+      form.clearErrors("captchaVerified");
+    }
+  };
+
   const onSubmit = async (data: LoginForm) => {
+    if (!captchaVerified) {
+      toast({
+        title: "Security verification required",
+        description: "Please complete the CAPTCHA verification before signing in.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsLoading(true);
     try {
       await login(data.username, data.password);
@@ -49,6 +74,9 @@ export default function LoginPage() {
         description: error instanceof Error ? error.message : "Invalid credentials",
         variant: "destructive",
       });
+      // Reset CAPTCHA on failed login attempt
+      setCaptchaVerified(false);
+      form.setValue("captchaVerified", false);
     } finally {
       setIsLoading(false);
     }
@@ -56,6 +84,8 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-primary/5 via-background to-accent/10">
+      {/* About SwasthyaTrack Compact Component */}
+      <AboutSwasthyaTrackCompact />
 
       <div className="flex-1 flex items-center justify-center p-4">
         <Card className="w-full max-w-md">
@@ -118,10 +148,26 @@ export default function LoginPage() {
                     </FormItem>
                   )}
                 />
+                
+                <FormField
+                  control={form.control}
+                  name="captchaVerified"
+                  render={() => (
+                    <FormItem>
+                      <FormControl>
+                        <Captcha
+                          onVerify={handleCaptchaVerify}
+                          disabled={isLoading}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
                 <Button
                   type="submit"
                   className="w-full"
-                  disabled={isLoading}
+                  disabled={isLoading || !captchaVerified}
                   data-testid="button-login"
                 >
                   {isLoading ? (
