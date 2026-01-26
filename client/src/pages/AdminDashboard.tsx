@@ -174,6 +174,18 @@ export default function AdminDashboard() {
             <h2 className="text-2xl font-bold text-foreground">System Administration</h2>
           </div>
           <div className="flex items-center gap-2">
+            <Link href="/test/enhanced">
+              <Button variant="outline">
+                <Activity className="h-4 w-4 mr-2" />
+                Test Components
+              </Button>
+            </Link>
+            <Link href="/admin/enhanced">
+              <Button variant="default">
+                <TrendingUp className="h-4 w-4 mr-2" />
+                Enhanced Dashboard
+              </Button>
+            </Link>
             <Select value={selectedSchoolId} onValueChange={setSelectedSchoolId}>
               <SelectTrigger className="w-48">
                 <SelectValue placeholder="All Schools" />
