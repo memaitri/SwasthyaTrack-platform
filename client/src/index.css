@@ -149,18 +149,192 @@
   .gradient-text {
     @apply bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent;
   }
+
+  /* Animation Keyframes */
+  @keyframes dashboardEnter {
+    from {
+      opacity: 0;
+      transform: translateY(40px) scale(0.95);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  @keyframes dashboardEnterStagger {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes shimmer {
+    0% {
+      background-position: -200% 0;
+    }
+    100% {
+      background-position: 200% 0;
+    }
+  }
+
+  @keyframes drillDownEnter {
+    from {
+      opacity: 0;
+      transform: translateX(100%) scale(0.9);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0) scale(1);
+    }
+  }
+
+  @keyframes drillDownExit {
+    from {
+      opacity: 1;
+      transform: translateX(0) scale(1);
+    }
+    to {
+      opacity: 0;
+      transform: translateX(-100%) scale(0.9);
+    }
+  }
+
+  @keyframes filterSlideIn {
+    from {
+      opacity: 0;
+      transform: translateY(-10px);
+      max-height: 0;
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+      max-height: 500px;
+    }
+  }
+
+  @keyframes filterSlideOut {
+    from {
+      opacity: 1;
+      transform: translateY(0);
+      max-height: 500px;
+    }
+    to {
+      opacity: 0;
+      transform: translateY(-10px);
+      max-height: 0;
+    }
+  }
+
+  /* Stagger animation delays */
+  .stagger-1 { animation-delay: 0ms; }
+  .stagger-2 { animation-delay: 100ms; }
+  .stagger-3 { animation-delay: 200ms; }
+  .stagger-4 { animation-delay: 300ms; }
+  .stagger-5 { animation-delay: 400ms; }
+  .stagger-6 { animation-delay: 500ms; }
 }
 
 @layer components {
+  /* Enhanced Dashboard Animations */
+  .dashboard-enter {
+    animation: dashboardEnter 0.6s ease-out forwards;
+  }
+
+  .dashboard-enter-stagger {
+    opacity: 0;
+    transform: translateY(20px);
+    animation: dashboardEnterStagger 0.5s ease-out forwards;
+  }
+
   .metric-card {
     @apply relative overflow-hidden rounded-xl bg-card p-6 border border-border/50;
     box-shadow: var(--shadow-card);
-    transition: all 0.2s ease;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
   .metric-card:hover {
     box-shadow: var(--shadow-elevated);
+    transform: translateY(-4px) scale(1.02);
+  }
+
+  .chart-container {
+    @apply relative overflow-hidden rounded-xl bg-card border border-border/50;
+    box-shadow: var(--shadow-card);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .chart-container:hover {
+    box-shadow: var(--shadow-elevated);
     transform: translateY(-2px);
+  }
+
+  .chart-fade-in {
+    opacity: 0;
+    transform: scale(0.95);
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .chart-fade-in.is-loaded {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  .chart-skeleton {
+    background: linear-gradient(90deg, 
+      hsl(var(--muted)) 25%, 
+      hsl(var(--muted) / 0.5) 50%, 
+      hsl(var(--muted)) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 2s infinite;
+  }
+
+  /* Interactive Elements */
+  .hover-elevate {
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .hover-elevate:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-elevated);
+  }
+
+  .spotlight-focus {
+    position: relative;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .spotlight-focus:hover {
+    z-index: 10;
+    transform: scale(1.02);
+  }
+
+  .spotlight-focus:hover ~ * {
+    opacity: 0.7;
+    transform: scale(0.98);
+  }
+
+  /* Drill-down animations */
+  .drill-down-enter {
+    animation: drillDownEnter 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  }
+
+  .drill-down-exit {
+    animation: drillDownExit 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  }
+
+  /* Filter panel animations */
+  .filter-slide-in {
+    animation: filterSlideIn 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  }
+
+  .filter-slide-out {
+    animation: filterSlideOut 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards;
   }
 
   .sidebar-item {

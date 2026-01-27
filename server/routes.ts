@@ -4,7 +4,11 @@ import { storage } from "./storage.js";
 import { reportsStorage } from "./reportsStorage.js";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
+<<<<<<< HEAD
 import { insertStudentSchema, insertSchoolSchema, insertAnnualHealthCardSchema, insertMonthlyCheckupSchema, insertMealLogSchema, insertMedicalTeamSchema, insertMedicalTeamMemberSchema, insertMedicalEventSchema, insertStudentCheckupSchema, loginSchema, registerSchema, hostelAttendance, annualHealthCards, users, schools, students, notifications, referrals } from "../shared/schema.js";
+=======
+import { insertStudentSchema, insertSchoolSchema, insertAnnualHealthCardSchema, insertMonthlyCheckupSchema, insertMealLogSchema, loginSchema, registerSchema, hostelAttendance, annualHealthCards, users, schools, students, notifications, referrals, usageTracking } from "../shared/schema.js";
+>>>>>>> origin/ui-dashboard-revamp
 import { z } from "zod";
 import PDFDocument from "pdfkit";
 import ExcelJS from "exceljs";
@@ -10605,6 +10609,157 @@ async function generatePDFReport(reportData: any, reportType: string, userRole: 
     } catch (error: any) {
       console.error("Predict cycle error:", error?.message || String(error));
       res.status(500).json({ message: error?.message || "Failed to predict cycle" });
+    }
+  });
+
+  // Public Platform Statistics Endpoint (no authentication required)
+  app.get("/api/platform-stats", async (req: Request, res: Response) => {
+    try {
+      // Get current date boundaries for today's stats
+      const today = new Date();
+      const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
+
+      // Execute all database queries in parallel for better performance
+      const [
+        usersResult,
+        studentsResult,
+        schoolsResult,
+        activeUsersResult,
+        healthCardsResult,
+        totalVisitorsResult,
+        todayVisitorsResult,
+        totalPageViewsResult,
+        loginAttemptsResult,
+        successfulLoginsResult,
+        todayLoginAttemptsResult,
+        todaySuccessfulLoginsResult
+      ] = await Promise.all([
+        // Total users count (active users only)
+        db.select({ count: sql<number>`count(*)` })
+          .from(users)
+          .where(eq(users.isActive, true)),
+        
+        // Total students count (active students only)
+        db.select({ count: sql<number>`count(*)` })
+          .from(students)
+          .where(eq(students.isActive, true)),
+        
+        // Total schools count (active schools only)
+        db.select({ count: sql<number>`count(*)` })
+          .from(schools)
+          .where(eq(schools.isActive, true)),
+        
+        // Today's active users (users updated today)
+        db.select({ count: sql<number>`count(*)` })
+          .from(users)
+          .where(sql`${users.updatedAt} >= ${todayStart} AND ${users.updatedAt} < ${todayEnd} AND ${users.isActive} = true`),
+        
+        // Health cards count for current year
+        db.select({ count: sql<number>`count(*)` })
+          .from(annualHealthCards)
+          .where(eq(annualHealthCards.year, new Date().getFullYear())),
+        
+        // Total unique visitors (all time) - if usageTracking table exists
+        db.select({ count: sql<number>`count(distinct ${usageTracking.sessionId})` })
+          .from(usageTracking)
+          .catch(() => ({ count: 0 })),
+        
+        // Today's unique visitors - if usageTracking table exists
+        db.select({ count: sql<number>`count(distinct ${usageTracking.sessionId})` })
+          .from(usageTracking)
+          .where(sql`${usageTracking.firstVisit} >= ${todayStart} AND ${usageTracking.firstVisit} < ${todayEnd}`)
+          .catch(() => ({ count: 0 })),
+        
+        // Total page views - if usageTracking table exists
+        db.select({ sum: sql<number>`coalesce(sum(${usageTracking.pageViews}), 0)` })
+          .from(usageTracking)
+          .catch(() => ({ sum: 0 })),
+        
+        // Total login attempts (all time) - if usageTracking table exists
+        db.select({ sum: sql<number>`coalesce(sum(${usageTracking.loginAttempts}), 0)` })
+          .from(usageTracking)
+          .catch(() => ({ sum: 0 })),
+        
+        // Total successful logins (all time) - if usageTracking table exists
+        db.select({ sum: sql<number>`coalesce(sum(${usageTracking.successfulLogins}), 0)` })
+          .from(usageTracking)
+          .catch(() => ({ sum: 0 })),
+        
+        // Today's login attempts - if usageTracking table exists
+        db.select({ sum: sql<number>`coalesce(sum(${usageTracking.loginAttempts}), 0)` })
+          .from(usageTracking)
+          .where(sql`${usageTracking.lastActivity} >= ${todayStart} AND ${usageTracking.lastActivity} < ${todayEnd}`)
+          .catch(() => ({ sum: 0 })),
+        
+        // Today's successful logins - if usageTracking table exists
+        db.select({ sum: sql<number>`coalesce(sum(${usageTracking.successfulLogins}), 0)` })
+          .from(usageTracking)
+          .where(sql`${usageTracking.lastActivity} >= ${todayStart} AND ${usageTracking.lastActivity} < ${todayEnd}`)
+          .catch(() => ({ sum: 0 }))
+      ]);
+
+      // Extract counts from query results with proper error handling
+      const totalUsers = Array.isArray(usersResult) ? (usersResult[0]?.count || 0) : 0;
+      const totalStudents = Array.isArray(studentsResult) ? (studentsResult[0]?.count || 0) : 0;
+      const totalSchools = Array.isArray(schoolsResult) ? (schoolsResult[0]?.count || 0) : 0;
+      const todaysActiveUsers = Array.isArray(activeUsersResult) ? (activeUsersResult[0]?.count || 0) : 0;
+      const totalHealthCards = Array.isArray(healthCardsResult) ? (healthCardsResult[0]?.count || 0) : 0;
+      const totalVisitors = Array.isArray(totalVisitorsResult) ? (totalVisitorsResult[0]?.count || 0) : 0;
+      const todayVisitors = Array.isArray(todayVisitorsResult) ? (todayVisitorsResult[0]?.count || 0) : 0;
+      const totalPageViews = Array.isArray(totalPageViewsResult) ? (totalPageViewsResult[0]?.sum || 0) : 0;
+      const totalLoginAttempts = Array.isArray(loginAttemptsResult) ? (loginAttemptsResult[0]?.sum || 0) : 0;
+      const totalSuccessfulLogins = Array.isArray(successfulLoginsResult) ? (successfulLoginsResult[0]?.sum || 0) : 0;
+      const todayLoginAttempts = Array.isArray(todayLoginAttemptsResult) ? (todayLoginAttemptsResult[0]?.sum || 0) : 0;
+      const todaySuccessfulLogins = Array.isArray(todaySuccessfulLoginsResult) ? (todaySuccessfulLoginsResult[0]?.sum || 0) : 0;
+
+      // Calculate success rate
+      const loginSuccessRate = totalLoginAttempts > 0 
+        ? Math.round((totalSuccessfulLogins / totalLoginAttempts) * 100) 
+        : 0;
+
+      const todayLoginSuccessRate = todayLoginAttempts > 0 
+        ? Math.round((todaySuccessfulLogins / todayLoginAttempts) * 100) 
+        : 0;
+
+      const stats = {
+        // Core platform stats
+        totalUsers: Number(totalUsers),
+        totalStudents: Number(totalStudents),
+        totalSchools: Number(totalSchools),
+        todaysActiveUsers: Number(todaysActiveUsers),
+        totalHealthCards: Number(totalHealthCards),
+        
+        // Visitor stats
+        totalVisitors: Number(totalVisitors),
+        todayVisitors: Number(todayVisitors),
+        totalPageViews: Number(totalPageViews),
+        
+        // Login stats (bonus requirement)
+        totalLoginAttempts: Number(totalLoginAttempts),
+        totalSuccessfulLogins: Number(totalSuccessfulLogins),
+        todayLoginAttempts: Number(todayLoginAttempts),
+        todaySuccessfulLogins: Number(todaySuccessfulLogins),
+        loginSuccessRate,
+        todayLoginSuccessRate,
+        
+        // Metadata
+        lastUpdated: new Date().toISOString(),
+        serverTime: new Date().toISOString()
+      };
+
+      // Set cache control headers
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+      
+      res.json(stats);
+    } catch (error: any) {
+      console.error("Platform stats error:", error?.message || String(error));
+      res.status(500).json({ 
+        message: "Failed to fetch platform statistics",
+        error: process.env.NODE_ENV === 'development' ? error?.message : undefined
+      });
     }
   });
 

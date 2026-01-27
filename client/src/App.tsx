@@ -16,6 +16,8 @@ import MedicalEventsPage from "@/pages/MedicalEventsPage";
 import StudentCheckupsPage from "@/pages/StudentCheckupsPage";
 import TestMedicalTeams from "@/pages/TestMedicalTeams";
 import AdminDashboard from "@/pages/AdminDashboard";
+import EnhancedAdminDashboard from "@/pages/EnhancedAdminDashboard";
+import TestEnhancedComponents from "@/pages/TestEnhancedComponents";
 import HostelWardenDashboard from "@/pages/HostelWardenDashboard";
 import LadySuperintendentDashboard from "@/pages/LadySuperintendentDashboard";
 import StudentsPage from "@/pages/StudentsPage";
@@ -108,6 +110,18 @@ function Router() {
       <Route path="/">
         <ProtectedRoute>
           <DashboardRouter />
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/admin/enhanced">
+        <ProtectedRoute allowedRoles={["Admin"]}>
+          <EnhancedAdminDashboard />
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/test/enhanced">
+        <ProtectedRoute>
+          <TestEnhancedComponents />
         </ProtectedRoute>
       </Route>
 
