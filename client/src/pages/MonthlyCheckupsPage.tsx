@@ -6,6 +6,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { getBMIColor, getBMIBgColor, getBMIClassificationLabel } from "@/lib/bmiColors";
+import { REFERRAL_FACILITY_OPTIONS } from "@/lib/referralFacilities";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { DataTable } from "@/components/dashboard/DataTable";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
@@ -17,6 +18,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { exportToCSV } from "@/lib/csvExport";
@@ -29,6 +33,17 @@ import {
   Loader2,
   Save,
   Calculator,
+  Calendar,
+  Users,
+  FileText,
+  Search,
+  Filter,
+  Thermometer,
+  Heart,
+  Ruler,
+  Weight,
+  Eye,
+  AlertTriangle,
 } from "lucide-react";
 
 const checkupFormSchema = z.object({
@@ -44,9 +59,32 @@ const checkupFormSchema = z.object({
   notes: z.string().optional(),
 });
 
+// Schema for event-driven checkups with referral dropdown
+const eventCheckupFormSchema = z.object({
+  status: z.enum(["Not started", "In progress", "Completed"]),
+  present: z.boolean().default(true),
+  heightCm: z.number().min(30).max(250).optional(),
+  weightKg: z.number().min(1).max(200).optional(),
+  temperatureC: z.number().min(35).max(42).optional(),
+  bpSystolic: z.number().min(60).max(250).optional(),
+  bpDiastolic: z.number().min(40).max(150).optional(),
+  symptoms: z.string().optional(),
+  diagnosis: z.string().optional(),
+  medicationsGiven: z.string().optional(),
+  referredTo: z.string().optional(),
+  referralStatus: z.enum(["Pending", "In Progress", "Completed", "Overdue", "Rejected"]).optional(),
+  referralNotes: z.string().optional(),
+  referralDate: z.coerce.date().optional(),
+  followUpRequired: z.boolean().default(false),
+  followUpDate: z.coerce.date().optional(),
+  notes: z.string().optional(),
+});
+
 type CheckupForm = z.infer<typeof checkupFormSchema>;
+type EventCheckupForm = z.infer<typeof eventCheckupFormSchema>;
 
 function CheckupList() {
+  const { user } = useAuth();
   const [page, setPage] = useState(1);
   const [monthFilter, setMonthFilter] = useState(String(new Date().getMonth() + 1));
   const [yearFilter, setYearFilter] = useState(String(new Date().getFullYear()));
@@ -71,19 +109,37 @@ function CheckupList() {
   const totalPages = data?.totalPages || 1;
   const totalItems = data?.totalItems || 0;
 
+  // Check if user is ClassTeacher - if so, make this view read-only
+  const isClassTeacher = user?.role === "ClassTeacher";
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-foreground">Monthly Checkups</h2>
-          <p className="text-muted-foreground">Record and view student health checkups</p>
+          <h2 className="text-2xl font-bold text-foreground">Traditional Monthly Checkups</h2>
+          <p className="text-muted-foreground">
+            {isClassTeacher 
+              ? "View-only: Individual checkups recorded by medical teams" 
+              : "Individual checkups recorded by class teachers"
+            }
+          </p>
+          {isClassTeacher && (
+            <div className="flex items-center gap-2 mt-2 p-2 bg-blue-50 rounded-md">
+              <AlertTriangle className="h-4 w-4 text-blue-600" />
+              <span className="text-sm text-blue-700">
+                Class Teachers can only view checkup records. Use Medical Team Events tab for new checkups.
+              </span>
+            </div>
+          )}
         </div>
-        <Link href="/checkups/new">
-          <Button data-testid="button-new-checkup">
-            <Plus className="h-4 w-4 mr-2" />
-            New Checkup
-          </Button>
-        </Link>
+        {!isClassTeacher && (
+          <Link href="/checkups/new">
+            <Button data-testid="button-new-checkup">
+              <Plus className="h-4 w-4 mr-2" />
+              New Checkup
+            </Button>
+          </Link>
+        )}
       </div>
 
       <div className="flex flex-wrap gap-4">
@@ -252,6 +308,1116 @@ function CheckupList() {
         }}
         emptyMessage="No checkups recorded for this period"
       />
+    </div>
+  );
+}
+
+// New component for event-driven checkups
+function EventCheckups() {
+  const { user } = useAuth();
+  const [selectedEvent, setSelectedEvent] = useState<any>(null);
+  const [selectedCheckup, setSelectedCheckup] = useState<any>(null);
+  const [isCheckupDialogOpen, setIsCheckupDialogOpen] = useState(false);
+  const [isCreateTeamDialogOpen, setIsCreateTeamDialogOpen] = useState(false);
+  const [isCreateEventDialogOpen, setIsCreateEventDialogOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const { toast } = useToast();
+
+  const checkupForm = useForm<EventCheckupForm>({
+    resolver: zodResolver(eventCheckupFormSchema),
+    defaultValues: {
+      status: "Not started",
+      present: true,
+      followUpRequired: false,
+    },
+  });
+
+  // Team creation form
+  const teamForm = useForm({
+    defaultValues: {
+      name: "",
+      members: [{ role: "Doctor", fullName: "", designation: "", phone: "" }],
+    },
+  });
+
+  // Event creation form
+  const eventForm = useForm({
+    defaultValues: {
+      name: "",
+      eventDate: new Date().toISOString().split("T")[0],
+      location: "",
+      teamId: "",
+      notes: "",
+    },
+  });
+
+  // Fetch medical teams
+  const { data: teamsData, isLoading: teamsLoading } = useQuery({
+    queryKey: ["/api/medical-teams"],
+    queryFn: async () => {
+      const res = await fetch("/api/medical-teams", {
+        headers: { "Authorization": `Bearer ${localStorage.getItem("accessToken")}` },
+      });
+      if (!res.ok) throw new Error("Failed to fetch medical teams");
+      return res.json();
+    },
+  });
+
+  // Fetch medical events
+  const { data: eventsData, isLoading: eventsLoading } = useQuery({
+    queryKey: ["/api/medical-events"],
+    queryFn: async () => {
+      const res = await fetch("/api/medical-events", {
+        headers: { "Authorization": `Bearer ${localStorage.getItem("accessToken")}` },
+      });
+      if (!res.ok) throw new Error("Failed to fetch medical events");
+      return res.json();
+    },
+  });
+
+  // Create team mutation
+  const createTeamMutation = useMutation({
+    mutationFn: async (teamData: any) => {
+      const res = await fetch("/api/medical-teams", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${localStorage.getItem("accessToken")}`,
+        },
+        body: JSON.stringify(teamData),
+      });
+      if (!res.ok) throw new Error("Failed to create medical team");
+      return res.json();
+    },
+    onSuccess: (team) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/medical-teams"] });
+      setIsCreateTeamDialogOpen(false);
+      teamForm.reset();
+      toast({ title: "Success", description: "Medical team created successfully" });
+      
+      // Add members to the team
+      const members = teamForm.getValues("members");
+      members.forEach(async (member: any) => {
+        if (member.fullName && member.designation && member.phone) {
+          await fetch(`/api/medical-teams/${team.id}/members`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${localStorage.getItem("accessToken")}`,
+            },
+            body: JSON.stringify(member),
+          });
+        }
+      });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  // Create event mutation
+  const createEventMutation = useMutation({
+    mutationFn: async (eventData: any) => {
+      const res = await fetch("/api/medical-events", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${localStorage.getItem("accessToken")}`,
+        },
+        body: JSON.stringify(eventData),
+      });
+      if (!res.ok) throw new Error("Failed to create medical event");
+      return res.json();
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/medical-events"] });
+      setIsCreateEventDialogOpen(false);
+      eventForm.reset();
+      toast({ 
+        title: "Success", 
+        description: `Medical event created with ${result.createdCount} student checkups generated` 
+      });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  // Fetch student checkups for selected event
+  const { data: checkupsData, isLoading: checkupsLoading } = useQuery({
+    queryKey: ["/api/medical-events", selectedEvent?.id, "checkups"],
+    queryFn: async () => {
+      if (!selectedEvent) return { checkups: [], total: 0 };
+      const res = await fetch(`/api/medical-events/${selectedEvent.id}/checkups`, {
+        headers: { "Authorization": `Bearer ${localStorage.getItem("accessToken")}` },
+      });
+      if (!res.ok) throw new Error("Failed to fetch checkups");
+      return res.json();
+    },
+    enabled: !!selectedEvent,
+  });
+
+  // Update checkup mutation
+  const updateCheckupMutation = useMutation({
+    mutationFn: async ({ checkupId, data }: { checkupId: string; data: EventCheckupForm }) => {
+      const res = await fetch(`/api/student-checkups/${checkupId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${localStorage.getItem("accessToken")}`,
+        },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error("Failed to update checkup");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/medical-events", selectedEvent?.id, "checkups"] });
+      setIsCheckupDialogOpen(false);
+      setSelectedCheckup(null);
+      checkupForm.reset();
+      toast({ title: "Success", description: "Checkup updated successfully" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const onUpdateCheckup = (data: EventCheckupForm) => {
+    if (!selectedCheckup) return;
+    updateCheckupMutation.mutate({ checkupId: selectedCheckup.id, data });
+  };
+
+  const handleEditCheckup = (checkup: any) => {
+    // Check if checkup is completed and user is ClassTeacher - show as read-only
+    const isCompleted = checkup.status === "Completed";
+    const isClassTeacher = user?.role === "ClassTeacher";
+    
+    if (isCompleted && isClassTeacher) {
+      toast({
+        title: "Read-Only Checkup",
+        description: "This checkup has been completed and is now read-only. Only Medical Teams can modify completed checkups.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    setSelectedCheckup(checkup);
+    checkupForm.reset({
+      status: checkup.status as any,
+      present: checkup.present ?? true,
+      heightCm: checkup.heightCm || undefined,
+      weightKg: checkup.weightKg || undefined,
+      temperatureC: checkup.temperatureC || undefined,
+      bpSystolic: checkup.bpSystolic || undefined,
+      bpDiastolic: checkup.bpDiastolic || undefined,
+      symptoms: checkup.symptoms || "",
+      diagnosis: checkup.diagnosis || "",
+      medicationsGiven: checkup.medicationsGiven || "",
+      referredTo: checkup.referredTo || "",
+      referralStatus: checkup.referralStatus as any,
+      referralNotes: checkup.referralNotes || "",
+      referralDate: checkup.referralDate ? new Date(checkup.referralDate) : undefined,
+      followUpRequired: checkup.followUpRequired,
+      followUpDate: checkup.followUpDate ? new Date(checkup.followUpDate) : undefined,
+      notes: checkup.notes || "",
+    });
+    setIsCheckupDialogOpen(true);
+  };
+
+  const events = eventsData?.events || [];
+  const checkups = checkupsData?.checkups || [];
+
+  // Filter checkups based on search and status
+  const filteredCheckups = checkups.filter((checkup: any) => {
+    const matchesSearch = !searchTerm || 
+      checkup.student?.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      checkup.student?.classSection.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    const matchesStatus = statusFilter === "all" || checkup.status === statusFilter;
+    
+    return matchesSearch && matchesStatus;
+  });
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case "Completed":
+        return "bg-green-100 text-green-800";
+      case "In progress":
+        return "bg-yellow-100 text-yellow-800";
+      default:
+        return "bg-gray-100 text-gray-800";
+    }
+  };
+
+  const calculateAge = (dateOfBirth: string) => {
+    const today = new Date();
+    const birth = new Date(dateOfBirth);
+    let age = today.getFullYear() - birth.getFullYear();
+    const monthDiff = today.getMonth() - birth.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+      age--;
+    }
+    return age;
+  };
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-foreground">Medical Team Events</h2>
+          <p className="text-muted-foreground">Create medical teams and schedule event-driven checkups for students</p>
+        </div>
+        <div className="flex gap-2">
+          <Button
+            onClick={() => setIsCreateTeamDialogOpen(true)}
+            variant="outline"
+            size="sm"
+          >
+            <Users className="h-4 w-4 mr-2" />
+            Create Team
+          </Button>
+          <Button
+            onClick={() => setIsCreateEventDialogOpen(true)}
+            size="sm"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            Create Event
+          </Button>
+        </div>
+      </div>
+
+      {/* Event Selection */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Calendar className="h-5 w-5" />
+            Select Medical Event
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {eventsLoading ? (
+            <div>Loading events...</div>
+          ) : events.length === 0 ? (
+            <div className="text-center text-muted-foreground py-4">
+              No medical events found. Medical teams need to create events first.
+            </div>
+          ) : (
+            <div className="grid gap-3">
+              {events.map((event: any) => (
+                <div
+                  key={event.id}
+                  className={`p-4 rounded-lg border cursor-pointer transition-colors ${
+                    selectedEvent?.id === event.id
+                      ? "bg-primary/10 border-primary"
+                      : "hover:bg-muted"
+                  }`}
+                  onClick={() => setSelectedEvent(event)}
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="font-medium">{event.name}</h3>
+                      <p className="text-sm text-muted-foreground">
+                        {formatDate(event.eventDate)} {event.location && `• ${event.location}`}
+                      </p>
+                    </div>
+                    <Badge variant={new Date(event.eventDate) >= new Date() ? "default" : "secondary"}>
+                      {new Date(event.eventDate) >= new Date() ? "Upcoming" : "Past"}
+                    </Badge>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Student Checkups for Selected Event */}
+      {selectedEvent && (
+        <>
+          {/* Filters */}
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex flex-col sm:flex-row gap-4">
+                <div className="flex-1">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search students..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="pl-10"
+                    />
+                  </div>
+                </div>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="w-48">
+                    <Filter className="h-4 w-4 mr-2" />
+                    <SelectValue placeholder="Filter by status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="Not started">Not Started</SelectItem>
+                    <SelectItem value="In progress">In Progress</SelectItem>
+                    <SelectItem value="Completed">Completed</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Checkups List */}
+          <div className="grid gap-4">
+            {checkupsLoading ? (
+              <div className="text-center py-8">Loading checkups...</div>
+            ) : filteredCheckups.length === 0 ? (
+              <Card>
+                <CardContent className="text-center py-8">
+                  <Stethoscope className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                  <h3 className="text-lg font-medium mb-2">No checkups found</h3>
+                  <p className="text-muted-foreground">
+                    {searchTerm || statusFilter !== "all" 
+                      ? "Try adjusting your search or filter criteria."
+                      : "No student checkups have been generated for this event yet."
+                    }
+                  </p>
+                </CardContent>
+              </Card>
+            ) : (
+              filteredCheckups.map((checkup: any) => (
+                <Card key={checkup.id} className="hover:shadow-md transition-shadow">
+                  <CardContent className="pt-6">
+                    <div className="flex items-start justify-between">
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-2">
+                            <Users className="h-4 w-4 text-muted-foreground" />
+                            <h3 className="font-medium">{checkup.student?.fullName}</h3>
+                          </div>
+                          <Badge className={getStatusColor(checkup.status)}>
+                            {checkup.status}
+                          </Badge>
+                          {checkup.status === "Completed" && user?.role === "ClassTeacher" && (
+                            <Badge variant="secondary" className="bg-blue-100 text-blue-800">
+                              <Eye className="h-3 w-3 mr-1" />
+                              View Only
+                            </Badge>
+                          )}
+                          <Badge variant={checkup.present !== false ? "default" : "destructive"}>
+                            {checkup.present !== false ? "Present" : "Absent"}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                          <span>Class: {checkup.student?.classSection}</span>
+                          <span>Gender: {checkup.student?.gender}</span>
+                          {checkup.student?.dateOfBirth && (
+                            <span>Age: {calculateAge(checkup.student.dateOfBirth)} years</span>
+                          )}
+                        </div>
+                        {checkup.heightCm && checkup.weightKg && (
+                          <div className="flex items-center gap-4 text-sm">
+                            <div className="flex items-center gap-1">
+                              <Ruler className="h-4 w-4 text-muted-foreground" />
+                              {checkup.heightCm} cm
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <Weight className="h-4 w-4 text-muted-foreground" />
+                              {checkup.weightKg} kg
+                            </div>
+                            {checkup.bmi && (
+                              <Badge 
+                                className={`${getBMIBgColor(checkup.bmi)} ${getBMIColor(checkup.bmi)}`}
+                              >
+                                BMI: {checkup.bmi}
+                              </Badge>
+                            )}
+                          </div>
+                        )}
+                        {checkup.temperatureC && (
+                          <div className="flex items-center gap-1 text-sm">
+                            <Thermometer className="h-4 w-4 text-muted-foreground" />
+                            Temperature: {checkup.temperatureC}°C
+                          </div>
+                        )}
+                        {(checkup.bpSystolic && checkup.bpDiastolic) && (
+                          <div className="flex items-center gap-1 text-sm">
+                            <Heart className="h-4 w-4 text-muted-foreground" />
+                            BP: {checkup.bpSystolic}/{checkup.bpDiastolic} mmHg
+                          </div>
+                        )}
+                        {checkup.diagnosis && (
+                          <p className="text-sm">
+                            <strong>Diagnosis:</strong> {checkup.diagnosis}
+                          </p>
+                        )}
+                        {checkup.referredTo && (
+                          <div className="space-y-1">
+                            <p className="text-sm text-orange-600">
+                              <strong>Referred to:</strong> {checkup.referredTo}
+                            </p>
+                            {checkup.referralStatus && (
+                              <div className="flex items-center gap-2">
+                                <Badge 
+                                  variant={
+                                    checkup.referralStatus === "Completed" ? "default" :
+                                    checkup.referralStatus === "In Progress" ? "secondary" :
+                                    checkup.referralStatus === "Overdue" ? "destructive" :
+                                    "outline"
+                                  }
+                                  className="text-xs"
+                                >
+                                  {checkup.referralStatus}
+                                </Badge>
+                                {checkup.referralDate && (
+                                  <span className="text-xs text-muted-foreground">
+                                    {new Date(checkup.referralDate).toLocaleDateString()}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      <Button
+                        size="sm"
+                        onClick={() => handleEditCheckup(checkup)}
+                        variant={checkup.status === "Completed" && user?.role === "ClassTeacher" ? "outline" : "default"}
+                      >
+                        <FileText className="h-4 w-4 mr-2" />
+                        {checkup.status === "Completed" && user?.role === "ClassTeacher" 
+                          ? "View Details" 
+                          : checkup.status === "Not started" 
+                            ? "Start Checkup" 
+                            : "Edit Checkup"
+                        }
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))
+            )}
+          </div>
+        </>
+      )}
+
+      {/* Checkup Form Dialog */}
+      <Dialog open={isCheckupDialogOpen} onOpenChange={setIsCheckupDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              Student Checkup - {selectedCheckup?.student?.fullName}
+              {selectedCheckup?.status === "Completed" && user?.role === "ClassTeacher" && (
+                <Badge variant="secondary" className="bg-blue-100 text-blue-800">
+                  <Eye className="h-3 w-3 mr-1" />
+                  Read Only
+                </Badge>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+          <Form {...checkupForm}>
+            <form onSubmit={checkupForm.handleSubmit(onUpdateCheckup)} className="space-y-6">
+              {/* Read-only mode indicator */}
+              {(() => {
+                const isReadOnly = selectedCheckup?.status === "Completed" && user?.role === "ClassTeacher";
+                
+                return (
+                  <>
+                    {isReadOnly && (
+                      <div className="p-4 bg-blue-50 border border-blue-200 rounded-md">
+                        <div className="flex items-center gap-2 text-blue-800">
+                          <AlertTriangle className="h-4 w-4" />
+                          <span className="font-medium">Read-Only Mode</span>
+                        </div>
+                        <p className="text-sm text-blue-700 mt-1">
+                          This checkup has been completed and is now read-only. Only Medical Teams can modify completed checkups.
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Status */}
+                    <FormField
+                      control={checkupForm.control}
+                      name="status"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Status</FormLabel>
+                          <Select 
+                            onValueChange={field.onChange} 
+                            defaultValue={field.value}
+                            disabled={isReadOnly}
+                          >
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select status" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="Not started">Not Started</SelectItem>
+                              <SelectItem value="In progress">In Progress</SelectItem>
+                              <SelectItem value="Completed">Completed</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    {/* Student Present */}
+                    <FormField
+                      control={checkupForm.control}
+                      name="present"
+                      render={({ field }) => (
+                        <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
+                          <FormControl>
+                            <Checkbox
+                              checked={field.value}
+                              onCheckedChange={field.onChange}
+                              disabled={isReadOnly}
+                            />
+                          </FormControl>
+                          <div className="space-y-1 leading-none">
+                            <FormLabel>Student Present</FormLabel>
+                            <FormDescription>
+                              Uncheck if the student was absent during checkup
+                            </FormDescription>
+                          </div>
+                        </FormItem>
+                      )}
+                    />
+
+                    {/* Measurements */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <FormField
+                        control={checkupForm.control}
+                        name="heightCm"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Height (cm)</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                placeholder="150"
+                                {...field}
+                                onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)}
+                                disabled={isReadOnly}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={checkupForm.control}
+                        name="weightKg"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Weight (kg)</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                placeholder="45"
+                                {...field}
+                                onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)}
+                                disabled={isReadOnly}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+
+                    {/* Vitals */}
+                    <div className="grid grid-cols-3 gap-4">
+                      <FormField
+                        control={checkupForm.control}
+                        name="temperatureC"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Temperature (°C)</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                step="0.1"
+                                placeholder="37.0"
+                                {...field}
+                                onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)}
+                                disabled={isReadOnly}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={checkupForm.control}
+                        name="bpSystolic"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>BP Systolic</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                placeholder="120"
+                                {...field}
+                                onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
+                                disabled={isReadOnly}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={checkupForm.control}
+                        name="bpDiastolic"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>BP Diastolic</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                placeholder="80"
+                                {...field}
+                                onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
+                                disabled={isReadOnly}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+
+                    {/* Clinical Information */}
+                    <FormField
+                      control={checkupForm.control}
+                      name="symptoms"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Symptoms</FormLabel>
+                          <FormControl>
+                            <Textarea 
+                              placeholder="Describe any symptoms observed..." 
+                              {...field} 
+                              disabled={isReadOnly}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={checkupForm.control}
+                      name="diagnosis"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Diagnosis</FormLabel>
+                          <FormControl>
+                            <Textarea 
+                              placeholder="Clinical diagnosis..." 
+                              {...field} 
+                              disabled={isReadOnly}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={checkupForm.control}
+                      name="medicationsGiven"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Medications Given</FormLabel>
+                          <FormControl>
+                            <Textarea 
+                              placeholder="List medications provided..." 
+                              {...field} 
+                              disabled={isReadOnly}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    {/* Referral Section */}
+                    <div className="space-y-4 border-t pt-4">
+                      <h4 className="font-medium text-sm">Referral Information</h4>
+                      
+                      <FormField
+                        control={checkupForm.control}
+                        name="referredTo"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Referred To (Optional)</FormLabel>
+                            <Select 
+                              onValueChange={field.onChange} 
+                              value={field.value || ""}
+                              disabled={isReadOnly}
+                            >
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select referral facility" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="">No Referral</SelectItem>
+                                {REFERRAL_FACILITY_OPTIONS.map((facility) => (
+                                  <SelectItem key={facility} value={facility}>
+                                    {facility}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      {checkupForm.watch("referredTo") && (
+                        <>
+                          <div className="grid grid-cols-2 gap-4">
+                            <FormField
+                              control={checkupForm.control}
+                              name="referralStatus"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>Referral Status</FormLabel>
+                                  <Select 
+                                    onValueChange={field.onChange} 
+                                    value={field.value || ""}
+                                    disabled={isReadOnly}
+                                  >
+                                    <FormControl>
+                                      <SelectTrigger>
+                                        <SelectValue placeholder="Select status" />
+                                      </SelectTrigger>
+                                    </FormControl>
+                                    <SelectContent>
+                                      <SelectItem value="Pending">Pending</SelectItem>
+                                      <SelectItem value="In Progress">In Progress</SelectItem>
+                                      <SelectItem value="Completed">Completed</SelectItem>
+                                      <SelectItem value="Overdue">Overdue</SelectItem>
+                                      <SelectItem value="Rejected">Rejected</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+
+                            <FormField
+                              control={checkupForm.control}
+                              name="referralDate"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>Referral Date</FormLabel>
+                                  <FormControl>
+                                    <Input
+                                      type="date"
+                                      {...field}
+                                      value={field.value ? field.value.toISOString().split('T')[0] : ''}
+                                      onChange={(e) => field.onChange(e.target.value ? new Date(e.target.value) : undefined)}
+                                      disabled={isReadOnly}
+                                    />
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                          </div>
+
+                          <FormField
+                            control={checkupForm.control}
+                            name="referralNotes"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Referral Notes</FormLabel>
+                                <FormControl>
+                                  <Textarea 
+                                    placeholder="Additional notes about the referral..." 
+                                    {...field} 
+                                    disabled={isReadOnly}
+                                  />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        </>
+                      )}
+                    </div>
+
+                    {/* Follow-up */}
+                    <div className="space-y-4">
+                      <FormField
+                        control={checkupForm.control}
+                        name="followUpRequired"
+                        render={({ field }) => (
+                          <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                            <FormControl>
+                              <Checkbox
+                                checked={field.value}
+                                onCheckedChange={field.onChange}
+                                disabled={isReadOnly}
+                              />
+                            </FormControl>
+                            <div className="space-y-1 leading-none">
+                              <FormLabel>Follow-up Required</FormLabel>
+                            </div>
+                          </FormItem>
+                        )}
+                      />
+                      
+                      {checkupForm.watch("followUpRequired") && (
+                        <FormField
+                          control={checkupForm.control}
+                          name="followUpDate"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Follow-up Date</FormLabel>
+                              <FormControl>
+                                <Input
+                                  type="date"
+                                  {...field}
+                                  value={field.value ? field.value.toISOString().split('T')[0] : ''}
+                                  onChange={(e) => field.onChange(e.target.value ? new Date(e.target.value) : undefined)}
+                                  disabled={isReadOnly}
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      )}
+                    </div>
+
+                    <FormField
+                      control={checkupForm.control}
+                      name="notes"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Additional Notes</FormLabel>
+                          <FormControl>
+                            <Textarea 
+                              placeholder="Any additional observations or notes..." 
+                              {...field} 
+                              disabled={isReadOnly}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          setIsCheckupDialogOpen(false);
+                          setSelectedCheckup(null);
+                          checkupForm.reset();
+                        }}
+                      >
+                        {isReadOnly ? "Close" : "Cancel"}
+                      </Button>
+                      {!isReadOnly && (
+                        <Button type="submit" disabled={updateCheckupMutation.isPending}>
+                          <Save className="h-4 w-4 mr-2" />
+                          {updateCheckupMutation.isPending ? "Saving..." : "Save Checkup"}
+                        </Button>
+                      )}
+                    </div>
+                  </>
+                );
+              })()}
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Team Dialog */}
+      <Dialog open={isCreateTeamDialogOpen} onOpenChange={setIsCreateTeamDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Create Medical Team</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={teamForm.handleSubmit((data) => createTeamMutation.mutate(data))} className="space-y-4">
+            <div>
+              <label className="text-sm font-medium">Team Name *</label>
+              <Input
+                {...teamForm.register("name", { required: true })}
+                placeholder="e.g., Monthly Health Team - January 2026"
+              />
+            </div>
+            
+            <div>
+              <label className="text-sm font-medium">Team Members</label>
+              <div className="space-y-3 mt-2">
+                {teamForm.watch("members").map((_, index) => (
+                  <div key={index} className="grid grid-cols-2 gap-3 p-3 border rounded">
+                    <div>
+                      <label className="text-xs text-muted-foreground">Role *</label>
+                      <Select
+                        value={teamForm.watch(`members.${index}.role`)}
+                        onValueChange={(value) => teamForm.setValue(`members.${index}.role`, value)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Doctor">Doctor</SelectItem>
+                          <SelectItem value="Nurse">Nurse</SelectItem>
+                          <SelectItem value="Pharmacist">Pharmacist</SelectItem>
+                          <SelectItem value="Technician">Technician</SelectItem>
+                          <SelectItem value="Other">Other</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground">Full Name *</label>
+                      <Input
+                        {...teamForm.register(`members.${index}.fullName`, { required: true })}
+                        placeholder="Dr. John Smith"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground">Designation *</label>
+                      <Input
+                        {...teamForm.register(`members.${index}.designation`, { required: true })}
+                        placeholder="Senior Medical Officer"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground">Phone *</label>
+                      <Input
+                        {...teamForm.register(`members.${index}.phone`, { required: true })}
+                        placeholder="+91 9876543210"
+                      />
+                    </div>
+                  </div>
+                ))}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const currentMembers = teamForm.getValues("members");
+                    teamForm.setValue("members", [
+                      ...currentMembers,
+                      { role: "Doctor", fullName: "", designation: "", phone: "" }
+                    ]);
+                  }}
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Member
+                </Button>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsCreateTeamDialogOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={createTeamMutation.isPending}>
+                {createTeamMutation.isPending ? "Creating..." : "Create Team"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Event Dialog */}
+      <Dialog open={isCreateEventDialogOpen} onOpenChange={setIsCreateEventDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create Medical Event</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={eventForm.handleSubmit((data) => createEventMutation.mutate(data))} className="space-y-4">
+            <div>
+              <label className="text-sm font-medium">Event Name *</label>
+              <Input
+                {...eventForm.register("name", { required: true })}
+                placeholder="Monthly Checkup - January 2026"
+              />
+            </div>
+            
+            <div>
+              <label className="text-sm font-medium">Event Date *</label>
+              <Input
+                type="date"
+                {...eventForm.register("eventDate", { required: true })}
+              />
+            </div>
+            
+            <div>
+              <label className="text-sm font-medium">Medical Team *</label>
+              <Select
+                value={eventForm.watch("teamId")}
+                onValueChange={(value) => eventForm.setValue("teamId", value)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select medical team" />
+                </SelectTrigger>
+                <SelectContent>
+                  {teamsData?.teams?.map((team: any) => (
+                    <SelectItem key={team.id} value={team.id}>
+                      {team.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div>
+              <label className="text-sm font-medium">Location</label>
+              <Input
+                {...eventForm.register("location")}
+                placeholder="School Health Room"
+              />
+            </div>
+            
+            <div>
+              <label className="text-sm font-medium">Notes</label>
+              <Textarea
+                {...eventForm.register("notes")}
+                placeholder="Special instructions for this checkup event..."
+              />
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsCreateEventDialogOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={createEventMutation.isPending}>
+                {createEventMutation.isPending ? "Creating..." : "Create Event"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -623,9 +1789,72 @@ export default function MonthlyCheckupsPage() {
   const [location] = useLocation();
   const isNewCheckup = location.includes("/new");
 
+  // For ClassTeacher, show only Medical Team Events
+  if (user?.role === "ClassTeacher") {
+    if (isNewCheckup) {
+      return (
+        <AppLayout title="New Checkup">
+          <CheckupForm />
+        </AppLayout>
+      );
+    }
+
+    return (
+      <AppLayout title="Monthly Checkups">
+        <div className="space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <h1 className="text-3xl font-bold text-foreground">Monthly Checkups</h1>
+              <p className="text-muted-foreground">Create medical teams and manage event-driven student health checkups</p>
+            </div>
+          </div>
+
+          <EventCheckups />
+        </div>
+      </AppLayout>
+    );
+  }
+
+  // For other roles, show both tabs
+  if (isNewCheckup) {
+    return (
+      <AppLayout title="New Checkup">
+        <CheckupForm />
+      </AppLayout>
+    );
+  }
+
   return (
-    <AppLayout title={isNewCheckup ? "New Checkup" : "Monthly Checkups"}>
-      {isNewCheckup ? <CheckupForm /> : <CheckupList />}
+    <AppLayout title="Monthly Checkups">
+      <div className="space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-foreground">Monthly Checkups</h1>
+            <p className="text-muted-foreground">Manage both traditional and event-driven student health checkups</p>
+          </div>
+        </div>
+
+        <Tabs defaultValue="traditional" className="space-y-6">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="traditional" className="flex items-center gap-2">
+              <Stethoscope className="h-4 w-4" />
+              Traditional Checkups
+            </TabsTrigger>
+            <TabsTrigger value="events" className="flex items-center gap-2">
+              <Calendar className="h-4 w-4" />
+              Medical Team Events
+            </TabsTrigger>
+          </TabsList>
+          
+          <TabsContent value="traditional" className="space-y-6">
+            <CheckupList />
+          </TabsContent>
+          
+          <TabsContent value="events" className="space-y-6">
+            <EventCheckups />
+          </TabsContent>
+        </Tabs>
+      </div>
     </AppLayout>
   );
 }

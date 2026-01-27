@@ -34,6 +34,15 @@ export type AcademicStatus = typeof academicStatusEnum[number];
 export const academicActionEnum = ["Promote", "Demote", "Detain"] as const;
 export type AcademicAction = typeof academicActionEnum[number];
 
+export const medicalTeamRoleEnum = ["Doctor", "Pharmacist", "Nurse", "Technician", "Other"] as const;
+export type MedicalTeamRole = typeof medicalTeamRoleEnum[number];
+
+export const checkupStatusEnum = ["Not started", "In progress", "Completed"] as const;
+export type CheckupStatus = typeof checkupStatusEnum[number];
+
+export const referralStatusEnum = ["Pending", "In Progress", "Completed", "Overdue", "Rejected"] as const;
+export type ReferralStatus = typeof referralStatusEnum[number];
+
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   username: text("username").notNull().unique(),
@@ -784,6 +793,68 @@ export const periodTrackerEntries = pgTable("period_tracker_entries", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+export const medicalTeams = pgTable("medical_teams", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  primaryContactMemberId: varchar("primary_contact_member_id"),
+  defaultMedications: jsonb("default_medications").$type<string[]>().default([]),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const medicalTeamMembers = pgTable("medical_team_members", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  teamId: varchar("team_id").notNull(),
+  role: text("role").notNull().$type<MedicalTeamRole>(),
+  fullName: text("full_name").notNull(),
+  designation: text("designation").notNull(),
+  phone: text("phone").notNull(),
+  email: text("email"),
+  regNumber: text("reg_number"),
+  licenseExpiry: date("license_expiry"),
+  facility: text("facility"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const medicalEvents = pgTable("medical_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  teamId: varchar("team_id").notNull(),
+  name: text("name").notNull(),
+  eventDate: date("event_date").notNull(),
+  location: text("location"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  createdBy: varchar("created_by").notNull(),
+});
+
+export const studentCheckups = pgTable("student_checkups", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  studentId: varchar("student_id").notNull(),
+  eventId: varchar("event_id").notNull(),
+  teamId: varchar("team_id").notNull(),
+  status: text("status").notNull().$type<CheckupStatus>().default("Not started"),
+  present: boolean("present").default(true),
+  heightCm: decimal("height_cm", { precision: 5, scale: 2 }),
+  weightKg: decimal("weight_kg", { precision: 5, scale: 2 }),
+  bmi: decimal("bmi", { precision: 5, scale: 2 }),
+  temperatureC: decimal("temperature_c", { precision: 4, scale: 2 }),
+  bpSystolic: integer("bp_systolic"),
+  bpDiastolic: integer("bp_diastolic"),
+  symptoms: text("symptoms"),
+  diagnosis: text("diagnosis"),
+  medicationsGiven: text("medications_given"),
+  referredTo: text("referred_to"),
+  referralStatus: text("referral_status").$type<ReferralStatus>(),
+  referralNotes: text("referral_notes"),
+  referralDate: date("referral_date"),
+  followUpRequired: boolean("follow_up_required").default(false),
+  followUpDate: date("follow_up_date"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 export const usersRelations = relations(users, ({ one, many }) => ({
   school: one(schools, {
     fields: [users.schoolId],
@@ -928,6 +999,49 @@ export const periodTrackerEntriesRelations = relations(periodTrackerEntries, ({ 
   recordedByUser: one(users, {
     fields: [periodTrackerEntries.recordedBy],
     references: [users.id],
+  }),
+}));
+
+export const medicalTeamsRelations = relations(medicalTeams, ({ one, many }) => ({
+  primaryContact: one(medicalTeamMembers, {
+    fields: [medicalTeams.primaryContactMemberId],
+    references: [medicalTeamMembers.id],
+  }),
+  members: many(medicalTeamMembers),
+  events: many(medicalEvents),
+}));
+
+export const medicalTeamMembersRelations = relations(medicalTeamMembers, ({ one }) => ({
+  team: one(medicalTeams, {
+    fields: [medicalTeamMembers.teamId],
+    references: [medicalTeams.id],
+  }),
+}));
+
+export const medicalEventsRelations = relations(medicalEvents, ({ one, many }) => ({
+  team: one(medicalTeams, {
+    fields: [medicalEvents.teamId],
+    references: [medicalTeams.id],
+  }),
+  createdByUser: one(users, {
+    fields: [medicalEvents.createdBy],
+    references: [users.id],
+  }),
+  checkups: many(studentCheckups),
+}));
+
+export const studentCheckupsRelations = relations(studentCheckups, ({ one }) => ({
+  student: one(students, {
+    fields: [studentCheckups.studentId],
+    references: [students.id],
+  }),
+  event: one(medicalEvents, {
+    fields: [studentCheckups.eventId],
+    references: [medicalEvents.id],
+  }),
+  team: one(medicalTeams, {
+    fields: [studentCheckups.teamId],
+    references: [medicalTeams.id],
   }),
 }));
 
@@ -1235,6 +1349,38 @@ export const insertPeriodTrackerEntrySchema = createInsertSchema(periodTrackerEn
   entryDate: z.coerce.date(),
 });
 
+export const insertMedicalTeamSchema = createInsertSchema(medicalTeams).omit({ id: true, createdAt: true, updatedAt: true }).extend({
+  name: z.string().min(1, "Team name is required"),
+  defaultMedications: z.array(z.string()).optional(),
+});
+
+export const insertMedicalTeamMemberSchema = createInsertSchema(medicalTeamMembers).omit({ id: true, createdAt: true }).extend({
+  role: z.enum(medicalTeamRoleEnum),
+  fullName: z.string().min(1, "Full name is required"),
+  designation: z.string().min(1, "Designation is required"),
+  phone: z.string().regex(/^\d{10}$/, "Phone must be 10 digits"),
+  email: z.string().email().optional().or(z.literal("")),
+  licenseExpiry: z.coerce.date().optional(),
+});
+
+export const insertMedicalEventSchema = createInsertSchema(medicalEvents).omit({ id: true, createdAt: true }).extend({
+  name: z.string().min(1, "Event name is required"),
+  eventDate: z.coerce.date(),
+});
+
+export const insertStudentCheckupSchema = createInsertSchema(studentCheckups).omit({ id: true, createdAt: true, updatedAt: true }).extend({
+  status: z.enum(checkupStatusEnum).optional(),
+  present: z.boolean().default(true),
+  heightCm: z.number().min(30).max(250).optional(),
+  weightKg: z.number().min(1).max(200).optional(),
+  temperatureC: z.number().min(35).max(42).optional(),
+  bpSystolic: z.number().min(60).max(250).optional(),
+  bpDiastolic: z.number().min(40).max(150).optional(),
+  referralStatus: z.enum(referralStatusEnum).optional(),
+  referralDate: z.coerce.date().optional(),
+  followUpDate: z.coerce.date().optional(),
+});
+
 export const updateAnnualHealthCardSchema = insertAnnualHealthCardSchema.partial();
 
 export const loginSchema = z.object({
@@ -1312,5 +1458,17 @@ export type Notification = typeof notifications.$inferSelect;
 
 export type InsertPeriodTrackerEntry = z.infer<typeof insertPeriodTrackerEntrySchema>;
 export type PeriodTrackerEntry = typeof periodTrackerEntries.$inferSelect;
+
+export type InsertMedicalTeam = z.infer<typeof insertMedicalTeamSchema>;
+export type MedicalTeam = typeof medicalTeams.$inferSelect;
+
+export type InsertMedicalTeamMember = z.infer<typeof insertMedicalTeamMemberSchema>;
+export type MedicalTeamMember = typeof medicalTeamMembers.$inferSelect;
+
+export type InsertMedicalEvent = z.infer<typeof insertMedicalEventSchema>;
+export type MedicalEvent = typeof medicalEvents.$inferSelect;
+
+export type InsertStudentCheckup = z.infer<typeof insertStudentCheckupSchema>;
+export type StudentCheckup = typeof studentCheckups.$inferSelect;
 
 export type UpdateAnnualHealthCard = z.infer<typeof updateAnnualHealthCardSchema>;

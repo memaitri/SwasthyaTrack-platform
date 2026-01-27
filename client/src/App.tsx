@@ -11,6 +11,10 @@ import PODashboard from "@/pages/PODashboard";
 import HeadmasterDashboard from "@/pages/HeadmasterDashboard";
 import ClassTeacherDashboard from "@/pages/ClassTeacherDashboard";
 import MedicalTeamDashboard from "@/pages/MedicalTeamDashboard";
+import MedicalTeamManagementPage from "@/pages/MedicalTeamManagementPage";
+import MedicalEventsPage from "@/pages/MedicalEventsPage";
+import StudentCheckupsPage from "@/pages/StudentCheckupsPage";
+import TestMedicalTeams from "@/pages/TestMedicalTeams";
 import AdminDashboard from "@/pages/AdminDashboard";
 import HostelWardenDashboard from "@/pages/HostelWardenDashboard";
 import LadySuperintendentDashboard from "@/pages/LadySuperintendentDashboard";
@@ -189,6 +193,28 @@ function Router() {
         <ProtectedRoute>
           <MonthlyCheckupsPage />
         </ProtectedRoute>
+      </Route>
+
+      <Route path="/medical-teams">
+        <ProtectedRoute allowedRoles={["Admin", "MedicalTeam"]}>
+          <MedicalTeamManagementPage />
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/medical-events">
+        <ProtectedRoute allowedRoles={["Admin", "MedicalTeam"]}>
+          <MedicalEventsPage />
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/medical-events/:eventId/checkups">
+        <ProtectedRoute allowedRoles={["Admin", "MedicalTeam"]}>
+          <StudentCheckupsPage />
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/test-medical-teams">
+        <TestMedicalTeams />
       </Route>
 
       <Route path="/meals">

@@ -678,6 +678,48 @@ export default function ClassTeacherDashboard() {
               />
             </div>
 
+            {/* Referral Tracking Widget */}
+            {referralData && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm font-medium flex items-center gap-2">
+                      <AlertCircle className="h-4 w-4 text-orange-600" />
+                      Pending Referrals
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{referralData.pendingCount || 0}</div>
+                    <p className="text-xs text-muted-foreground mt-2">Awaiting follow-up</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm font-medium flex items-center gap-2">
+                      <Activity className="h-4 w-4 text-blue-600" />
+                      In Progress
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{referralData.inProgressCount || 0}</div>
+                    <p className="text-xs text-muted-foreground mt-2">Being processed</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm font-medium flex items-center gap-2">
+                      <CheckCircle2 className="h-4 w-4 text-green-600" />
+                      Completed
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{referralData.completedCount || 0}</div>
+                    <p className="text-xs text-muted-foreground mt-2">Resolved this month</p>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2">
             <DataTable

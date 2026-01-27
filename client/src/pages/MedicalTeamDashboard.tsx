@@ -154,6 +154,26 @@ export default function MedicalTeamDashboard() {
           </ChartContainer>
         </div>
 
+        {/* Referral Management Section */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg font-semibold flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 text-rose-500" />
+              Referral Management
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Track and manage pending referrals. Update status as referrals are processed.
+              </p>
+              <Button variant="outline" asChild>
+                <Link href="/referrals">View All Referrals</Link>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2">
             <DataTable

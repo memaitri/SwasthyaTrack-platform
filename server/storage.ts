@@ -11,6 +11,10 @@ import {
   auditLogs,
   refreshTokens,
   studentAcademicActions,
+  medicalTeams,
+  medicalTeamMembers,
+  medicalEvents,
+  studentCheckups,
   type User,
   type InsertUser,
   type School,
@@ -29,6 +33,14 @@ import {
   type InsertAuditLog,
   type StudentAcademicAction,
   type InsertStudentAcademicAction,
+  type MedicalTeam,
+  type InsertMedicalTeam,
+  type MedicalTeamMember,
+  type InsertMedicalTeamMember,
+  type MedicalEvent,
+  type InsertMedicalEvent,
+  type StudentCheckup,
+  type InsertStudentCheckup,
   notifications,
   type Notification,
   type InsertNotification,
@@ -98,6 +110,41 @@ export interface IStorage {
     limit?: number;
   }): Promise<{ checkups: MonthlyCheckup[]; total: number }>;
   createMonthlyCheckup(checkup: InsertMonthlyCheckup): Promise<MonthlyCheckup>;
+
+  // Medical Teams
+  getMedicalTeam(id: string): Promise<MedicalTeam | undefined>;
+  getMedicalTeams(page?: number, limit?: number): Promise<{ teams: MedicalTeam[]; total: number }>;
+  createMedicalTeam(team: InsertMedicalTeam): Promise<MedicalTeam>;
+  updateMedicalTeam(id: string, data: Partial<InsertMedicalTeam>): Promise<MedicalTeam | undefined>;
+
+  // Medical Team Members
+  getMedicalTeamMembers(teamId: string): Promise<MedicalTeamMember[]>;
+  createMedicalTeamMember(member: InsertMedicalTeamMember): Promise<MedicalTeamMember>;
+  updateMedicalTeamMember(id: string, data: Partial<InsertMedicalTeamMember>): Promise<MedicalTeamMember | undefined>;
+  deleteMedicalTeamMember(id: string): Promise<void>;
+
+  // Medical Events
+  getMedicalEvent(id: string): Promise<MedicalEvent | undefined>;
+  getMedicalEvents(params?: {
+    teamId?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{ events: MedicalEvent[]; total: number }>;
+  createMedicalEvent(event: InsertMedicalEvent): Promise<MedicalEvent>;
+  updateMedicalEvent(id: string, data: Partial<InsertMedicalEvent>): Promise<MedicalEvent | undefined>;
+
+  // Student Checkups
+  getStudentCheckup(id: string): Promise<StudentCheckup | undefined>;
+  getStudentCheckups(params?: {
+    eventId?: string;
+    studentId?: string;
+    status?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{ checkups: StudentCheckup[]; total: number }>;
+  createStudentCheckup(checkup: InsertStudentCheckup): Promise<StudentCheckup>;
+  updateStudentCheckup(id: string, data: Partial<InsertStudentCheckup>): Promise<StudentCheckup | undefined>;
+  createStudentCheckupsForEvent(eventId: string, teamId: string, userContext?: { role: string; schoolId?: string; classSection?: string }): Promise<{ createdCount: number }>;
 
   getMealLog(id: string): Promise<MealLog | undefined>;
   getMealLogs(params?: {
@@ -2068,7 +2115,208 @@ export class DatabaseStorage implements IStorage {
     const newNumber = currentNumber - 1;
     return currentClass.replace(/\d+/, newNumber.toString());
   }
-}
 
+  // Medical Teams
+  async getMedicalTeam(id: string): Promise<MedicalTeam | undefined> {
+    const [team] = await db.select().from(medicalTeams).where(eq(medicalTeams.id, id));
+    return team;
+  }
+
+  async getMedicalTeams(page = 1, limit = 10): Promise<{ teams: MedicalTeam[]; total: number }> {
+    const offset = (page - 1) * limit;
+    const [totalResult] = await db.select({ count: count() }).from(medicalTeams);
+    const teams = await db.select().from(medicalTeams).orderBy(desc(medicalTeams.createdAt)).limit(limit).offset(offset);
+    return { teams, total: totalResult?.count || 0 };
+  }
+
+  async createMedicalTeam(team: InsertMedicalTeam): Promise<MedicalTeam> {
+    const [newTeam] = await db.insert(medicalTeams).values(team as any).returning();
+    return newTeam;
+  }
+
+  async updateMedicalTeam(id: string, data: Partial<InsertMedicalTeam>): Promise<MedicalTeam | undefined> {
+    const updateData: any = { ...data, updatedAt: new Date() };
+    const [updatedTeam] = await db.update(medicalTeams).set(updateData).where(eq(medicalTeams.id, id)).returning();
+    return updatedTeam;
+  }
+
+  // Medical Team Members
+  async getMedicalTeamMembers(teamId: string): Promise<MedicalTeamMember[]> {
+    return await db.select().from(medicalTeamMembers).where(eq(medicalTeamMembers.teamId, teamId)).orderBy(medicalTeamMembers.createdAt);
+  }
+
+  async createMedicalTeamMember(member: InsertMedicalTeamMember): Promise<MedicalTeamMember> {
+    const [newMember] = await db.insert(medicalTeamMembers).values(member as any).returning();
+    return newMember;
+  }
+
+  async updateMedicalTeamMember(id: string, data: Partial<InsertMedicalTeamMember>): Promise<MedicalTeamMember | undefined> {
+    // Convert Date to string for database storage
+    const updateData: any = { ...data };
+    if (updateData.licenseExpiry instanceof Date) {
+      updateData.licenseExpiry = updateData.licenseExpiry.toISOString().split('T')[0];
+    }
+    
+    const [updatedMember] = await db.update(medicalTeamMembers).set(updateData).where(eq(medicalTeamMembers.id, id)).returning();
+    return updatedMember;
+  }
+
+  async deleteMedicalTeamMember(id: string): Promise<void> {
+    await db.delete(medicalTeamMembers).where(eq(medicalTeamMembers.id, id));
+  }
+
+  // Medical Events
+  async getMedicalEvent(id: string): Promise<MedicalEvent | undefined> {
+    const [event] = await db.select().from(medicalEvents).where(eq(medicalEvents.id, id));
+    return event;
+  }
+
+  async getMedicalEvents(params?: {
+    teamId?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{ events: MedicalEvent[]; total: number }> {
+    const { teamId, page = 1, limit = 10 } = params || {};
+    const offset = (page - 1) * limit;
+
+    const conditions = [];
+    if (teamId) conditions.push(eq(medicalEvents.teamId, teamId));
+
+    let query = db.select().from(medicalEvents);
+    let countQuery = db.select({ count: count() }).from(medicalEvents);
+
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions)) as any;
+      countQuery = countQuery.where(and(...conditions)) as any;
+    }
+
+    const [totalResult] = await countQuery;
+    const events = await query.orderBy(desc(medicalEvents.eventDate)).limit(limit).offset(offset);
+
+    return { events, total: totalResult?.count || 0 };
+  }
+
+  async createMedicalEvent(event: InsertMedicalEvent): Promise<MedicalEvent> {
+    const [newEvent] = await db.insert(medicalEvents).values(event as any).returning();
+    return newEvent;
+  }
+
+  async updateMedicalEvent(id: string, data: Partial<InsertMedicalEvent>): Promise<MedicalEvent | undefined> {
+    // Convert Date to string for database storage
+    const updateData: any = { ...data };
+    if (updateData.eventDate instanceof Date) {
+      updateData.eventDate = updateData.eventDate.toISOString().split('T')[0];
+    }
+    
+    const [updatedEvent] = await db.update(medicalEvents).set(updateData).where(eq(medicalEvents.id, id)).returning();
+    return updatedEvent;
+  }
+
+  // Student Checkups
+  async getStudentCheckup(id: string): Promise<StudentCheckup | undefined> {
+    const [checkup] = await db.select().from(studentCheckups).where(eq(studentCheckups.id, id));
+    return checkup;
+  }
+
+  async getStudentCheckups(params?: {
+    eventId?: string;
+    studentId?: string;
+    status?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{ checkups: StudentCheckup[]; total: number }> {
+    const { eventId, studentId, status, page = 1, limit = 10 } = params || {};
+    const offset = (page - 1) * limit;
+
+    const conditions = [];
+    if (eventId) conditions.push(eq(studentCheckups.eventId, eventId));
+    if (studentId) conditions.push(eq(studentCheckups.studentId, studentId));
+    if (status) conditions.push(eq(studentCheckups.status, status as any));
+
+    let query = db.select().from(studentCheckups);
+    let countQuery = db.select({ count: count() }).from(studentCheckups);
+
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions)) as any;
+      countQuery = countQuery.where(and(...conditions)) as any;
+    }
+
+    const [totalResult] = await countQuery;
+    const checkups = await query.orderBy(desc(studentCheckups.createdAt)).limit(limit).offset(offset);
+
+    return { checkups, total: totalResult?.count || 0 };
+  }
+
+  async createStudentCheckup(checkup: InsertStudentCheckup): Promise<StudentCheckup> {
+    const [newCheckup] = await db.insert(studentCheckups).values(checkup as any).returning();
+    return newCheckup;
+  }
+
+  async updateStudentCheckup(id: string, data: Partial<InsertStudentCheckup>): Promise<StudentCheckup | undefined> {
+    // Calculate BMI if height and weight are provided
+    const updateData: any = { ...data };
+    if (data.heightCm && data.weightKg) {
+      const height = parseFloat(data.heightCm.toString());
+      const weight = parseFloat(data.weightKg.toString());
+      if (height > 0) {
+        updateData.bmi = (weight / Math.pow(height / 100, 2)).toFixed(2);
+      }
+    }
+    
+    // Convert Date to string for database storage
+    if (updateData.followUpDate instanceof Date) {
+      updateData.followUpDate = updateData.followUpDate.toISOString().split('T')[0];
+    }
+    
+    updateData.updatedAt = new Date();
+
+    const [updatedCheckup] = await db.update(studentCheckups).set(updateData).where(eq(studentCheckups.id, id)).returning();
+    return updatedCheckup;
+  }
+
+  async createStudentCheckupsForEvent(eventId: string, teamId: string, userContext?: { role: string; schoolId?: string; classSection?: string }): Promise<{ createdCount: number }> {
+    // Get active students based on user context
+    let studentsQuery = db.select({ id: students.id }).from(students).where(eq(students.isActive, true));
+    
+    // For ClassTeacher, only get students from their assigned class and school
+    if (userContext?.role === "ClassTeacher" && userContext.schoolId && userContext.classSection) {
+      studentsQuery = studentsQuery.where(
+        and(
+          eq(students.schoolId, userContext.schoolId),
+          eq(students.classSection, userContext.classSection)
+        )
+      );
+    }
+    
+    const activeStudents = await studentsQuery;
+    
+    // Check if checkups already exist for this event to avoid duplicates
+    const existingCheckups = await db.select({ studentId: studentCheckups.studentId })
+      .from(studentCheckups)
+      .where(eq(studentCheckups.eventId, eventId));
+    
+    const existingStudentIds = new Set(existingCheckups.map(c => c.studentId));
+    
+    // Filter out students who already have checkups for this event
+    const studentsToCreate = activeStudents.filter(s => !existingStudentIds.has(s.id));
+    
+    if (studentsToCreate.length === 0) {
+      return { createdCount: 0 };
+    }
+
+    // Create checkup records for all students
+    const checkupsToInsert = studentsToCreate.map(student => ({
+      studentId: student.id,
+      eventId,
+      teamId,
+      status: "Not started" as const,
+      present: true,
+    }));
+
+    await db.insert(studentCheckups).values(checkupsToInsert);
+    
+    return { createdCount: studentsToCreate.length };
+  }
+}
 
 export const storage = new DatabaseStorage();

@@ -4,7 +4,7 @@ import { storage } from "./storage.js";
 import { reportsStorage } from "./reportsStorage.js";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
-import { insertStudentSchema, insertSchoolSchema, insertAnnualHealthCardSchema, insertMonthlyCheckupSchema, insertMealLogSchema, loginSchema, registerSchema, hostelAttendance, annualHealthCards, users, schools, students, notifications, referrals } from "../shared/schema.js";
+import { insertStudentSchema, insertSchoolSchema, insertAnnualHealthCardSchema, insertMonthlyCheckupSchema, insertMealLogSchema, insertMedicalTeamSchema, insertMedicalTeamMemberSchema, insertMedicalEventSchema, insertStudentCheckupSchema, loginSchema, registerSchema, hostelAttendance, annualHealthCards, users, schools, students, notifications, referrals } from "../shared/schema.js";
 import { z } from "zod";
 import PDFDocument from "pdfkit";
 import ExcelJS from "exceljs";
@@ -2323,6 +2323,31 @@ export async function registerRoutes(
       const { id } = req.params;
       const payload = req.body as any;
 
+      // For ClassTeacher, ensure they can only update students in their assigned class and school
+      if (req.user?.role === "ClassTeacher") {
+        const teacher = await storage.getUser(req.user.id);
+        const student = await storage.getStudent(id);
+        
+        if (!student) {
+          return res.status(404).json({ message: "Student not found" });
+        }
+        
+        // Check if student is in teacher's school
+        if (teacher?.schoolId !== student.schoolId) {
+          return res.status(403).json({ message: "You can only update students in your school" });
+        }
+        
+        // Check if student is in teacher's assigned class
+        if (teacher?.classSection && student.classSection !== teacher.classSection) {
+          return res.status(403).json({ message: "You can only update students in your assigned class" });
+        }
+        
+        // If updating classSection, ensure it's still the teacher's class
+        if (payload.classSection && payload.classSection !== teacher?.classSection) {
+          return res.status(403).json({ message: "You can only assign students to your class" });
+        }
+      }
+
       const updated = await storage.updateStudent(id, payload);
 
       if (!updated) {
@@ -3227,6 +3252,295 @@ export async function registerRoutes(
     } catch (error: any) {
       console.error("Create checkup error:", error?.message || String(error));
       res.status(500).json({ message: error?.message || "Failed to create checkup" });
+    }
+  });
+
+  // Medical Teams API Routes
+  app.get("/api/medical-teams", authenticateToken, authorizeRoles("Admin", "MedicalTeam", "ClassTeacher"), async (req: AuthRequest, res) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 10;
+      
+      const result = await storage.getMedicalTeams(page, limit);
+      res.json(result);
+    } catch (error: any) {
+      console.error("Get medical teams error:", error?.message || String(error));
+      res.status(500).json({ message: error?.message || "Failed to fetch medical teams" });
+    }
+  });
+
+  app.post("/api/medical-teams", authenticateToken, authorizeRoles("Admin", "MedicalTeam", "ClassTeacher"), async (req: AuthRequest, res) => {
+    try {
+      const teamData = insertMedicalTeamSchema.parse(req.body);
+      const team = await storage.createMedicalTeam(teamData);
+      res.status(201).json(team);
+    } catch (error: any) {
+      console.error("Create medical team error:", error?.message || String(error));
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ message: "Invalid input data", errors: error.errors });
+      }
+      res.status(500).json({ message: error?.message || "Failed to create medical team" });
+    }
+  });
+
+  app.get("/api/medical-teams/:id", authenticateToken, authorizeRoles("Admin", "MedicalTeam"), async (req: AuthRequest, res) => {
+    try {
+      const team = await storage.getMedicalTeam(req.params.id);
+      if (!team) {
+        return res.status(404).json({ message: "Medical team not found" });
+      }
+      res.json(team);
+    } catch (error: any) {
+      console.error("Get medical team error:", error?.message || String(error));
+      res.status(500).json({ message: error?.message || "Failed to fetch medical team" });
+    }
+  });
+
+  app.put("/api/medical-teams/:id", authenticateToken, authorizeRoles("Admin", "MedicalTeam"), async (req: AuthRequest, res) => {
+    try {
+      const teamData = insertMedicalTeamSchema.partial().parse(req.body);
+      const team = await storage.updateMedicalTeam(req.params.id, teamData);
+      if (!team) {
+        return res.status(404).json({ message: "Medical team not found" });
+      }
+      res.json(team);
+    } catch (error: any) {
+      console.error("Update medical team error:", error?.message || String(error));
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ message: "Invalid input data", errors: error.errors });
+      }
+      res.status(500).json({ message: error?.message || "Failed to update medical team" });
+    }
+  });
+
+  // Medical Team Members API Routes
+  app.get("/api/medical-teams/:teamId/members", authenticateToken, authorizeRoles("Admin", "MedicalTeam"), async (req: AuthRequest, res) => {
+    try {
+      const members = await storage.getMedicalTeamMembers(req.params.teamId);
+      res.json(members);
+    } catch (error: any) {
+      console.error("Get medical team members error:", error?.message || String(error));
+      res.status(500).json({ message: error?.message || "Failed to fetch medical team members" });
+    }
+  });
+
+  app.post("/api/medical-teams/:teamId/members", authenticateToken, authorizeRoles("Admin", "MedicalTeam", "ClassTeacher"), async (req: AuthRequest, res) => {
+    try {
+      const memberData = insertMedicalTeamMemberSchema.parse({ ...req.body, teamId: req.params.teamId });
+      const member = await storage.createMedicalTeamMember(memberData);
+      res.status(201).json(member);
+    } catch (error: any) {
+      console.error("Create medical team member error:", error?.message || String(error));
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ message: "Invalid input data", errors: error.errors });
+      }
+      res.status(500).json({ message: error?.message || "Failed to create medical team member" });
+    }
+  });
+
+  app.put("/api/medical-team-members/:id", authenticateToken, authorizeRoles("Admin", "MedicalTeam"), async (req: AuthRequest, res) => {
+    try {
+      const memberData = insertMedicalTeamMemberSchema.partial().parse(req.body);
+      const member = await storage.updateMedicalTeamMember(req.params.id, memberData);
+      if (!member) {
+        return res.status(404).json({ message: "Medical team member not found" });
+      }
+      res.json(member);
+    } catch (error: any) {
+      console.error("Update medical team member error:", error?.message || String(error));
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ message: "Invalid input data", errors: error.errors });
+      }
+      res.status(500).json({ message: error?.message || "Failed to update medical team member" });
+    }
+  });
+
+  app.delete("/api/medical-team-members/:id", authenticateToken, authorizeRoles("Admin", "MedicalTeam"), async (req: AuthRequest, res) => {
+    try {
+      await storage.deleteMedicalTeamMember(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      console.error("Delete medical team member error:", error?.message || String(error));
+      res.status(500).json({ message: error?.message || "Failed to delete medical team member" });
+    }
+  });
+
+  // Medical Events API Routes
+  app.get("/api/medical-events", authenticateToken, authorizeRoles("Admin", "MedicalTeam", "ClassTeacher"), async (req: AuthRequest, res) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 10;
+      const teamId = req.query.teamId as string;
+      
+      const result = await storage.getMedicalEvents({ teamId, page, limit });
+      res.json(result);
+    } catch (error: any) {
+      console.error("Get medical events error:", error?.message || String(error));
+      res.status(500).json({ message: error?.message || "Failed to fetch medical events" });
+    }
+  });
+
+  app.post("/api/medical-events", authenticateToken, authorizeRoles("Admin", "MedicalTeam", "ClassTeacher"), async (req: AuthRequest, res) => {
+    try {
+      const eventData = insertMedicalEventSchema.parse({ ...req.body, createdBy: req.user?.id });
+      
+      // Create the event
+      const event = await storage.createMedicalEvent(eventData);
+      
+      // Automatically create student checkup records for students based on user role
+      const userContext = req.user?.role === "ClassTeacher" ? {
+        role: req.user.role,
+        schoolId: req.user.schoolId,
+        classSection: req.user.classSection
+      } : undefined;
+      
+      const { createdCount } = await storage.createStudentCheckupsForEvent(event.id, eventData.teamId, userContext);
+      
+      res.status(201).json({ event, createdCount });
+    } catch (error: any) {
+      console.error("Create medical event error:", error?.message || String(error));
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ message: "Invalid input data", errors: error.errors });
+      }
+      res.status(500).json({ message: error?.message || "Failed to create medical event" });
+    }
+  });
+
+  app.get("/api/medical-events/:id", authenticateToken, authorizeRoles("Admin", "MedicalTeam"), async (req: AuthRequest, res) => {
+    try {
+      const event = await storage.getMedicalEvent(req.params.id);
+      if (!event) {
+        return res.status(404).json({ message: "Medical event not found" });
+      }
+      res.json(event);
+    } catch (error: any) {
+      console.error("Get medical event error:", error?.message || String(error));
+      res.status(500).json({ message: error?.message || "Failed to fetch medical event" });
+    }
+  });
+
+  app.post("/api/medical-events/:id/generate-checkups", authenticateToken, authorizeRoles("Admin", "MedicalTeam"), async (req: AuthRequest, res) => {
+    try {
+      const event = await storage.getMedicalEvent(req.params.id);
+      if (!event) {
+        return res.status(404).json({ message: "Medical event not found" });
+      }
+      
+      const userContext = req.user?.role === "ClassTeacher" ? {
+        role: req.user.role,
+        schoolId: req.user.schoolId,
+        classSection: req.user.classSection
+      } : undefined;
+      
+      const { createdCount } = await storage.createStudentCheckupsForEvent(event.id, event.teamId, userContext);
+      res.json({ createdCount });
+    } catch (error: any) {
+      console.error("Generate checkups error:", error?.message || String(error));
+      res.status(500).json({ message: error?.message || "Failed to generate checkups" });
+    }
+  });
+
+  // Student Checkups API Routes
+  app.get("/api/medical-events/:eventId/checkups", authenticateToken, authorizeRoles("Admin", "MedicalTeam", "ClassTeacher"), async (req: AuthRequest, res) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 10;
+      const status = req.query.status as string;
+      
+      const result = await storage.getStudentCheckups({ 
+        eventId: req.params.eventId, 
+        status, 
+        page, 
+        limit 
+      });
+      
+      // Join with student data for display
+      let checkupsWithStudents = await Promise.all(
+        result.checkups.map(async (checkup) => {
+          const student = await storage.getStudent(checkup.studentId);
+          return { ...checkup, student };
+        })
+      );
+      
+      // For ClassTeacher, filter to only show students from their assigned class and school
+      if (req.user?.role === "ClassTeacher") {
+        const teacher = await storage.getUser(req.user.id);
+        if (teacher?.schoolId && teacher?.classSection) {
+          checkupsWithStudents = checkupsWithStudents.filter(checkup => 
+            checkup.student?.schoolId === teacher.schoolId && 
+            checkup.student?.classSection === teacher.classSection
+          );
+        }
+      }
+      
+      res.json({ checkups: checkupsWithStudents, total: checkupsWithStudents.length });
+    } catch (error: any) {
+      console.error("Get event checkups error:", error?.message || String(error));
+      res.status(500).json({ message: error?.message || "Failed to fetch event checkups" });
+    }
+  });
+
+  app.put("/api/student-checkups/:id", authenticateToken, authorizeRoles("Admin", "MedicalTeam", "ClassTeacher"), async (req: AuthRequest, res) => {
+    try {
+      const checkupData = insertStudentCheckupSchema.partial().parse(req.body);
+      
+      // Get the existing checkup to check if it's completed
+      const existingCheckup = await storage.getStudentCheckup(req.params.id);
+      if (!existingCheckup) {
+        return res.status(404).json({ message: "Student checkup not found" });
+      }
+      
+      // For ClassTeacher, ensure they can only update checkups for students in their assigned class and school
+      if (req.user?.role === "ClassTeacher") {
+        const teacher = await storage.getUser(req.user.id);
+        const student = await storage.getStudent(existingCheckup.studentId);
+        
+        if (!student) {
+          return res.status(404).json({ message: "Student not found" });
+        }
+        
+        // Check if student is in teacher's school and class
+        if (teacher?.schoolId !== student.schoolId) {
+          return res.status(403).json({ message: "You can only update checkups for students in your school" });
+        }
+        
+        if (teacher?.classSection && student.classSection !== teacher.classSection) {
+          return res.status(403).json({ message: "You can only update checkups for students in your assigned class" });
+        }
+        
+        // CRITICAL: Check if checkup is already completed - if so, make it non-editable
+        if (existingCheckup.status === "Completed") {
+          return res.status(403).json({ 
+            message: "This checkup has been completed and is now read-only. Only Medical Teams can modify completed checkups.",
+            isCompleted: true 
+          });
+        }
+      }
+      
+      // Calculate BMI if height and weight are provided
+      let bmi = existingCheckup.bmi;
+      if (checkupData.heightCm && checkupData.weightKg) {
+        const heightM = checkupData.heightCm / 100;
+        bmi = parseFloat((checkupData.weightKg / (heightM * heightM)).toFixed(2));
+      }
+      
+      // Add BMI to update data
+      const updateData = { ...checkupData };
+      if (bmi) {
+        updateData.bmi = bmi;
+      }
+      
+      const checkup = await storage.updateStudentCheckup(req.params.id, updateData);
+      if (!checkup) {
+        return res.status(404).json({ message: "Student checkup not found" });
+      }
+      res.json(checkup);
+    } catch (error: any) {
+      console.error("Update student checkup error:", error?.message || String(error));
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ message: "Invalid input data", errors: error.errors });
+      }
+      res.status(500).json({ message: error?.message || "Failed to update student checkup" });
     }
   });
 
