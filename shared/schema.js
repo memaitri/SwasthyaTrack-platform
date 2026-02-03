@@ -472,6 +472,12 @@ export const mealLogs = pgTable("meal_logs", {
     longitude: decimal("longitude", { precision: 11, scale: 8 }),
     uploadedBy: varchar("uploaded_by"),
     notes: text("notes"),
+    totalCalories: decimal("total_calories", { precision: 8, scale: 2 }),
+    totalProtein: decimal("total_protein", { precision: 8, scale: 2 }),
+    totalFat: decimal("total_fat", { precision: 8, scale: 2 }),
+    totalCarbs: decimal("total_carbs", { precision: 8, scale: 2 }),
+    totalFiber: decimal("total_fiber", { precision: 8, scale: 2 }),
+    nutritionBreakdown: jsonb("nutrition_breakdown"),
     createdAt: timestamp("created_at").defaultNow(),
 });
 export const hostelAttendanceRecorderEnum = ["HostelWarden", "ClassTeacher", "Admin", "Headmaster"];
@@ -508,6 +514,40 @@ export const auditLogs = pgTable("audit_logs", {
     ipAddress: text("ip_address"),
     createdAt: timestamp("created_at").defaultNow(),
 });
+
+export const usageTracking = pgTable("usage_tracking", {
+    id: varchar("id").primaryKey().default(sql `gen_random_uuid()`),
+    sessionId: varchar("session_id").notNull().unique(),
+    ipAddress: text("ip_address"),
+    userAgent: text("user_agent"),
+    userId: varchar("user_id"), // null for anonymous visitors
+    
+    // Page/action tracking
+    pageViews: integer("page_views").default(1),
+    loginAttempts: integer("login_attempts").default(0),
+    successfulLogins: integer("successful_logins").default(0),
+    
+    // Timestamps
+    firstVisit: timestamp("first_visit").defaultNow(),
+    lastActivity: timestamp("last_activity").defaultNow(),
+    sessionDuration: integer("session_duration").default(0), // in seconds
+    
+    // Geographic/device info
+    country: text("country"),
+    city: text("city"),
+    deviceType: text("device_type"), // mobile, desktop, tablet
+    browserName: text("browser_name"),
+    
+    // Referrer information
+    referrer: text("referrer"),
+    utmSource: text("utm_source"),
+    utmMedium: text("utm_medium"),
+    utmCampaign: text("utm_campaign"),
+    
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 export const studentAcademicActions = pgTable("student_academic_actions", {
     id: varchar("id").primaryKey().default(sql `gen_random_uuid()`),
     studentId: varchar("student_id").notNull(),
@@ -991,6 +1031,19 @@ export const insertMonthlyCheckupSchema = createInsertSchema(monthlyCheckups).om
 export const insertMealLogSchema = createInsertSchema(mealLogs).omit({ id: true, createdAt: true }).extend({
     mealType: z.enum(mealTypeEnum),
     menuItems: z.array(z.string()).optional(),
+    totalCalories: z.number().optional(),
+    totalProtein: z.number().optional(),
+    totalFat: z.number().optional(),
+    totalCarbs: z.number().optional(),
+    totalFiber: z.number().optional(),
+    nutritionBreakdown: z.array(z.object({
+        item: z.string(),
+        calories: z.number(),
+        protein: z.number(),
+        fat: z.number(),
+        carbs: z.number(),
+        fiber: z.number(),
+    })).optional(),
 });
 export const insertHostelAttendanceSchema = createInsertSchema(hostelAttendance).omit({ id: true, createdAt: true }).extend({
     recorderRole: z.enum(hostelAttendanceRecorderEnum).optional(),

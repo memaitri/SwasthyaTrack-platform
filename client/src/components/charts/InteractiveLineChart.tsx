@@ -141,9 +141,15 @@ export function InteractiveLineChart({
       data: trendlineData,
       borderColor: 'hsl(var(--muted-foreground))',
       backgroundColor: 'transparent',
-      borderDash: [5, 5],
+      borderWidth: 2,
       pointRadius: 0,
       pointHoverRadius: 0,
+      pointBackgroundColor: 'hsl(var(--muted-foreground))',
+      pointBorderColor: 'hsl(var(--muted-foreground))',
+      pointBorderWidth: 1,
+      pointHoverBackgroundColor: 'hsl(var(--muted-foreground))',
+      pointHoverBorderColor: 'hsl(var(--muted-foreground))',
+      pointHoverBorderWidth: 1,
       tension: 0,
       fill: false,
     });
@@ -180,7 +186,7 @@ export function InteractiveLineChart({
         ticks: {
           font: {
             size: 12,
-            weight: '500',
+            weight: 500,
           },
           color: "hsl(var(--muted-foreground))",
           maxRotation: 45,
@@ -195,7 +201,7 @@ export function InteractiveLineChart({
         ticks: {
           font: {
             size: 12,
-            weight: '500',
+            weight: 500,
           },
           color: "hsl(var(--muted-foreground))",
           padding: 8,
@@ -213,7 +219,7 @@ export function InteractiveLineChart({
           padding: 20,
           font: {
             size: 13,
-            weight: '500',
+            weight: 500,
           },
           color: "hsl(var(--foreground))",
           filter: (legendItem: any) => {
@@ -235,11 +241,11 @@ export function InteractiveLineChart({
         boxPadding: 6,
         titleFont: {
           size: 14,
-          weight: '600',
+          weight: 600,
         },
         bodyFont: {
           size: 13,
-          weight: '500',
+          weight: 500,
         },
         callbacks: {
           title: (tooltipItems: any[]) => {

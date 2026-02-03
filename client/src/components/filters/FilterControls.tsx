@@ -162,15 +162,15 @@ export function FilterControls({
                   District
                 </label>
                 <Select
-                  value={filters.district || ""}
-                  onValueChange={(value) => onFilterChange("district", value || undefined)}
+                  value={filters.district || "all"}
+                  onValueChange={(value) => onFilterChange("district", value === "all" ? undefined : value)}
                   disabled={isLoading}
                 >
                   <SelectTrigger className="h-9">
                     <SelectValue placeholder="All Districts" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All Districts</SelectItem>
+                    <SelectItem value="all">All Districts</SelectItem>
                     {filterOptions.districts.map((district) => (
                       <SelectItem key={district.value} value={district.value}>
                         {district.label}
@@ -188,15 +188,15 @@ export function FilterControls({
                   Block
                 </label>
                 <Select
-                  value={filters.block || ""}
-                  onValueChange={(value) => onFilterChange("block", value || undefined)}
+                  value={filters.block || "all"}
+                  onValueChange={(value) => onFilterChange("block", value === "all" ? undefined : value)}
                   disabled={isLoading}
                 >
                   <SelectTrigger className="h-9">
                     <SelectValue placeholder="All Blocks" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All Blocks</SelectItem>
+                    <SelectItem value="all">All Blocks</SelectItem>
                     {filterOptions.blocks.map((block) => (
                       <SelectItem key={block.value} value={block.value}>
                         {block.label}

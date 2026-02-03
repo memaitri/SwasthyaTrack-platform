@@ -9,6 +9,7 @@ import { BarChart } from "@/components/charts/BarChart";
 import { PieChart } from "@/components/charts/PieChart";
 import { DataTable } from "@/components/dashboard/DataTable";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
+import { generateYearOptions } from "@/lib/dateUtils";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -119,27 +120,51 @@ export default function ClassTeacherDashboard() {
   const [exportFormat, setExportFormat] = useState("csv");
 
   const { data: dashboardData, isLoading } = useQuery<TeacherDashboardData>({
-    queryKey: ["/api/teacher/dashboard", { class_id: user?.classSection }],
+    queryKey: ["/api/teacher/dashboard", selectedMonth, selectedYear, { class_id: user?.classSection }],
     queryFn: async () => {
-      const res = await apiRequest("GET", `/api/teacher/dashboard?class_id=${user?.classSection}`);
+      const params = new URLSearchParams();
+      params.append("month", selectedMonth);
+      params.append("year", selectedYear);
+      if (user?.classSection) {
+        params.append("class_id", user.classSection);
+      }
+      const res = await apiRequest("GET", `/api/teacher/dashboard?${params}`);
       return await res.json();
     },
     enabled: !!user,
   });
 
   const { data: growthTrendsData } = useQuery<GrowthTrendsResponse>({
-    queryKey: ["/api/growth-trends"],
-    queryFn: getQueryFn({ on401: "returnNull" }),
+    queryKey: ["/api/growth-trends", selectedMonth, selectedYear],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      params.append("month", selectedMonth);
+      params.append("year", selectedYear);
+      const res = await apiRequest("GET", `/api/growth-trends?${params}`);
+      return await res.json();
+    },
   });
 
   const { data: vaccinationData } = useQuery({
-    queryKey: ["/api/vaccination-tracking"],
-    queryFn: getQueryFn({ on401: "returnNull" }),
+    queryKey: ["/api/vaccination-tracking", selectedMonth, selectedYear],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      params.append("month", selectedMonth);
+      params.append("year", selectedYear);
+      const res = await apiRequest("GET", `/api/vaccination-tracking?${params}`);
+      return await res.json();
+    },
   });
 
   const { data: alertsData } = useQuery<AlertsData>({
-    queryKey: ["/api/alerts"],
-    queryFn: getQueryFn({ on401: "returnNull" }),
+    queryKey: ["/api/alerts", selectedMonth, selectedYear],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      params.append("month", selectedMonth);
+      params.append("year", selectedYear);
+      const res = await apiRequest("GET", `/api/alerts?${params}`);
+      return await res.json();
+    },
   });
 
   const { data: classHealthSummary } = useQuery<ClassHealthSummary>({
@@ -598,8 +623,8 @@ export default function ClassTeacherDashboard() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {[2024, 2025, 2026].map(year => (
-                  <SelectItem key={year} value={String(year)}>{year}</SelectItem>
+                {generateYearOptions().map(year => (
+                  <SelectItem key={year.value} value={year.value}>{year.label}</SelectItem>
                 ))}
               </SelectContent>
             </Select>

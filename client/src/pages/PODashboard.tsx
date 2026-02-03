@@ -38,7 +38,6 @@ import {
   Thermometer,
   ExternalLink,
 } from "lucide-react";
-import { useLocation } from "wouter";
 import { Badge } from "@/components/ui/badge";
 
 // Type definitions for data structures
@@ -60,8 +59,73 @@ interface BMITrend {
   overweight: number;
 }
 
+// Comprehensive interface for PO Dashboard data
+interface PODashboardData {
+  districtKPIs?: {
+    totalSchools?: number;
+    totalStudentsScreened?: number;
+    [key: string]: any;
+  };
+  referralHeatmap?: Record<string, any>;
+  anthropometryAnalytics?: Record<string, any>;
+  deficienciesInsights?: Record<string, any>;
+  deficienciesHeatmap?: Record<string, any>;
+  diseasesInsights?: Record<string, any>;
+  leprosyAnalytics?: Record<string, any>;
+  tbAnalytics?: Record<string, any>;
+  adolescentHealth?: {
+    adolescentCardCount?: number;
+    totalAdolescents?: number;
+    [key: string]: any;
+  };
+  referralManagement?: Record<string, any>;
+  complianceAnalytics?: Record<string, any>;
+  alerts?: Record<string, any>;
+  menstrualHealthAnalytics?: {
+    totalEligibleStudents?: number;
+    totalTrackedStudents?: number;
+    lateMenstruationCases?: Array<{
+      delayDays?: number;
+      [key: string]: any;
+    }>;
+    referralAnalysis?: {
+      total?: number;
+      byFacility?: Record<string, number>;
+      [key: string]: any;
+    };
+    monthlyTrend?: Array<{
+      month: string;
+      count: number;
+      [key: string]: any;
+    }>;
+    cycleRegularity?: {
+      regular?: number;
+      irregular?: number;
+      unknown?: number;
+      [key: string]: any;
+    };
+    ageWiseAnalysis?: {
+      irregularityRates?: Record<string, string | number>;
+      [key: string]: any;
+    };
+    symptomAnalysis?: {
+      symptoms?: Array<{
+        [key: string]: any;
+      }>;
+      moods?: Array<{
+        [key: string]: any;
+      }>;
+      [key: string]: any;
+    };
+    [key: string]: any;
+  };
+  [key: string]: any;
+}
+
 export default function PODashboard() {
    const [activeTab, setActiveTab] = useState("overview");
+   const [heatmapStatus, setHeatmapStatus] = useState<string | 'all'>('all');
+   const [heatmapCategory, setHeatmapCategory] = useState<string | 'all'>('all');
 
    // Use the new filtering system
    const {
@@ -189,36 +253,129 @@ export default function PODashboard() {
     }
   };
 
-  const { data: dashboardData, isLoading, refetch } = useQuery({
+  const { data: dashboardData, isLoading, error, refetch } = useQuery<PODashboardData>({
     queryKey,
     queryFn: async () => {
-      const params = buildParams();
-      const res = await apiRequest("GET", `/api/po/dashboard?${params}`);
-      return res.json();
+      try {
+        const params = buildParams();
+        const res = await apiRequest("GET", `/api/po/dashboard?${params}`);
+        
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+        }
+        
+        const data = await res.json();
+        
+        // Validate that we received the expected data structure
+        if (!data || typeof data !== 'object') {
+          throw new Error('Invalid response format from server');
+        }
+        
+        // Log successful data fetch for debugging
+        console.log('PO Dashboard data fetched successfully:', {
+          districtKPIs: !!data.districtKPIs,
+          totalSchools: data.districtKPIs?.totalSchools || 0,
+          totalStudents: data.districtKPIs?.totalStudentsScreened || 0,
+          diseasesInsights: !!data.diseasesInsights,
+          adolescentHealth: !!data.adolescentHealth,
+          menstrualHealthAnalytics: !!data.menstrualHealthAnalytics,
+        });
+        
+        return data;
+      } catch (error) {
+        console.error('Error fetching PO dashboard data:', error);
+        throw error;
+      }
     },
+    retry: 3,
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes
   });
 
   // Defensive: if diseases/adolescent data missing, attempt a refetch and log for debugging
   // This helps in transient cases and surfaces missing-data issues in logs
   useEffect(() => {
-    if (!isLoading && dashboardData) {
+    if (!isLoading && dashboardData && !error) {
       const hasDiseases = dashboardData.diseasesInsights && Object.keys(dashboardData.diseasesInsights || {}).length > 0;
       const hasAdolescent = dashboardData.adolescentHealth && ((dashboardData.adolescentHealth.adolescentCardCount || 0) > 0 || (dashboardData.adolescentHealth.totalAdolescents || 0) > 0);
-      if (!hasDiseases || !hasAdolescent) {
-        console.warn("PODashboard: diseasesInsights or adolescentHealth appear empty; triggering refetch to attempt recovery", { hasDiseases, hasAdolescent, keys: Object.keys(dashboardData || {}) });
-        // Try a lightweight refetch once
-        refetch().catch((err) => {
-          console.warn("PODashboard: refetch failed:", err);
+      const hasDistrictKPIs = dashboardData.districtKPIs && (dashboardData.districtKPIs.totalStudentsScreened || 0) > 0;
+      
+      if (!hasDiseases || !hasAdolescent || !hasDistrictKPIs) {
+        console.warn("PODashboard: Some data sections appear empty; this may indicate:", { 
+          hasDiseases, 
+          hasAdolescent, 
+          hasDistrictKPIs,
+          totalSchools: dashboardData.districtKPIs?.totalSchools || 0,
+          totalStudents: dashboardData.districtKPIs?.totalStudentsScreened || 0,
+          keys: Object.keys(dashboardData || {}) 
         });
+        
+        // Only refetch once to avoid infinite loops
+        if (!sessionStorage.getItem('po-dashboard-refetch-attempted')) {
+          sessionStorage.setItem('po-dashboard-refetch-attempted', 'true');
+          console.log("Attempting one-time refetch to recover missing data...");
+          refetch().catch((err) => {
+            console.warn("PODashboard: refetch failed:", err);
+          });
+        }
+      } else {
+        // Clear the refetch flag on successful data load
+        sessionStorage.removeItem('po-dashboard-refetch-attempted');
       }
     }
-  }, [isLoading, dashboardData, refetch]);
+  }, [isLoading, dashboardData, error, refetch]);
+
+  // Handle error state
+  if (error) {
+    return (
+      <AppLayout title="PO Dashboard - District Health Intelligence">
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="text-center space-y-4">
+            <div className="text-red-500 text-lg font-semibold">
+              Failed to load dashboard data
+            </div>
+            <div className="text-muted-foreground">
+              {error instanceof Error ? error.message : 'An unexpected error occurred'}
+            </div>
+            <Button onClick={() => refetch()} variant="outline">
+              Try Again
+            </Button>
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  // Handle loading state
+  if (isLoading) {
+    return (
+      <AppLayout title="PO Dashboard - District Health Intelligence">
+        <div className="space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <h2 className="text-2xl font-bold text-foreground">District Health Intelligence - Summary View</h2>
+              <p className="text-muted-foreground">Program Officer Dashboard - SwasthyaTrack (Loading...)</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+            {[...Array(6)].map((_, i) => (
+              <div key={i} className="h-24 bg-muted animate-pulse rounded-lg"></div>
+            ))}
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="h-64 bg-muted animate-pulse rounded-lg"></div>
+            ))}
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
 
   // Extract comprehensive data from the new backend response
   const districtKPIs = dashboardData?.districtKPIs || {};
   const referralHeatmap = dashboardData?.referralHeatmap || {};
-  const [heatmapStatus, setHeatmapStatus] = useState<string | 'all'>('all');
-  const [heatmapCategory, setHeatmapCategory] = useState<string | 'all'>('all');
   const anthropometryAnalytics = dashboardData?.anthropometryAnalytics || {};
   const deficienciesInsights = dashboardData?.deficienciesInsights || {};
   const deficienciesHeatmap = dashboardData?.deficienciesHeatmap || {};
@@ -1353,9 +1510,9 @@ export default function PODashboard() {
                       <PieChart
                         labels={['Regular', 'Irregular', 'Unknown']}
                         data={[
-                          dashboardData.menstrualHealthAnalytics.cycleRegularity.regular,
-                          dashboardData.menstrualHealthAnalytics.cycleRegularity.irregular,
-                          dashboardData.menstrualHealthAnalytics.cycleRegularity.unknown
+                          dashboardData.menstrualHealthAnalytics.cycleRegularity.regular || 0,
+                          dashboardData.menstrualHealthAnalytics.cycleRegularity.irregular || 0,
+                          dashboardData.menstrualHealthAnalytics.cycleRegularity.unknown || 0
                         ]}
                         backgroundColor={['#10b981', '#f59e0b', '#6b7280']}
                       />

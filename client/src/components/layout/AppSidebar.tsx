@@ -44,6 +44,7 @@ const roleMenuItems = {
     { title: "Dashboard", url: "/", icon: LayoutDashboard },
     { title: "Schools", url: "/schools", icon: School },
     { title: "Students", url: "/students", icon: Users },
+    { title: "Approvals", url: "/approvals", icon: ClipboardList },
     { title: "Hostel Attendance", url: "/hostel", icon: Home },
     { title: "Reports", url: "/reports", icon: FileText },
   ],
@@ -51,6 +52,7 @@ const roleMenuItems = {
     { title: "Dashboard", url: "/", icon: LayoutDashboard },
     { title: "Students", url: "/students", icon: Users },
     { title: "Health Cards", url: "/health-cards", icon: FileHeart },
+    { title: "Hostel Attendance", url: "/hostel", icon: Home },
     { title: "Approvals", url: "/approvals", icon: ClipboardList },
     { title: "Reports", url: "/reports", icon: FileText },
   ],
@@ -59,6 +61,7 @@ const roleMenuItems = {
     { title: "My Students", url: "/students", icon: Users },
     { title: "Health Cards", url: "/health-cards", icon: FileHeart },
     { title: "Monthly Checkups", url: "/checkups", icon: Stethoscope },
+    { title: "Hostel Attendance", url: "/hostel", icon: Home },
   ],
   MedicalTeam: [
     { title: "Dashboard", url: "/", icon: LayoutDashboard },
@@ -72,10 +75,12 @@ const roleMenuItems = {
   MealSuperintendent: [
     { title: "Dashboard", url: "/", icon: LayoutDashboard },
     { title: "Meals", url: "/meals", icon: UtensilsCrossed },
+    { title: "Hostel Attendance", url: "/hostel", icon: Home },
   ],
   "Lady Superintendent": [
     { title: "Dashboard", url: "/", icon: LayoutDashboard },
     { title: "Period Tracker", url: "/period-tracker", icon: Calendar },
+    { title: "Hostel Attendance", url: "/hostel", icon: Home },
   ],
 };
 

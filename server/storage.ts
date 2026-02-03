@@ -139,12 +139,15 @@ export interface IStorage {
     eventId?: string;
     studentId?: string;
     status?: string;
+    month?: number;
+    year?: number;
     page?: number;
     limit?: number;
   }): Promise<{ checkups: StudentCheckup[]; total: number }>;
+  getStudentCheckupByMonthYear(studentId: string, eventId: string, month: number, year: number): Promise<StudentCheckup | undefined>;
   createStudentCheckup(checkup: InsertStudentCheckup): Promise<StudentCheckup>;
   updateStudentCheckup(id: string, data: Partial<InsertStudentCheckup>): Promise<StudentCheckup | undefined>;
-  createStudentCheckupsForEvent(eventId: string, teamId: string, userContext?: { role: string; schoolId?: string; classSection?: string }): Promise<{ createdCount: number }>;
+  createStudentCheckupsForEvent(eventId: string, teamId: string, userContext?: { role: string; schoolId?: string; classSection?: string }, month?: number, year?: number): Promise<{ createdCount: number }>;
 
   getMealLog(id: string): Promise<MealLog | undefined>;
   getMealLogs(params?: {
@@ -677,14 +680,42 @@ export class DatabaseStorage implements IStorage {
     const insert = { ...log } as any;
     if (insert.mealType) insert.mealType = String(insert.mealType).toLowerCase();
 
+    // Calculate nutrition if menuItems are provided
+    if (insert.menuItems && Array.isArray(insert.menuItems)) {
+      const { calculateMealNutrition } = await import("../lib/nutritionData.js");
+      const nutrition = calculateMealNutrition(insert.menuItems);
+      
+      insert.totalCalories = nutrition.totalCalories;
+      insert.totalProtein = nutrition.totalProtein;
+      insert.totalFat = nutrition.totalFat;
+      insert.totalCarbs = nutrition.totalCarbs;
+      insert.totalFiber = nutrition.totalFiber;
+      insert.nutritionBreakdown = nutrition.itemBreakdown;
+    }
+
     const [newLog] = await db.insert(mealLogs).values(insert).returning();
     return newLog;
   }
 
   async updateMealLog(id: string, data: Partial<InsertMealLog>): Promise<MealLog | undefined> {
+    const updateData = { ...data as any };
+    
+    // Calculate nutrition if menuItems are being updated
+    if (updateData.menuItems && Array.isArray(updateData.menuItems)) {
+      const { calculateMealNutrition } = await import("../lib/nutritionData.js");
+      const nutrition = calculateMealNutrition(updateData.menuItems);
+      
+      updateData.totalCalories = nutrition.totalCalories;
+      updateData.totalProtein = nutrition.totalProtein;
+      updateData.totalFat = nutrition.totalFat;
+      updateData.totalCarbs = nutrition.totalCarbs;
+      updateData.totalFiber = nutrition.totalFiber;
+      updateData.nutritionBreakdown = nutrition.itemBreakdown;
+    }
+
     const [updatedLog] = await db
       .update(mealLogs)
-      .set({ ...data as any })
+      .set(updateData)
       .where(eq(mealLogs.id, id))
       .returning();
     return updatedLog;
@@ -2222,16 +2253,20 @@ export class DatabaseStorage implements IStorage {
     eventId?: string;
     studentId?: string;
     status?: string;
+    month?: number;
+    year?: number;
     page?: number;
     limit?: number;
   }): Promise<{ checkups: StudentCheckup[]; total: number }> {
-    const { eventId, studentId, status, page = 1, limit = 10 } = params || {};
+    const { eventId, studentId, status, month, year, page = 1, limit = 10 } = params || {};
     const offset = (page - 1) * limit;
 
     const conditions = [];
     if (eventId) conditions.push(eq(studentCheckups.eventId, eventId));
     if (studentId) conditions.push(eq(studentCheckups.studentId, studentId));
     if (status) conditions.push(eq(studentCheckups.status, status as any));
+    if (month) conditions.push(eq(studentCheckups.checkupMonth, month));
+    if (year) conditions.push(eq(studentCheckups.checkupYear, year));
 
     let query = db.select().from(studentCheckups);
     let countQuery = db.select({ count: count() }).from(studentCheckups);
@@ -2250,6 +2285,19 @@ export class DatabaseStorage implements IStorage {
   async createStudentCheckup(checkup: InsertStudentCheckup): Promise<StudentCheckup> {
     const [newCheckup] = await db.insert(studentCheckups).values(checkup as any).returning();
     return newCheckup;
+  }
+
+  async getStudentCheckupByMonthYear(studentId: string, eventId: string, month: number, year: number): Promise<StudentCheckup | undefined> {
+    const [checkup] = await db.select()
+      .from(studentCheckups)
+      .where(and(
+        eq(studentCheckups.studentId, studentId),
+        eq(studentCheckups.eventId, eventId),
+        eq(studentCheckups.checkupMonth, month),
+        eq(studentCheckups.checkupYear, year)
+      ))
+      .limit(1);
+    return checkup;
   }
 
   async updateStudentCheckup(id: string, data: Partial<InsertStudentCheckup>): Promise<StudentCheckup | undefined> {
@@ -2274,41 +2322,50 @@ export class DatabaseStorage implements IStorage {
     return updatedCheckup;
   }
 
-  async createStudentCheckupsForEvent(eventId: string, teamId: string, userContext?: { role: string; schoolId?: string; classSection?: string }): Promise<{ createdCount: number }> {
+  async createStudentCheckupsForEvent(eventId: string, teamId: string, userContext?: { role: string; schoolId?: string; classSection?: string }, month?: number, year?: number): Promise<{ createdCount: number }> {
+    const currentMonth = month || new Date().getMonth() + 1;
+    const currentYear = year || new Date().getFullYear();
+    
     // Get active students based on user context
-    let studentsQuery = db.select({ id: students.id }).from(students).where(eq(students.isActive, true));
+    let conditions = [eq(students.isActive, true)];
     
     // For ClassTeacher, only get students from their assigned class and school
     if (userContext?.role === "ClassTeacher" && userContext.schoolId && userContext.classSection) {
-      studentsQuery = studentsQuery.where(
-        and(
-          eq(students.schoolId, userContext.schoolId),
-          eq(students.classSection, userContext.classSection)
-        )
+      conditions.push(
+        eq(students.schoolId, userContext.schoolId),
+        eq(students.classSection, userContext.classSection)
       );
     }
     
-    const activeStudents = await studentsQuery;
+    const activeStudents = await db.select({ id: students.id })
+      .from(students)
+      .where(and(...conditions));
     
-    // Check if checkups already exist for this event to avoid duplicates
+    // Check if checkups already exist for this event/month/year to avoid duplicates
     const existingCheckups = await db.select({ studentId: studentCheckups.studentId })
       .from(studentCheckups)
-      .where(eq(studentCheckups.eventId, eventId));
+      .where(and(
+        eq(studentCheckups.eventId, eventId),
+        eq(studentCheckups.checkupMonth, currentMonth),
+        eq(studentCheckups.checkupYear, currentYear)
+      ));
     
     const existingStudentIds = new Set(existingCheckups.map(c => c.studentId));
     
-    // Filter out students who already have checkups for this event
+    // Filter out students who already have checkups for this event/month/year
     const studentsToCreate = activeStudents.filter(s => !existingStudentIds.has(s.id));
     
     if (studentsToCreate.length === 0) {
       return { createdCount: 0 };
     }
 
-    // Create checkup records for all students
+    // Create checkup records for all students with month/year
     const checkupsToInsert = studentsToCreate.map(student => ({
       studentId: student.id,
       eventId,
       teamId,
+      checkupMonth: currentMonth,
+      checkupYear: currentYear,
       status: "Not started" as const,
       present: true,
     }));

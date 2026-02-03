@@ -26,8 +26,8 @@ describe('PO Dashboard disease and adolescent data', () => {
     const jwt = require('jsonwebtoken');
     poToken = jwt.sign({ id: poUser.id, username: poUser.username, role: poUser.role }, secret, { expiresIn: '1h' });
 
-    school = await storage.createSchool({ name: 'PO Test School', district: 'D-TEST', schoolType: 'Government' } as any);
-    student = await storage.createStudent({ fullName: 'Adol Student', uniqueId: `AS-${Date.now()}`, gender: 'F', classSection: '9-A', schoolId: school.id, dateOfBirth: new Date('2010-06-01') } as any);
+    school = await storage.createSchool({ name: 'PO Test School', district: 'D-TEST', region: 'Test Region', block: 'Test Block', schoolType: 'Government' } as any);
+    student = await storage.createStudent({ fullName: 'Adol Student', uniqueId: `AS-${Date.now()}`, gender: 'F', classSection: '9-A', schoolId: school.id, dateOfBirth: new Date('2010-06-01'), schoolAdmissionDate: new Date('2020-06-01') } as any);
 
     // Create an annual health card with TB and adolescent flags
     card = await storage.createAnnualHealthCard({
@@ -115,13 +115,13 @@ describe('PO Dashboard disease and adolescent data', () => {
   it('returns exact counts for sample disease and adolescent scenario', async () => {
     // Seed leprosy cases (3) with no completed referrals
     for (let i = 0; i < 3; i++) {
-      const s = await storage.createStudent({ fullName: `Leprosy ${i} ${Date.now()}`, uniqueId: `L-${Date.now()}-${i}`, gender: 'M', classSection: '3-A', schoolId: school.id, dateOfBirth: new Date('2016-01-01') } as any);
+      const s = await storage.createStudent({ fullName: `Leprosy ${i} ${Date.now()}`, uniqueId: `L-${Date.now()}-${i}`, gender: 'M', classSection: '3-A', schoolId: school.id, dateOfBirth: new Date('2016-01-01'), schoolAdmissionDate: new Date('2020-01-01') } as any);
       await storage.createAnnualHealthCard({ studentId: s.id, schoolId: school.id, year: new Date().getFullYear(), nameOfChild: s.fullName, classSection: s.classSection, gender: s.gender, c7_suspected: true } as any);
     }
 
     // Seed TB cases (7) with 3 completed referrals and symptoms distribution
     for (let i = 0; i < 7; i++) {
-      const s = await storage.createStudent({ fullName: `TB ${i} ${Date.now()}`, uniqueId: `T-${Date.now()}-${i}`, gender: 'M', classSection: '4-A', schoolId: school.id, dateOfBirth: new Date('2016-01-01') } as any);
+      const s = await storage.createStudent({ fullName: `TB ${i} ${Date.now()}`, uniqueId: `T-${Date.now()}-${i}`, gender: 'M', classSection: '4-A', schoolId: school.id, dateOfBirth: new Date('2016-01-01'), schoolAdmissionDate: new Date('2020-01-01') } as any);
       const symptoms: any = {};
       if (i < 6) symptoms.persistent_cough = true; // 6
       if (i < 5) symptoms.fever = true; // 5

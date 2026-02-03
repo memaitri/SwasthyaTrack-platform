@@ -2,6 +2,7 @@ import { X } from "lucide-react";
 import { useEffect } from "react";
 import { motion } from "framer-motion";
 import { ModuleCard } from "./ModuleCard";
+import { getCurrentYear } from "@/lib/dateUtils";
 
 interface AboutModalProps {
   isOpen: boolean;
@@ -221,7 +222,7 @@ export function AboutModal({ isOpen, onClose }: AboutModalProps) {
                         </div>
                         <div>
                           <dt className="text-sm font-medium text-gray-500">Academic Year</dt>
-                          <dd className="text-lg text-gray-900">2024-2025</dd>
+                          <dd className="text-lg text-gray-900">{getCurrentYear()}-{getCurrentYear() + 1}</dd>
                         </div>
                       </dl>
                     </div>

@@ -108,7 +108,7 @@ export { app };
     }
 
     // --- Mount all API routes ---
-    let registerRoutes: typeof import("./routes").registerRoutes;
+    let registerRoutes: typeof import("./routes.js").registerRoutes;
     if (process.env.NODE_ENV === "production") {
       // Load compiled JS in production (routes.js will be in same directory as index.js)
       registerRoutes = (await import("./routes.js")).registerRoutes;

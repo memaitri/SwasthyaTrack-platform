@@ -192,7 +192,7 @@ function Router() {
       </Route>
 
       <Route path="/approvals">
-        <ProtectedRoute allowedRoles={["Headmaster", "Admin"]}>
+        <ProtectedRoute allowedRoles={["Headmaster", "Admin", "PO"]}>
           <ApprovalsPage />
         </ProtectedRoute>
       </Route>
@@ -252,31 +252,31 @@ function Router() {
       </Route>
 
       <Route path="/hostel">
-        <ProtectedRoute allowedRoles={["PO", "Admin", "HostelWarden"]}>
+        <ProtectedRoute allowedRoles={["PO", "Admin", "HostelWarden", "ClassTeacher", "Headmaster", "Lady Superintendent", "MealSuperintendent"]}>
           <HostelAttendancePage />
         </ProtectedRoute>
       </Route>
 
       <Route path="/hostel/students">
-        <ProtectedRoute allowedRoles={["HostelWarden", "Admin"]}>
+        <ProtectedRoute allowedRoles={["HostelWarden", "Admin", "ClassTeacher", "Headmaster", "Lady Superintendent", "MealSuperintendent"]}>
           <HostelAttendancePage />
         </ProtectedRoute>
       </Route>
 
       <Route path="/hostel/attendance">
-        <ProtectedRoute allowedRoles={["HostelWarden", "Admin"]}>
+        <ProtectedRoute allowedRoles={["HostelWarden", "Admin", "ClassTeacher", "Headmaster", "Lady Superintendent", "MealSuperintendent"]}>
           <HostelAttendancePage />
         </ProtectedRoute>
       </Route>
 
       <Route path="/hostel/vacation">
-        <ProtectedRoute allowedRoles={["HostelWarden", "Admin"]}>
+        <ProtectedRoute allowedRoles={["HostelWarden", "Admin", "ClassTeacher", "Headmaster", "Lady Superintendent", "MealSuperintendent"]}>
           <HostelAttendancePage />
         </ProtectedRoute>
       </Route>
 
       <Route path="/hostel/check-in">
-        <ProtectedRoute allowedRoles={["HostelWarden", "Admin"]}>
+        <ProtectedRoute allowedRoles={["HostelWarden", "Admin", "ClassTeacher", "Headmaster", "Lady Superintendent", "MealSuperintendent"]}>
           <HostelAttendancePage />
         </ProtectedRoute>
       </Route>

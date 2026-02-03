@@ -7,6 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { getBMIColor, getBMIBgColor, getBMIClassificationLabel } from "@/lib/bmiColors";
 import { REFERRAL_FACILITY_OPTIONS } from "@/lib/referralFacilities";
+import { generateYearOptions, generateMonthOptions, getCurrentYear, getCurrentMonth, getMonthName } from "@/lib/dateUtils";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { DataTable } from "@/components/dashboard/DataTable";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
@@ -59,10 +60,12 @@ const checkupFormSchema = z.object({
   notes: z.string().optional(),
 });
 
-// Schema for event-driven checkups with referral dropdown
+// Schema for event-driven checkups with referral dropdown and month/year fields
 const eventCheckupFormSchema = z.object({
   status: z.enum(["Not started", "In progress", "Completed"]),
   present: z.boolean().default(true),
+  checkupMonth: z.number().min(1).max(12),
+  checkupYear: z.number().min(2020).max(2050),
   heightCm: z.number().min(30).max(250).optional(),
   weightKg: z.number().min(1).max(200).optional(),
   temperatureC: z.number().min(35).max(42).optional(),
@@ -80,14 +83,14 @@ const eventCheckupFormSchema = z.object({
   notes: z.string().optional(),
 });
 
-type CheckupForm = z.infer<typeof checkupFormSchema>;
+type CheckupFormData = z.infer<typeof checkupFormSchema>;
 type EventCheckupForm = z.infer<typeof eventCheckupFormSchema>;
 
 function CheckupList() {
   const { user } = useAuth();
   const [page, setPage] = useState(1);
-  const [monthFilter, setMonthFilter] = useState(String(new Date().getMonth() + 1));
-  const [yearFilter, setYearFilter] = useState(String(new Date().getFullYear()));
+  const [monthFilter, setMonthFilter] = useState(String(getCurrentMonth()));
+  const [yearFilter, setYearFilter] = useState(String(getCurrentYear()));
   const [exportFormat, setExportFormat] = useState("csv");
 
   const { data, isLoading } = useQuery({
@@ -97,10 +100,7 @@ function CheckupList() {
       params.append("page", page.toString());
       params.append("month", monthFilter);
       params.append("year", yearFilter);
-      const res = await fetch(`/api/monthly-checkups?${params}`, {
-        headers: { "Authorization": `Bearer ${localStorage.getItem("accessToken")}` },
-      });
-      if (!res.ok) throw new Error("Failed to fetch checkups");
+      const res = await apiRequest("GET", `/api/monthly-checkups?${params}`);
       return res.json();
     },
   });
@@ -111,6 +111,10 @@ function CheckupList() {
 
   // Check if user is ClassTeacher - if so, make this view read-only
   const isClassTeacher = user?.role === "ClassTeacher";
+
+  // Generate dynamic year options
+  const yearOptions = generateYearOptions();
+  const monthOptions = generateMonthOptions();
 
   return (
     <div className="space-y-6">
@@ -123,23 +127,13 @@ function CheckupList() {
               : "Individual checkups recorded by class teachers"
             }
           </p>
-          {isClassTeacher && (
-            <div className="flex items-center gap-2 mt-2 p-2 bg-blue-50 rounded-md">
-              <AlertTriangle className="h-4 w-4 text-blue-600" />
-              <span className="text-sm text-blue-700">
-                Class Teachers can only view checkup records. Use Medical Team Events tab for new checkups.
-              </span>
-            </div>
-          )}
         </div>
-        {!isClassTeacher && (
-          <Link href="/checkups/new">
-            <Button data-testid="button-new-checkup">
-              <Plus className="h-4 w-4 mr-2" />
-              New Checkup
-            </Button>
-          </Link>
-        )}
+        <Link href="/checkups/new">
+          <Button data-testid="button-new-checkup">
+            <Plus className="h-4 w-4 mr-2" />
+            New Checkup
+          </Button>
+        </Link>
       </div>
 
       <div className="flex flex-wrap gap-4">
@@ -148,8 +142,8 @@ function CheckupList() {
             <SelectValue placeholder="Month" />
           </SelectTrigger>
           <SelectContent>
-            {["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"].map((month, i) => (
-              <SelectItem key={i} value={String(i + 1)}>{month}</SelectItem>
+            {monthOptions.map((month) => (
+              <SelectItem key={month.value} value={month.value}>{month.label}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -158,9 +152,12 @@ function CheckupList() {
             <SelectValue placeholder="Year" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="2025">2025</SelectItem>
-            <SelectItem value="2024">2024</SelectItem>
-            <SelectItem value="2023">2023</SelectItem>
+            {yearOptions.map((year) => (
+              <SelectItem key={year.value} value={year.value}>
+                {year.label}
+                {year.isCurrent && <span className="ml-1 text-xs text-primary">(Current)</span>}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
         <Select value={exportFormat} onValueChange={setExportFormat}>
@@ -275,12 +272,7 @@ function CheckupList() {
             params.append("month", monthFilter);
             params.append("year", yearFilter);
 
-            const token = localStorage.getItem("accessToken");
-            const response = await fetch(`/api/reports/monthly-checkup?${params.toString()}`, {
-              headers: {
-                Authorization: `Bearer ${token}`,
-              },
-            });
+            const response = await apiRequest("GET", `/api/reports/monthly-checkup?${params.toString()}`);
 
             if (!response.ok) {
               const errorData = await response.json().catch(() => ({ message: "Failed to generate report" }));
@@ -322,14 +314,32 @@ function EventCheckups() {
   const [isCreateEventDialogOpen, setIsCreateEventDialogOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [selectedMonth, setSelectedMonth] = useState(getCurrentMonth());
+  const [selectedYear, setSelectedYear] = useState(getCurrentYear());
   const { toast } = useToast();
+
+  // Add error boundary
+  const [hasError, setHasError] = useState(false);
+
+  useEffect(() => {
+    const handleError = (error: any) => {
+      console.error('EventCheckups error:', error);
+      setHasError(true);
+    };
+
+    window.addEventListener('error', handleError);
+    return () => window.removeEventListener('error', handleError);
+  }, []);
 
   const checkupForm = useForm<EventCheckupForm>({
     resolver: zodResolver(eventCheckupFormSchema),
     defaultValues: {
       status: "Not started",
       present: true,
+      checkupMonth: getCurrentMonth(),
+      checkupYear: getCurrentYear(),
       followUpRequired: false,
+      referredTo: "none",
     },
   });
 
@@ -349,45 +359,51 @@ function EventCheckups() {
       location: "",
       teamId: "",
       notes: "",
+      month: getCurrentMonth(),
+      year: getCurrentYear(),
     },
   });
 
   // Fetch medical teams
-  const { data: teamsData, isLoading: teamsLoading } = useQuery({
+  const { data: teamsData, isLoading: teamsLoading, error: teamsError } = useQuery({
     queryKey: ["/api/medical-teams"],
     queryFn: async () => {
-      const res = await fetch("/api/medical-teams", {
-        headers: { "Authorization": `Bearer ${localStorage.getItem("accessToken")}` },
-      });
-      if (!res.ok) throw new Error("Failed to fetch medical teams");
+      const res = await apiRequest("GET", "/api/medical-teams");
       return res.json();
     },
+    retry: 3,
+    retryDelay: 1000,
   });
 
   // Fetch medical events
-  const { data: eventsData, isLoading: eventsLoading } = useQuery({
+  const { data: eventsData, isLoading: eventsLoading, error: eventsError } = useQuery({
     queryKey: ["/api/medical-events"],
     queryFn: async () => {
-      const res = await fetch("/api/medical-events", {
-        headers: { "Authorization": `Bearer ${localStorage.getItem("accessToken")}` },
-      });
-      if (!res.ok) throw new Error("Failed to fetch medical events");
+      const res = await apiRequest("GET", "/api/medical-events");
       return res.json();
     },
+    retry: 3,
+    retryDelay: 1000,
+  });
+
+  // Fetch student checkups for selected event with month/year filtering
+  const { data: checkupsData, isLoading: checkupsLoading } = useQuery({
+    queryKey: ["/api/medical-events", selectedEvent?.id, "checkups", selectedMonth, selectedYear],
+    queryFn: async () => {
+      if (!selectedEvent) return { checkups: [], total: 0 };
+      const params = new URLSearchParams();
+      params.append("month", selectedMonth.toString());
+      params.append("year", selectedYear.toString());
+      const res = await apiRequest("GET", `/api/medical-events/${selectedEvent.id}/checkups?${params}`);
+      return res.json();
+    },
+    enabled: !!selectedEvent,
   });
 
   // Create team mutation
   const createTeamMutation = useMutation({
     mutationFn: async (teamData: any) => {
-      const res = await fetch("/api/medical-teams", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${localStorage.getItem("accessToken")}`,
-        },
-        body: JSON.stringify(teamData),
-      });
-      if (!res.ok) throw new Error("Failed to create medical team");
+      const res = await apiRequest("POST", "/api/medical-teams", teamData);
       return res.json();
     },
     onSuccess: (team) => {
@@ -400,14 +416,7 @@ function EventCheckups() {
       const members = teamForm.getValues("members");
       members.forEach(async (member: any) => {
         if (member.fullName && member.designation && member.phone) {
-          await fetch(`/api/medical-teams/${team.id}/members`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${localStorage.getItem("accessToken")}`,
-            },
-            body: JSON.stringify(member),
-          });
+          await apiRequest("POST", `/api/medical-teams/${team.id}/members`, member);
         }
       });
     },
@@ -419,15 +428,11 @@ function EventCheckups() {
   // Create event mutation
   const createEventMutation = useMutation({
     mutationFn: async (eventData: any) => {
-      const res = await fetch("/api/medical-events", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${localStorage.getItem("accessToken")}`,
-        },
-        body: JSON.stringify(eventData),
+      const res = await apiRequest("POST", "/api/medical-events", {
+        ...eventData,
+        month: selectedMonth,
+        year: selectedYear,
       });
-      if (!res.ok) throw new Error("Failed to create medical event");
       return res.json();
     },
     onSuccess: (result) => {
@@ -436,7 +441,7 @@ function EventCheckups() {
       eventForm.reset();
       toast({ 
         title: "Success", 
-        description: `Medical event created with ${result.createdCount} student checkups generated` 
+        description: `Medical event created with ${result.createdCount} student checkups generated for ${getMonthName(selectedMonth)} ${selectedYear}` 
       });
     },
     onError: (error: any) => {
@@ -444,32 +449,10 @@ function EventCheckups() {
     },
   });
 
-  // Fetch student checkups for selected event
-  const { data: checkupsData, isLoading: checkupsLoading } = useQuery({
-    queryKey: ["/api/medical-events", selectedEvent?.id, "checkups"],
-    queryFn: async () => {
-      if (!selectedEvent) return { checkups: [], total: 0 };
-      const res = await fetch(`/api/medical-events/${selectedEvent.id}/checkups`, {
-        headers: { "Authorization": `Bearer ${localStorage.getItem("accessToken")}` },
-      });
-      if (!res.ok) throw new Error("Failed to fetch checkups");
-      return res.json();
-    },
-    enabled: !!selectedEvent,
-  });
-
   // Update checkup mutation
   const updateCheckupMutation = useMutation({
     mutationFn: async ({ checkupId, data }: { checkupId: string; data: EventCheckupForm }) => {
-      const res = await fetch(`/api/student-checkups/${checkupId}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${localStorage.getItem("accessToken")}`,
-        },
-        body: JSON.stringify(data),
-      });
-      if (!res.ok) throw new Error("Failed to update checkup");
+      const res = await apiRequest("PUT", `/api/student-checkups/${checkupId}`, data);
       return res.json();
     },
     onSuccess: () => {
@@ -484,29 +467,104 @@ function EventCheckups() {
     },
   });
 
+  // Early return conditions - AFTER all hooks are called
+  if (hasError) {
+    return (
+      <div className="p-8 text-center">
+        <AlertTriangle className="h-12 w-12 mx-auto text-red-500 mb-4" />
+        <h3 className="text-lg font-medium mb-2">Something went wrong</h3>
+        <p className="text-muted-foreground mb-4">There was an error loading the checkups page.</p>
+        <Button onClick={() => window.location.reload()}>
+          Reload Page
+        </Button>
+      </div>
+    );
+  }
+
+  // Show error state if API calls fail
+  if (teamsError || eventsError) {
+    return (
+      <div className="p-8 text-center">
+        <AlertTriangle className="h-12 w-12 mx-auto text-red-500 mb-4" />
+        <h3 className="text-lg font-medium mb-2">Failed to load data</h3>
+        <p className="text-muted-foreground mb-4">
+          {teamsError?.message || eventsError?.message || "Unable to fetch medical teams or events"}
+        </p>
+        <Button onClick={() => window.location.reload()}>
+          Try Again
+        </Button>
+      </div>
+    );
+  }
+
+  // Show loading state while data is being fetched
+  if (teamsLoading || eventsLoading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h2 className="text-2xl font-bold text-foreground">Medical Team Events</h2>
+            <p className="text-muted-foreground">Create medical teams and schedule event-driven checkups for students</p>
+          </div>
+        </div>
+        <Card>
+          <CardContent className="text-center py-8">
+            <Loader2 className="h-8 w-8 mx-auto animate-spin text-muted-foreground mb-4" />
+            <h3 className="text-lg font-medium mb-2">Loading medical events...</h3>
+            <p className="text-muted-foreground">Please wait while we fetch the data.</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  const teams = teamsData?.teams || [];
+  const events = eventsData?.events || [];
+  const checkups = checkupsData?.checkups || [];
+
+  // Generate dynamic options
+  const yearOptions = generateYearOptions();
+  const monthOptions = generateMonthOptions();
+
   const onUpdateCheckup = (data: EventCheckupForm) => {
     if (!selectedCheckup) return;
-    updateCheckupMutation.mutate({ checkupId: selectedCheckup.id, data });
+    
+    // Transform "none" referral to undefined for backend
+    const transformedData = {
+      ...data,
+      referredTo: data.referredTo === "none" ? undefined : data.referredTo
+    };
+    
+    updateCheckupMutation.mutate({ checkupId: selectedCheckup.id, data: transformedData });
   };
 
   const handleEditCheckup = (checkup: any) => {
+    console.log('🔍 handleEditCheckup called with:', checkup); // Debug log
+    
     // Check if checkup is completed and user is ClassTeacher - show as read-only
     const isCompleted = checkup.status === "Completed";
     const isClassTeacher = user?.role === "ClassTeacher";
     
-    if (isCompleted && isClassTeacher) {
+    // Validate checkup data
+    if (!checkup || !checkup.id) {
+      console.error('❌ Invalid checkup data:', checkup);
       toast({
-        title: "Read-Only Checkup",
-        description: "This checkup has been completed and is now read-only. Only Medical Teams can modify completed checkups.",
+        title: "Error",
+        description: "Invalid checkup data. Please try again.",
         variant: "destructive",
       });
       return;
     }
     
+    console.log('✅ Setting selectedCheckup and opening dialog'); // Debug log
+    
+    // Always set the selected checkup and open dialog
     setSelectedCheckup(checkup);
     checkupForm.reset({
       status: checkup.status as any,
       present: checkup.present ?? true,
+      checkupMonth: checkup.checkupMonth || getCurrentMonth(),
+      checkupYear: checkup.checkupYear || getCurrentYear(),
       heightCm: checkup.heightCm || undefined,
       weightKg: checkup.weightKg || undefined,
       temperatureC: checkup.temperatureC || undefined,
@@ -515,7 +573,7 @@ function EventCheckups() {
       symptoms: checkup.symptoms || "",
       diagnosis: checkup.diagnosis || "",
       medicationsGiven: checkup.medicationsGiven || "",
-      referredTo: checkup.referredTo || "",
+      referredTo: checkup.referredTo || "none",
       referralStatus: checkup.referralStatus as any,
       referralNotes: checkup.referralNotes || "",
       referralDate: checkup.referralDate ? new Date(checkup.referralDate) : undefined,
@@ -524,10 +582,17 @@ function EventCheckups() {
       notes: checkup.notes || "",
     });
     setIsCheckupDialogOpen(true);
+    
+    console.log('✅ Dialog should be open now'); // Debug log
+    
+    // Show read-only notification for completed checkups
+    if (isCompleted && isClassTeacher) {
+      toast({
+        title: "View Only Mode",
+        description: `This checkup for ${getMonthName(checkup.checkupMonth)} ${checkup.checkupYear} has been completed and is now read-only.`,
+      });
+    }
   };
-
-  const events = eventsData?.events || [];
-  const checkups = checkupsData?.checkups || [];
 
   // Filter checkups based on search and status
   const filteredCheckups = checkups.filter((checkup: any) => {
@@ -644,6 +709,60 @@ function EventCheckups() {
       {/* Student Checkups for Selected Event */}
       {selectedEvent && (
         <>
+          {/* Month/Year Selection */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Calendar className="h-5 w-5" />
+                Select Month & Year for Checkups
+              </CardTitle>
+              <CardDescription>
+                Choose the month and year for which you want to view or create student checkups.
+                Each student can have only one checkup per event per month.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <label className="text-sm font-medium">Month</label>
+                  <Select value={selectedMonth.toString()} onValueChange={(value) => setSelectedMonth(parseInt(value))}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {monthOptions.map((month) => (
+                        <SelectItem key={month.value} value={month.value}>
+                          {month.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex-1">
+                  <label className="text-sm font-medium">Year</label>
+                  <Select value={selectedYear.toString()} onValueChange={(value) => setSelectedYear(parseInt(value))}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {yearOptions.map((year) => (
+                        <SelectItem key={year.value} value={year.value}>
+                          {year.label}
+                          {year.isCurrent && <span className="ml-1 text-xs text-primary">(Current)</span>}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-end">
+                  <Badge variant="outline" className="px-3 py-2">
+                    {getMonthName(selectedMonth)} {selectedYear}
+                  </Badge>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Filters */}
           <Card>
             <CardContent className="pt-6">
@@ -678,7 +797,13 @@ function EventCheckups() {
           {/* Checkups List */}
           <div className="grid gap-4">
             {checkupsLoading ? (
-              <div className="text-center py-8">Loading checkups...</div>
+              <Card>
+                <CardContent className="text-center py-8">
+                  <Loader2 className="h-8 w-8 mx-auto animate-spin text-muted-foreground mb-4" />
+                  <h3 className="text-lg font-medium mb-2">Loading checkups...</h3>
+                  <p className="text-muted-foreground">Please wait while we fetch the student checkup data.</p>
+                </CardContent>
+              </Card>
             ) : filteredCheckups.length === 0 ? (
               <Card>
                 <CardContent className="text-center py-8">
@@ -687,7 +812,9 @@ function EventCheckups() {
                   <p className="text-muted-foreground">
                     {searchTerm || statusFilter !== "all" 
                       ? "Try adjusting your search or filter criteria."
-                      : "No student checkups have been generated for this event yet."
+                      : selectedEvent 
+                        ? `No student checkups have been generated for ${selectedEvent.name} in ${getMonthName(selectedMonth)} ${selectedYear}.`
+                        : "Please select a medical event to view checkups."
                     }
                   </p>
                 </CardContent>
@@ -709,11 +836,14 @@ function EventCheckups() {
                           {checkup.status === "Completed" && user?.role === "ClassTeacher" && (
                             <Badge variant="secondary" className="bg-blue-100 text-blue-800">
                               <Eye className="h-3 w-3 mr-1" />
-                              View Only
+                              View Only - {getMonthName(checkup.checkupMonth)} {checkup.checkupYear}
                             </Badge>
                           )}
                           <Badge variant={checkup.present !== false ? "default" : "destructive"}>
                             {checkup.present !== false ? "Present" : "Absent"}
+                          </Badge>
+                          <Badge variant="outline" className="text-xs">
+                            {getMonthName(checkup.checkupMonth || selectedMonth)} {checkup.checkupYear || selectedYear}
                           </Badge>
                         </div>
                         <div className="flex items-center gap-4 text-sm text-muted-foreground">
@@ -759,7 +889,7 @@ function EventCheckups() {
                             <strong>Diagnosis:</strong> {checkup.diagnosis}
                           </p>
                         )}
-                        {checkup.referredTo && (
+                        {checkup.referredTo && checkup.referredTo !== "none" && (
                           <div className="space-y-1">
                             <p className="text-sm text-orange-600">
                               <strong>Referred to:</strong> {checkup.referredTo}
@@ -814,17 +944,71 @@ function EventCheckups() {
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              Student Checkup - {selectedCheckup?.student?.fullName}
+              Student Checkup - {selectedCheckup?.student?.fullName || 'Loading...'}
               {selectedCheckup?.status === "Completed" && user?.role === "ClassTeacher" && (
                 <Badge variant="secondary" className="bg-blue-100 text-blue-800">
                   <Eye className="h-3 w-3 mr-1" />
-                  Read Only
+                  View Only – Submitted for {getMonthName(selectedCheckup.checkupMonth)} {selectedCheckup.checkupYear}
                 </Badge>
               )}
             </DialogTitle>
           </DialogHeader>
-          <Form {...checkupForm}>
-            <form onSubmit={checkupForm.handleSubmit(onUpdateCheckup)} className="space-y-6">
+          
+          {/* Debug Info (remove in production) */}
+          {process.env.NODE_ENV === 'development' && (
+            <div className="p-2 bg-gray-100 text-xs rounded mb-4">
+              <strong>Debug:</strong> selectedCheckup={selectedCheckup ? 'exists' : 'null'}, 
+              isPending={updateCheckupMutation.isPending ? 'true' : 'false'},
+              dialogOpen={isCheckupDialogOpen ? 'true' : 'false'}
+            </div>
+          )}
+          
+          {/* Loading State */}
+          {updateCheckupMutation.isPending && (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin mr-2" />
+              <span>Saving checkup...</span>
+            </div>
+          )}
+          
+          {/* Error State */}
+          {updateCheckupMutation.isError && (
+            <div className="p-4 bg-red-50 border border-red-200 rounded-md mb-4">
+              <div className="flex items-center gap-2 text-red-800">
+                <AlertTriangle className="h-4 w-4" />
+                <span className="font-medium">Error</span>
+              </div>
+              <p className="text-sm text-red-700 mt-1">
+                {updateCheckupMutation.error?.message || "Failed to save checkup. Please try again."}
+              </p>
+            </div>
+          )}
+          
+          {/* No Data State */}
+          {!selectedCheckup && !updateCheckupMutation.isPending && (
+            <div className="flex flex-col items-center justify-center py-8 text-center">
+              <AlertTriangle className="h-12 w-12 text-gray-400 mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No Checkup Found</h3>
+              <p className="text-gray-600">
+                No checkup data found for the selected month. Please try again or contact support.
+              </p>
+              <Button 
+                variant="outline" 
+                className="mt-4"
+                onClick={() => {
+                  setIsCheckupDialogOpen(false);
+                  setSelectedCheckup(null);
+                }}
+              >
+                Close
+              </Button>
+            </div>
+          )}
+          
+          {/* Form Content */}
+          {selectedCheckup && !updateCheckupMutation.isPending && (
+            <Form {...checkupForm}>
+              <form onSubmit={checkupForm.handleSubmit(onUpdateCheckup)} className="space-y-6">
               {/* Read-only mode indicator */}
               {(() => {
                 const isReadOnly = selectedCheckup?.status === "Completed" && user?.role === "ClassTeacher";
@@ -838,7 +1022,7 @@ function EventCheckups() {
                           <span className="font-medium">Read-Only Mode</span>
                         </div>
                         <p className="text-sm text-blue-700 mt-1">
-                          This checkup has been completed and is now read-only. Only Medical Teams can modify completed checkups.
+                          This checkup for {getMonthName(selectedCheckup.checkupMonth)} {selectedCheckup.checkupYear} has been completed and is now read-only. Only Medical Teams can modify completed checkups.
                         </p>
                       </div>
                     )}
@@ -870,6 +1054,67 @@ function EventCheckups() {
                         </FormItem>
                       )}
                     />
+
+                    {/* Month and Year */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <FormField
+                        control={checkupForm.control}
+                        name="checkupMonth"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Checkup Month</FormLabel>
+                            <Select 
+                              value={field.value?.toString()} 
+                              onValueChange={(value) => field.onChange(parseInt(value))}
+                              disabled={isReadOnly}
+                            >
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select month" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                {monthOptions.map((month) => (
+                                  <SelectItem key={month.value} value={month.value}>
+                                    {month.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={checkupForm.control}
+                        name="checkupYear"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Checkup Year</FormLabel>
+                            <Select 
+                              value={field.value?.toString()} 
+                              onValueChange={(value) => field.onChange(parseInt(value))}
+                              disabled={isReadOnly}
+                            >
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select year" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                {yearOptions.map((year) => (
+                                  <SelectItem key={year.value} value={year.value}>
+                                    {year.label}
+                                    {year.isCurrent && <span className="ml-1 text-xs text-primary">(Current)</span>}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
 
                     {/* Student Present */}
                     <FormField
@@ -1065,7 +1310,7 @@ function EventCheckups() {
                             <FormLabel>Referred To (Optional)</FormLabel>
                             <Select 
                               onValueChange={field.onChange} 
-                              value={field.value || ""}
+                              value={field.value || "none"}
                               disabled={isReadOnly}
                             >
                               <FormControl>
@@ -1074,7 +1319,7 @@ function EventCheckups() {
                                 </SelectTrigger>
                               </FormControl>
                               <SelectContent>
-                                <SelectItem value="">No Referral</SelectItem>
+                                <SelectItem value="none">No Referral</SelectItem>
                                 {REFERRAL_FACILITY_OPTIONS.map((facility) => (
                                   <SelectItem key={facility} value={facility}>
                                     {facility}
@@ -1087,7 +1332,7 @@ function EventCheckups() {
                         )}
                       />
 
-                      {checkupForm.watch("referredTo") && (
+                      {checkupForm.watch("referredTo") && checkupForm.watch("referredTo") !== "none" && (
                         <>
                           <div className="grid grid-cols-2 gap-4">
                             <FormField
@@ -1098,7 +1343,7 @@ function EventCheckups() {
                                   <FormLabel>Referral Status</FormLabel>
                                   <Select 
                                     onValueChange={field.onChange} 
-                                    value={field.value || ""}
+                                    value={field.value || "Pending"}
                                     disabled={isReadOnly}
                                   >
                                     <FormControl>
@@ -1247,6 +1492,7 @@ function EventCheckups() {
               })()}
             </form>
           </Form>
+          )}
         </DialogContent>
       </Dialog>
 
@@ -1360,6 +1606,52 @@ function EventCheckups() {
               />
             </div>
             
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm font-medium">Checkup Month *</label>
+                <Select
+                  value={selectedMonth.toString()}
+                  onValueChange={(value) => {
+                    setSelectedMonth(parseInt(value));
+                    eventForm.setValue("month", parseInt(value));
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {monthOptions.map((month) => (
+                      <SelectItem key={month.value} value={month.value}>
+                        {month.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-sm font-medium">Checkup Year *</label>
+                <Select
+                  value={selectedYear.toString()}
+                  onValueChange={(value) => {
+                    setSelectedYear(parseInt(value));
+                    eventForm.setValue("year", parseInt(value));
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {yearOptions.map((year) => (
+                      <SelectItem key={year.value} value={year.value}>
+                        {year.label}
+                        {year.isCurrent && <span className="ml-1 text-xs text-primary">(Current)</span>}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            
             <div>
               <label className="text-sm font-medium">Event Date *</label>
               <Input
@@ -1428,20 +1720,110 @@ function CheckupForm() {
   const searchParams = new URLSearchParams(window.location.search);
   const preselectedStudentId = searchParams.get("studentId");
 
-  const { data: studentsData } = useQuery({
+  const { data: studentsData, isLoading: studentsLoading, error: studentsError } = useQuery({
     queryKey: ["/api/students"],
     queryFn: async () => {
-      const res = await fetch(`/api/students`, {
-        headers: { "Authorization": `Bearer ${localStorage.getItem("accessToken")}` },
-      });
-      if (!res.ok) throw new Error("Failed to fetch students");
+      const res = await apiRequest("GET", "/api/students");
       return res.json();
     },
   });
 
   const students = studentsData?.students || [];
 
-  const form = useForm<CheckupForm>({
+  // Show loading state while students are being fetched
+  if (studentsLoading) {
+    return (
+      <div className="max-w-2xl mx-auto space-y-6">
+        <div className="flex items-center gap-4">
+          <Link href="/checkups">
+            <Button variant="ghost" size="icon" data-testid="button-back">
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+          </Link>
+          <div>
+            <h2 className="text-2xl font-bold text-foreground">Record Monthly Checkup</h2>
+            <p className="text-muted-foreground">Enter health checkup details for a student</p>
+          </div>
+        </div>
+
+        <Card>
+          <CardContent className="text-center py-8">
+            <Loader2 className="h-8 w-8 mx-auto animate-spin text-muted-foreground mb-4" />
+            <h3 className="text-lg font-medium mb-2">Loading form data...</h3>
+            <p className="text-muted-foreground">Please wait while we fetch the student list.</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Show error state if students query fails
+  if (studentsError) {
+    return (
+      <div className="max-w-2xl mx-auto space-y-6">
+        <div className="flex items-center gap-4">
+          <Link href="/checkups">
+            <Button variant="ghost" size="icon" data-testid="button-back">
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+          </Link>
+          <div>
+            <h2 className="text-2xl font-bold text-foreground">Record Monthly Checkup</h2>
+            <p className="text-muted-foreground">Enter health checkup details for a student</p>
+          </div>
+        </div>
+
+        <Card>
+          <CardContent className="text-center py-8">
+            <AlertTriangle className="h-12 w-12 mx-auto text-red-500 mb-4" />
+            <h3 className="text-lg font-medium mb-2">Failed to load form data</h3>
+            <p className="text-muted-foreground mb-4">
+              {studentsError?.message || "Unable to fetch student list. Please try again."}
+            </p>
+            <Button onClick={() => window.location.reload()}>
+              Try Again
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Show no students state
+  if (students.length === 0) {
+    return (
+      <div className="max-w-2xl mx-auto space-y-6">
+        <div className="flex items-center gap-4">
+          <Link href="/checkups">
+            <Button variant="ghost" size="icon" data-testid="button-back">
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+          </Link>
+          <div>
+            <h2 className="text-2xl font-bold text-foreground">Record Monthly Checkup</h2>
+            <p className="text-muted-foreground">Enter health checkup details for a student</p>
+          </div>
+        </div>
+
+        <Card>
+          <CardContent className="text-center py-8">
+            <Users className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+            <h3 className="text-lg font-medium mb-2">No students found</h3>
+            <p className="text-muted-foreground mb-4">
+              No students are available in your assigned class. Please contact your administrator to add students.
+            </p>
+            <Link href="/checkups">
+              <Button variant="outline">
+                Go Back
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  const form = useForm<CheckupFormData>({
     resolver: zodResolver(checkupFormSchema),
     defaultValues: {
       studentId: preselectedStudentId || "",
@@ -1472,7 +1854,7 @@ function CheckupForm() {
   })();
 
   const createMutation = useMutation({
-    mutationFn: async (data: CheckupForm) => {
+    mutationFn: async (data: CheckupFormData) => {
       const payload = {
         ...data,
         heightCm: data.heightCm ? parseFloat(data.heightCm) : null,
@@ -1505,7 +1887,7 @@ function CheckupForm() {
     },
   });
 
-  const onSubmit = (data: CheckupForm) => {
+  const onSubmit = (data: CheckupFormData) => {
     createMutation.mutate(data);
   };
 
@@ -1778,6 +2160,18 @@ function CheckupForm() {
 export default function MonthlyCheckupsPage() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
+
+  // Show loading while user is being fetched
+  if (!user) {
+    return (
+      <AppLayout title="Monthly Checkups">
+        <div className="flex items-center justify-center py-8">
+          <Loader2 className="h-8 w-8 animate-spin mr-2" />
+          <span>Loading...</span>
+        </div>
+      </AppLayout>
+    );
+  }
 
   // Redirect Admin users away from this page — Admins are not allowed to access Monthly Checkups UI
   useEffect(() => {

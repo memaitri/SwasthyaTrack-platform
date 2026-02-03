@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, boolean, timestamp, decimal, jsonb, date } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, boolean, timestamp, decimal, jsonb, date, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -648,6 +648,12 @@ export const mealLogs = pgTable("meal_logs", {
   longitude: decimal("longitude", { precision: 11, scale: 8 }),
   uploadedBy: varchar("uploaded_by"),
   notes: text("notes"),
+  totalCalories: decimal("total_calories", { precision: 8, scale: 2 }),
+  totalProtein: decimal("total_protein", { precision: 8, scale: 2 }),
+  totalFat: decimal("total_fat", { precision: 8, scale: 2 }),
+  totalCarbs: decimal("total_carbs", { precision: 8, scale: 2 }),
+  totalFiber: decimal("total_fiber", { precision: 8, scale: 2 }),
+  nutritionBreakdown: jsonb("nutrition_breakdown"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -868,6 +874,8 @@ export const studentCheckups = pgTable("student_checkups", {
   teamId: varchar("team_id").notNull(),
   status: text("status").notNull().$type<CheckupStatus>().default("Not started"),
   present: boolean("present").default(true),
+  checkupMonth: integer("checkup_month").notNull().default(sql`EXTRACT(MONTH FROM CURRENT_DATE)`),
+  checkupYear: integer("checkup_year").notNull().default(sql`EXTRACT(YEAR FROM CURRENT_DATE)`),
   heightCm: decimal("height_cm", { precision: 5, scale: 2 }),
   weightKg: decimal("weight_kg", { precision: 5, scale: 2 }),
   bmi: decimal("bmi", { precision: 5, scale: 2 }),
@@ -886,7 +894,15 @@ export const studentCheckups = pgTable("student_checkups", {
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => ({
+  // Unique constraint for monthly checkups
+  uniqueStudentEventMonthYear: unique("unique_student_event_month_year").on(
+    table.studentId, 
+    table.eventId, 
+    table.checkupMonth, 
+    table.checkupYear
+  ),
+}));
 
 export const usersRelations = relations(users, ({ one, many }) => ({
   school: one(schools, {
@@ -1348,6 +1364,19 @@ export const insertMonthlyCheckupSchema = createInsertSchema(monthlyCheckups).om
 export const insertMealLogSchema = createInsertSchema(mealLogs).omit({ id: true, createdAt: true }).extend({
   mealType: z.enum(mealTypeEnum),
   menuItems: z.array(z.string()).optional(),
+  totalCalories: z.number().optional(),
+  totalProtein: z.number().optional(),
+  totalFat: z.number().optional(),
+  totalCarbs: z.number().optional(),
+  totalFiber: z.number().optional(),
+  nutritionBreakdown: z.array(z.object({
+    item: z.string(),
+    calories: z.number(),
+    protein: z.number(),
+    fat: z.number(),
+    carbs: z.number(),
+    fiber: z.number(),
+  })).optional(),
 });
 
 export const insertHostelAttendanceSchema = createInsertSchema(hostelAttendance).omit({ id: true, createdAt: true }).extend({
@@ -1404,6 +1433,8 @@ export const insertMedicalEventSchema = createInsertSchema(medicalEvents).omit({
 export const insertStudentCheckupSchema = createInsertSchema(studentCheckups).omit({ id: true, createdAt: true, updatedAt: true }).extend({
   status: z.enum(checkupStatusEnum).optional(),
   present: z.boolean().default(true),
+  checkupMonth: z.number().min(1).max(12),
+  checkupYear: z.number().min(2020).max(new Date().getFullYear() + 10),
   heightCm: z.number().min(30).max(250).optional(),
   weightKg: z.number().min(1).max(200).optional(),
   temperatureC: z.number().min(35).max(42).optional(),
@@ -1445,9 +1476,13 @@ export const registerSchema = z.object({
   if (data.role === "PO" && (!data.region || !data.district || !data.block)) {
     return false;
   }
+  // Headmaster MUST have district for PO approval workflow
+  if (data.role === "Headmaster" && !data.district) {
+    return false;
+  }
   return true;
 }, {
-  message: "School ID is required for ClassTeacher, Headmaster, and MedicalTeam roles. ClassTeacher also requires classSection. PO requires region, district, and block.",
+  message: "School ID is required for ClassTeacher, Headmaster, and MedicalTeam roles. ClassTeacher also requires classSection. PO requires region, district, and block. Headmaster requires district.",
   path: ["schoolId"],
 });
 

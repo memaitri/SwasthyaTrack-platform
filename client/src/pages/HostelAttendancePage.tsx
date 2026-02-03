@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { generateMonthOptions } from "@/lib/dateUtils";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -223,9 +224,17 @@ export default function HostelAttendancePage() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <h2 className="text-2xl font-bold text-foreground">
-              {role === "PO" ? "District Hostel Overview" : role === "Headmaster" ? "School Hostel Attendance" : "Hostel Attendance & Tracking"}
+              {role === "PO" ? "District Hostel Overview" : 
+               role === "Headmaster" ? "School Hostel Attendance" : 
+               role === "Lady Superintendent" ? "Female Students Hostel Attendance" :
+               role === "MealSuperintendent" ? "Male Students Hostel Attendance" :
+               "Hostel Attendance & Tracking"}
             </h2>
-            <p className="text-muted-foreground">Track check-in/out times, vacations, and monthly presence</p>
+            <p className="text-muted-foreground">
+              {role === "Lady Superintendent" ? "Track check-in/out times and vacations for female students" :
+               role === "MealSuperintendent" ? "Track check-in/out times and vacations for male students" :
+               "Track check-in/out times, vacations, and monthly presence"}
+            </p>
           </div>
           <div className="flex items-center gap-2">
             <Button
@@ -333,9 +342,9 @@ export default function HostelAttendancePage() {
                 <SelectValue placeholder="Month" />
               </SelectTrigger>
               <SelectContent>
-                {[...Array(12)].map((_, i) => (
-                  <SelectItem key={i + 1} value={(i + 1).toString()}>
-                    {new Date(2024, i).toLocaleDateString("en-US", { month: "long" })}
+                {generateMonthOptions().map(month => (
+                  <SelectItem key={month.value} value={month.value}>
+                    {month.label}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -569,7 +578,7 @@ export default function HostelAttendancePage() {
                   header: "",
                   render: (item: any) => (
                     <div className="flex items-center gap-2">
-                      {(hasRole("ClassTeacher") || hasRole("Headmaster") || hasRole("Admin") || hasRole("HostelWarden")) && !item.isVacation && (
+                      {(hasRole("ClassTeacher") || hasRole("Headmaster") || hasRole("Admin") || hasRole("HostelWarden") || hasRole("Lady Superintendent") || hasRole("MealSuperintendent")) && !item.isVacation && (
                         <>
                           {/* Allow multiple check-ins - always show check-in button */}
                           <Button

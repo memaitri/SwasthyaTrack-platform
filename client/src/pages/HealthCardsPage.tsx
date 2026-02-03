@@ -4,6 +4,7 @@ import { useRoute, useParams } from "wouter";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { DataTable } from "@/components/dashboard/DataTable";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
+import { generateYearOptions } from "@/lib/dateUtils";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -608,9 +609,9 @@ export default function HealthCardsPage() {
               <SelectValue placeholder="Year" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="2025">2025</SelectItem>
-              <SelectItem value="2024">2024</SelectItem>
-              <SelectItem value="2023">2023</SelectItem>
+              {generateYearOptions().map(year => (
+                <SelectItem key={year.value} value={year.value}>{year.label}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
           {/* Hide export format selector for Class Teachers */}

@@ -24,28 +24,29 @@ router.post("/login", async (req, res) => {
     
     // Update usage tracking for login attempt
     try {
-      const existingSession = await db.select().from(usageTracking).where(eq(usageTracking.sessionId, sessionId)).limit(1);
+      // Temporarily disabled due to schema sync issues
+      // const existingSession = await db.select().from(usageTracking).where(eq(usageTracking.sessionId, sessionId)).limit(1);
       
-      if (existingSession.length > 0) {
-        // Update existing session with login attempt
-        await db.update(usageTracking)
-          .set({
-            loginAttempts: sql`${usageTracking.loginAttempts} + 1`,
-            lastActivity: new Date(),
-            updatedAt: new Date()
-          })
-          .where(eq(usageTracking.sessionId, sessionId));
-      } else {
-        // Create new session with login attempt
-        await db.insert(usageTracking).values({
-          sessionId,
-          ipAddress,
-          userAgent,
-          loginAttempts: 1,
-          firstVisit: new Date(),
-          lastActivity: new Date()
-        });
-      }
+      // if (existingSession.length > 0) {
+      //   // Update existing session with login attempt
+      //   await db.update(usageTracking)
+      //     .set({
+      //       loginAttempts: sql`${usageTracking.loginAttempts} + 1`,
+      //       lastActivity: new Date(),
+      //       updatedAt: new Date()
+      //     })
+      //     .where(eq(usageTracking.sessionId, sessionId));
+      // } else {
+      //   // Create new session with login attempt
+      //   await db.insert(usageTracking).values({
+      //     sessionId,
+      //     ipAddress,
+      //     userAgent,
+      //     loginAttempts: 1,
+      //     firstVisit: new Date(),
+      //     lastActivity: new Date()
+      //   });
+      // }
     } catch (trackingError) {
       console.warn('Login attempt tracking failed:', trackingError);
       // Continue with login even if tracking fails
@@ -70,14 +71,15 @@ router.post("/login", async (req, res) => {
 
     // Track successful login
     try {
-      await db.update(usageTracking)
-        .set({
-          successfulLogins: sql`${usageTracking.successfulLogins} + 1`,
-          userId: user.id,
-          lastActivity: new Date(),
-          updatedAt: new Date()
-        })
-        .where(eq(usageTracking.sessionId, sessionId));
+      // Temporarily disabled due to schema sync issues
+      // await db.update(usageTracking)
+      //   .set({
+      //     successfulLogins: sql`${usageTracking.successfulLogins} + 1`,
+      //     userId: user.id,
+      //     lastActivity: new Date(),
+      //     updatedAt: new Date()
+      //   })
+      //   .where(eq(usageTracking.sessionId, sessionId));
     } catch (trackingError) {
       console.warn('Successful login tracking failed:', trackingError);
       // Continue with login even if tracking fails

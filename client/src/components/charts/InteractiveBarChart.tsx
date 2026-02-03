@@ -165,7 +165,7 @@ export function InteractiveBarChart({
         ticks: {
           font: {
             size: 12,
-            weight: '500',
+            weight: 500,
           },
           color: "hsl(var(--muted-foreground))",
           padding: 8,
@@ -178,7 +178,7 @@ export function InteractiveBarChart({
         ticks: {
           font: {
             size: 12,
-            weight: '600',
+            weight: 600,
           },
           color: "hsl(var(--foreground))",
           maxRotation: useHorizontal ? 0 : 45,
@@ -194,7 +194,7 @@ export function InteractiveBarChart({
           padding: 20,
           font: {
             size: 13,
-            weight: '500',
+            weight: 500,
           },
           color: "hsl(var(--foreground))",
         },
@@ -212,11 +212,11 @@ export function InteractiveBarChart({
         boxPadding: 6,
         titleFont: {
           size: 14,
-          weight: '600',
+          weight: 600,
         },
         bodyFont: {
           size: 13,
-          weight: '500',
+          weight: 500,
         },
         callbacks: {
           title: (tooltipItems: any[]) => {
@@ -244,7 +244,7 @@ export function InteractiveBarChart({
           display: true,
           color: "hsl(var(--foreground))",
           font: {
-            weight: '600',
+            weight: 600,
             size: 11,
           },
           formatter: (value: number) => value.toLocaleString(),

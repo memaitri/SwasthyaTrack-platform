@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/AppLayout";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -18,7 +18,7 @@ import {
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
-import { apiRequest, queryClient, getQueryFn } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
   CheckCircle2,
   XCircle,
@@ -39,8 +39,21 @@ export default function ApprovalsPage() {
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [isRejectOpen, setIsRejectOpen] = useState(false);
   const [rejectionReason, setRejectionReason] = useState("");
+  
+  // Enhanced state for PO approvals
+  const [selectedUser, setSelectedUser] = useState<any>(null);
+  const [selectedSchool, setSelectedSchool] = useState<any>(null);
+  const [isUserViewOpen, setIsUserViewOpen] = useState(false);
+  const [isSchoolViewOpen, setIsSchoolViewOpen] = useState(false);
+  const [isUserRejectOpen, setIsUserRejectOpen] = useState(false);
+  const [isSchoolRejectOpen, setIsSchoolRejectOpen] = useState(false);
+  const [userRejectionReason, setUserRejectionReason] = useState("");
+  const [schoolRejectionReason, setSchoolRejectionReason] = useState("");
 
-  // Pending health cards (existing behavior)
+  // POs should only see school and user approvals, not health cards
+  const showHealthCardApprovals = user?.role !== "PO";
+
+  // Pending health cards (only for non-PO roles)
   const { data, isLoading, error } = useQuery({
     queryKey: ["/api/annual-cards", "Pending"],
     queryFn: async () => {
@@ -49,11 +62,12 @@ export default function ApprovalsPage() {
       const res = await apiRequest("GET", `/api/annual-cards?${params}`);
       return res.json();
     },
+    enabled: showHealthCardApprovals, // Only fetch for non-PO roles
   });
 
-  const pendingCards = data?.cards || [];
+  const pendingCards = showHealthCardApprovals ? (data?.cards || []) : [];
 
-  // Pending user accounts for this headmaster (new)
+  // Pending user accounts for this headmaster/PO (new)
   const { data: userPendingData, isLoading: isLoadingUsers } = useQuery({
     queryKey: ["/api/approvals/pending"],
     queryFn: async () => {
@@ -64,12 +78,12 @@ export default function ApprovalsPage() {
         return { pending: [] };
       }
     },
-    enabled: true,
+    enabled: user?.role === "Headmaster" || user?.role === "PO" || user?.role === "Admin",
   });
 
   const pendingUsers = userPendingData?.pending || [];
 
-  // Admin: pending school requests
+  // Admin and PO: pending school requests
   const { data: pendingSchoolsData, isLoading: isLoadingPendingSchools } = useQuery({
     queryKey: ["/api/schools/pending"],
     queryFn: async () => {
@@ -80,7 +94,7 @@ export default function ApprovalsPage() {
         return { pending: [] };
       }
     },
-    enabled: user?.role === "Admin",
+    enabled: user?.role === "Admin" || user?.role === "PO",
   });
 
   const pendingSchools = pendingSchoolsData?.pending || [];
@@ -136,9 +150,48 @@ export default function ApprovalsPage() {
       toast({ title: "User rejected", description: "The user account has been rejected." });
       queryClient.invalidateQueries({ queryKey: ["/api/approvals/pending"], exact: true });
       queryClient.invalidateQueries({ queryKey: ["/api/users"], exact: false });
+      setIsUserRejectOpen(false);
+      setIsUserViewOpen(false);
+      setSelectedUser(null);
+      setUserRejectionReason("");
     },
     onError: (error: any) => {
       toast({ title: "Error", description: error.message || "Failed to reject user", variant: "destructive" });
+    },
+  });
+
+  // Mutations for school approval
+  const approveSchoolMutation = useMutation({
+    mutationFn: async (schoolId: string) => {
+      return apiRequest("POST", `/api/schools/${schoolId}/approve`, {});
+    },
+    onSuccess: () => {
+      toast({ title: "School approved", description: "The school has been approved and is now active." });
+      queryClient.invalidateQueries({ queryKey: ["/api/schools/pending"], exact: true });
+      queryClient.invalidateQueries({ queryKey: ["/api/schools"], exact: false });
+      setIsSchoolViewOpen(false);
+      setSelectedSchool(null);
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to approve school", variant: "destructive" });
+    },
+  });
+
+  const rejectSchoolMutation = useMutation({
+    mutationFn: async ({ schoolId, reason }: { schoolId: string; reason?: string }) => {
+      return apiRequest("POST", `/api/schools/${schoolId}/reject`, { reason });
+    },
+    onSuccess: () => {
+      toast({ title: "School rejected", description: "The school request has been rejected." });
+      queryClient.invalidateQueries({ queryKey: ["/api/schools/pending"], exact: true });
+      queryClient.invalidateQueries({ queryKey: ["/api/schools"], exact: false });
+      setIsSchoolRejectOpen(false);
+      setIsSchoolViewOpen(false);
+      setSelectedSchool(null);
+      setSchoolRejectionReason("");
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to reject school", variant: "destructive" });
     },
   });
 
@@ -193,7 +246,7 @@ export default function ApprovalsPage() {
           <div>
             <h1 className="text-3xl font-bold text-foreground flex items-center gap-2">
               <CheckCircle2 className="h-8 w-8 text-emerald-600" />
-              Health Card Approvals
+              {user?.role === "PO" ? "School & Headmaster Approvals" : user?.role === "Admin" ? "Admin Approval Center" : "Health Card Approvals"}
             </h1>
             <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground">
               <div className="flex items-center gap-1">
@@ -210,9 +263,19 @@ export default function ApprovalsPage() {
           </div>
         </div>
 
-        {user?.role !== "Admin" && (
+        {user?.role === "PO" && (
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+            <h2 className="font-semibold text-blue-800 dark:text-blue-200 mb-2">PO Approval Dashboard</h2>
+            <p className="text-sm text-blue-700 dark:text-blue-300">
+              As a Program Officer, you can approve Headmaster registrations and school requests within your district. 
+              Review each request carefully before making approval decisions.
+            </p>
+          </div>
+        )}
+
+        {showHealthCardApprovals && user?.role !== "Admin" && (
           <div>
-            <h2 className="text-lg font-semibold text-foreground">Pending Submissions</h2>
+            <h2 className="text-lg font-semibold text-foreground">Pending Health Card Submissions</h2>
             <p className="text-muted-foreground">
               Review and approve or reject pending health card submissions
             </p>
@@ -231,62 +294,119 @@ export default function ApprovalsPage() {
           </div>
         ) : (
           <>
-            {user?.role === "Admin" && (
+            {(user?.role === "Admin" || user?.role === "PO") && (
               <div className="mt-6">
-                <h3 className="text-lg font-semibold">Pending School Requests</h3>
-                <p className="text-muted-foreground">Review and approve or reject school addition requests</p>
+                <h3 className="text-lg font-semibold">
+                  {user?.role === "PO" ? "Pending School Requests (Your District)" : "Pending School Requests"}
+                </h3>
+                <p className="text-muted-foreground">
+                  {user?.role === "PO" 
+                    ? "Review and approve or reject school addition requests in your district"
+                    : "Review and approve or reject school addition requests"
+                  }
+                </p>
                 {isLoadingPendingSchools ? (
-                  <div className="mt-4">Loading...</div>
-                ) : pendingSchools.length === 0 ? (
-                  <div className="p-4 bg-emerald-50 border border-emerald-200 rounded mt-4">
-                    <p className="text-emerald-700">No pending school requests</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                    {[1, 2, 3].map((i) => (
+                      <Card key={i}>
+                        <CardContent className="p-4">
+                          <Skeleton className="h-20 w-full" />
+                        </CardContent>
+                      </Card>
+                    ))}
                   </div>
+                ) : pendingSchools.length === 0 ? (
+                  <Card className="mt-4">
+                    <CardContent className="py-6 text-center">
+                      <CheckCircle2 className="h-12 w-12 text-emerald-500 mx-auto mb-3" />
+                      <p className="text-muted-foreground">No pending school requests</p>
+                    </CardContent>
+                  </Card>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                    {pendingSchools.map((s: any) => (
-                      <div key={s.id} className="p-4 border rounded">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <div className="font-semibold">{s.name}</div>
-                            <div className="text-sm text-muted-foreground">{s.district} • {s.block}</div>
+                    {pendingSchools.map((school: any) => (
+                      <Card key={school.id} className="hover-elevate">
+                        <CardContent className="p-4">
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="flex items-center gap-3">
+                              <div className="p-2 bg-blue-100 rounded-lg">
+                                <School className="h-5 w-5 text-blue-600" />
+                              </div>
+                              <div>
+                                <h4 className="font-semibold text-foreground">{school.name}</h4>
+                                <p className="text-sm text-muted-foreground">{school.schoolType} School</p>
+                              </div>
+                            </div>
+                            <StatusBadge status="Pending" size="sm" />
                           </div>
-                          <div className="flex items-center gap-2">
-                            <Button size="sm" variant="ghost" onClick={async () => {
-                              try {
-                                await apiRequest("POST", `/api/schools/${s.id}/approve`, {});
-                                queryClient.invalidateQueries({ queryKey: ["/api/schools/pending"], exact: true });
-                                queryClient.invalidateQueries({ queryKey: ["/api/schools", user?.id], exact: true });
-                                toast({ title: "School approved", description: "The school has been approved." });
-                              } catch (err: any) {
-                                toast({ title: "Error", description: err.message || "Failed to approve school", variant: "destructive" });
-                              }
-                            }}>
+                          
+                          <div className="space-y-2 mb-4">
+                            <div className="flex items-center gap-2 text-sm">
+                              <MapPin className="h-4 w-4 text-muted-foreground" />
+                              <span>{school.district} • {school.block}</span>
+                            </div>
+                            {school.address && (
+                              <div className="text-sm text-muted-foreground">
+                                {school.address}
+                              </div>
+                            )}
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                              <Clock className="h-4 w-4" />
+                              <span>
+                                Requested {school.createdAt ? new Date(school.createdAt).toLocaleDateString() : "Recently"}
+                              </span>
+                            </div>
+                            {(school.contactEmail || school.contactPhone) && (
+                              <div className="text-sm text-muted-foreground">
+                                Contact: {school.contactEmail || '—'} / {school.contactPhone || '—'}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="flex-1"
+                              onClick={() => {
+                                setSelectedSchool(school);
+                                setIsSchoolViewOpen(true);
+                              }}
+                            >
+                              <Eye className="h-4 w-4 mr-1" />
+                              View Details
+                            </Button>
+                            <Button
+                              size="sm"
+                              className="flex-1"
+                              onClick={() => approveSchoolMutation.mutate(school.id)}
+                              disabled={approveSchoolMutation.isPending}
+                            >
+                              {approveSchoolMutation.isPending ? (
+                                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                              ) : (
+                                <CheckCircle2 className="h-4 w-4 mr-1" />
+                              )}
                               Approve
                             </Button>
-                            <Button size="sm" variant="destructive" onClick={async () => {
-                              try {
-                                await apiRequest("POST", `/api/schools/${s.id}/reject`, {});
-                                queryClient.invalidateQueries({ queryKey: ["/api/schools/pending"], exact: true });
-                                toast({ title: "School rejected", description: "The school has been rejected." });
-                              } catch (err: any) {
-                                toast({ title: "Error", description: err.message || "Failed to reject school", variant: "destructive" });
-                              }
-                            }}>
-                              Reject
-                            </Button>
                           </div>
-                        </div>
-                        <div className="mt-2 text-sm text-muted-foreground">{s.address}</div>
-                        <div className="mt-2 text-sm">Contact: {s.contactEmail || '—'} / {s.contactPhone || '—'}</div>
-                      </div>
+                        </CardContent>
+                      </Card>
                     ))}
                   </div>
                 )}
               </div>
             )}
             <div className="mb-6">
-              <h2 className="text-lg font-semibold text-foreground">Pending Account Registrations</h2>
-              <p className="text-muted-foreground">Review new account registration requests for your school</p>
+              <h2 className="text-lg font-semibold text-foreground">
+                {user?.role === "PO" ? "Pending Headmaster Registrations" : "Pending Account Registrations"}
+              </h2>
+              <p className="text-muted-foreground">
+                {user?.role === "PO" 
+                  ? "Review new Headmaster account registration requests in your district"
+                  : "Review new account registration requests for your school"
+                }
+              </p>
 
               {isLoadingUsers ? (
                 <div className="space-y-2 mt-4">
@@ -302,19 +422,71 @@ export default function ApprovalsPage() {
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                   {pendingUsers.map((u: any) => (
-                    <Card key={u.id}>
-                      <CardContent className="p-4 flex items-center justify-between">
-                        <div>
-                          <p className="font-semibold">{u.fullName} <span className="text-sm text-muted-foreground">({u.role})</span></p>
-                          <p className="text-sm text-muted-foreground">{u.email}</p>
-                          <p className="text-xs text-muted-foreground">Requested: {u.requestedAt ? new Date(u.requestedAt).toLocaleString() : new Date(u.createdAt).toLocaleString()}</p>
+                    <Card key={u.id} className="hover-elevate">
+                      <CardContent className="p-4">
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="flex items-center gap-3">
+                            <Avatar className="h-10 w-10">
+                              <AvatarFallback className="bg-primary/10 text-primary">
+                                {u.fullName?.slice(0, 2).toUpperCase() || "U"}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div>
+                              <h4 className="font-semibold text-foreground">{u.fullName}</h4>
+                              <p className="text-sm text-muted-foreground">{u.role}</p>
+                            </div>
+                          </div>
+                          <StatusBadge status="Pending" size="sm" />
                         </div>
+                        
+                        <div className="space-y-2 mb-4">
+                          <div className="text-sm text-muted-foreground">
+                            <strong>Email:</strong> {u.email}
+                          </div>
+                          {u.district && (
+                            <div className="flex items-center gap-2 text-sm">
+                              <MapPin className="h-4 w-4 text-muted-foreground" />
+                              <span>District: {u.district}</span>
+                            </div>
+                          )}
+                          {u.schoolId && (
+                            <div className="text-sm text-muted-foreground">
+                              <strong>School ID:</strong> {u.schoolId}
+                            </div>
+                          )}
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <Clock className="h-4 w-4" />
+                            <span>
+                              Requested: {u.requestedAt ? new Date(u.requestedAt).toLocaleString() : new Date(u.createdAt).toLocaleString()}
+                            </span>
+                          </div>
+                        </div>
+
                         <div className="flex gap-2">
-                          <Button size="sm" onClick={() => approveUserMutation.mutate(u.id)} disabled={approveUserMutation.isPending}>
-                            <CheckCircle2 className="h-4 w-4 mr-1" /> Approve
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="flex-1"
+                            onClick={() => {
+                              setSelectedUser(u);
+                              setIsUserViewOpen(true);
+                            }}
+                          >
+                            <Eye className="h-4 w-4 mr-1" />
+                            View Details
                           </Button>
-                          <Button size="sm" variant="destructive" onClick={() => rejectUserMutation.mutate({ userId: u.id, reason: "Rejected by headmaster" })} disabled={rejectUserMutation.isPending}>
-                            <XCircle className="h-4 w-4 mr-1" /> Reject
+                          <Button 
+                            size="sm" 
+                            className="flex-1"
+                            onClick={() => approveUserMutation.mutate(u.id)} 
+                            disabled={approveUserMutation.isPending}
+                          >
+                            {approveUserMutation.isPending ? (
+                              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                            ) : (
+                              <CheckCircle2 className="h-4 w-4 mr-1" />
+                            )}
+                            Approve
                           </Button>
                         </div>
                       </CardContent>
@@ -324,184 +496,319 @@ export default function ApprovalsPage() {
               )}
             </div>
 
-            {/* Continue showing health card approvals below */}
-            {pendingCards.length === 0 ? (
-              user?.role === "Admin" ? null : (
-                <Card>
-                  <CardContent className="flex flex-col items-center justify-center py-12">
-                    <CheckCircle2 className="h-16 w-16 text-emerald-500 mb-4" />
-                    <h3 className="text-xl font-semibold text-foreground mb-2">All Caught Up!</h3>
-                    <p className="text-muted-foreground text-center">
-                      No pending health cards require your approval at this time.
-                    </p>
-                  </CardContent>
-                </Card>
-              )
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {pendingCards.map((card: any) => (
-                  <Card key={card.id} className="hover-elevate" data-testid={`card-${card.id}`}>
-                    <CardContent className="p-6">
-                      <div className="flex items-start justify-between mb-4">
-                        <div className="flex items-center gap-3">
-                          <Avatar className="h-12 w-12">
-                            <AvatarFallback className="bg-primary/10 text-primary">
-                              {card.nameOfChild?.slice(0, 2).toUpperCase() || "ST"}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div>
-                            <p className="font-semibold text-foreground">{card.nameOfChild}</p>
-                            <p className="text-sm text-muted-foreground">Class {card.classSection}</p>
+            {/* Continue showing health card approvals below (only for non-PO roles) */}
+            {showHealthCardApprovals && (
+              <>
+                {pendingCards.length === 0 ? (
+                  user?.role === "Admin" ? null : (
+                    <Card>
+                      <CardContent className="flex flex-col items-center justify-center py-12">
+                        <CheckCircle2 className="h-16 w-16 text-emerald-500 mb-4" />
+                        <h3 className="text-xl font-semibold text-foreground mb-2">All Caught Up!</h3>
+                        <p className="text-muted-foreground text-center">
+                          No pending health cards require your approval at this time.
+                        </p>
+                      </CardContent>
+                    </Card>
+                  )
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {pendingCards.map((card: any) => (
+                      <Card key={card.id} className="hover-elevate" data-testid={`card-${card.id}`}>
+                        <CardContent className="p-6">
+                          <div className="flex items-start justify-between mb-4">
+                            <div className="flex items-center gap-3">
+                              <Avatar className="h-12 w-12">
+                                <AvatarFallback className="bg-primary/10 text-primary">
+                                  {card.nameOfChild?.slice(0, 2).toUpperCase() || "ST"}
+                                </AvatarFallback>
+                              </Avatar>
+                              <div>
+                                <p className="font-semibold text-foreground">{card.nameOfChild}</p>
+                                <p className="text-sm text-muted-foreground">Class {card.classSection}</p>
+                              </div>
+                            </div>
+                            <StatusBadge status="Pending" size="sm" />
                           </div>
-                        </div>
-                        <StatusBadge status="Pending" size="sm" />
-                      </div>
 
-                      <div className="space-y-2 mb-4">
-                        <div className="flex items-center gap-2 text-sm">
-                          <Activity className="h-4 w-4 text-muted-foreground" />
-                          <span>BMI: {card.bmi ? parseFloat(card.bmi).toFixed(1) : "N/A"}</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-sm">
-                          <Heart className="h-4 w-4 text-muted-foreground" />
-                          <span>BP: {card.sbp}/{card.dbp || "N/A"}</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <Clock className="h-4 w-4" />
-                          <span>
-                            Submitted {card.dateOfEntry ? new Date(card.dateOfEntry).toLocaleDateString() : "Recently"}
-                          </span>
-                        </div>
-                      </div>
+                          <div className="space-y-2 mb-4">
+                            <div className="flex items-center gap-2 text-sm">
+                              <Activity className="h-4 w-4 text-muted-foreground" />
+                              <span>BMI: {card.bmi ? parseFloat(card.bmi).toFixed(1) : "N/A"}</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-sm">
+                              <Heart className="h-4 w-4 text-muted-foreground" />
+                              <span>BP: {card.sbp}/{card.dbp || "N/A"}</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                              <Clock className="h-4 w-4" />
+                              <span>
+                                Submitted {card.dateOfEntry ? new Date(card.dateOfEntry).toLocaleDateString() : "Recently"}
+                              </span>
+                            </div>
+                          </div>
 
-                      <div className="flex gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="flex-1"
-                          onClick={() => {
-                            setSelectedCard(card);
-                            setIsViewOpen(true);
-                          }}
-                          data-testid={`button-view-${card.id}`}
-                        >
-                          <Eye className="h-4 w-4 mr-1" />
-                          View
-                        </Button>
-                        <Button
-                          size="sm"
-                          className="flex-1"
-                          onClick={() => {
-                            setSelectedCard(card);
-                            approveMutation.mutate(card.id);
-                          }}
-                          disabled={approveMutation.isPending}
-                          data-testid={`button-approve-${card.id}`}
-                        >
-                          <CheckCircle2 className="h-4 w-4 mr-1" />
-                          Approve
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
+                          <div className="flex gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="flex-1"
+                              onClick={() => {
+                                setSelectedCard(card);
+                                setIsViewOpen(true);
+                              }}
+                              data-testid={`button-view-${card.id}`}
+                            >
+                              <Eye className="h-4 w-4 mr-1" />
+                              View
+                            </Button>
+                            <Button
+                              size="sm"
+                              className="flex-1"
+                              onClick={() => {
+                                setSelectedCard(card);
+                                approveMutation.mutate(card.id);
+                              }}
+                              disabled={approveMutation.isPending}
+                              data-testid={`button-approve-${card.id}`}
+                            >
+                              <CheckCircle2 className="h-4 w-4 mr-1" />
+                              Approve
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
           </>
 )}
       </div>
 
-      <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      {/* Health Card Dialogs - Only for non-PO roles */}
+      {showHealthCardApprovals && (
+        <>
+          <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Health Card Review</DialogTitle>
+                <DialogDescription>
+                  Review the health card details before approval
+                </DialogDescription>
+              </DialogHeader>
+
+              {selectedCard && (
+                <div className="space-y-6">
+                  <div className="flex items-center gap-4 p-4 bg-muted/50 rounded-lg">
+                    <Avatar className="h-16 w-16">
+                      <AvatarFallback className="bg-primary/10 text-primary text-xl">
+                        {selectedCard.nameOfChild?.slice(0, 2).toUpperCase() || "ST"}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div>
+                      <h3 className="text-xl font-semibold">{selectedCard.nameOfChild}</h3>
+                      <p className="text-muted-foreground">
+                        Class {selectedCard.classSection} • {selectedCard.gender === "M" ? "Male" : selectedCard.gender === "F" ? "Female" : "Other"}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        Age: {selectedCard.ageYears ?? "N/A"} years {selectedCard.ageMonths ?? "N/A"} months
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <h4 className="text-sm font-medium text-muted-foreground mb-2">Anthropometrics</h4>
+                      <div className="space-y-1">
+                        <p><span className="font-medium">Weight:</span> {selectedCard.weightKg} kg</p>
+                        <p><span className="font-medium">Height:</span> {selectedCard.heightCm} cm</p>
+                        <p><span className="font-medium">BMI:</span> {selectedCard.bmi ? parseFloat(selectedCard.bmi).toFixed(1) : "N/A"}</p>
+                        <p><span className="font-medium">Blood Pressure:</span> {selectedCard.sbp}/{selectedCard.dbp}</p>
+                      </div>
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-medium text-muted-foreground mb-2">Vision</h4>
+                      <div className="space-y-1">
+                        <p><span className="font-medium">Right Eye:</span> {selectedCard.visionRight || "N/A"}</p>
+                        <p><span className="font-medium">Left Eye:</span> {selectedCard.visionLeft || "N/A"}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {selectedCard.deficiencies && selectedCard.deficiencies.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-medium text-muted-foreground mb-2">Deficiencies</h4>
+                      <div className="flex flex-wrap gap-2">
+                        {(Array.isArray(selectedCard.deficiencies) ? selectedCard.deficiencies : []).map((d: string, i: number) => (
+                          <Badge key={i} variant="outline">{d}</Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedCard.referralRecommended && (
+                    <div className="p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                      <h4 className="font-medium text-amber-800 dark:text-amber-200 mb-2">Referral Recommended</h4>
+                      <p className="text-sm text-amber-700 dark:text-amber-300">
+                        Facility: {selectedCard.referralFacility || "Not specified"}
+                      </p>
+                    </div>
+                  )}
+
+                  {selectedCard.notes && (
+                    <div>
+                      <h4 className="text-sm font-medium text-muted-foreground mb-2">Notes</h4>
+                      <p className="text-sm">{selectedCard.notes}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <DialogFooter className="gap-2 sm:gap-0">
+                <Button
+                  variant="destructive"
+                  onClick={() => setIsRejectOpen(true)}
+                  data-testid="button-reject-modal"
+                >
+                  <XCircle className="h-4 w-4 mr-2" />
+                  Reject
+                </Button>
+                <Button
+                  onClick={handleApprove}
+                  disabled={approveMutation.isPending}
+                  data-testid="button-approve-modal"
+                >
+                  {approveMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="h-4 w-4 mr-2" />
+                  )}
+                  Approve
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={isRejectOpen} onOpenChange={setIsRejectOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Reject Health Card</DialogTitle>
+                <DialogDescription>
+                  Please provide a reason for rejection. This will be shared with the class teacher.
+                </DialogDescription>
+              </DialogHeader>
+              <Textarea
+                placeholder="Enter rejection reason..."
+                value={rejectionReason}
+                onChange={(e) => setRejectionReason(e.target.value)}
+                className="min-h-[100px]"
+                data-testid="input-rejection-reason"
+              />
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsRejectOpen(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={handleReject}
+                  disabled={!rejectionReason.trim() || rejectMutation.isPending}
+                  data-testid="button-confirm-reject"
+                >
+                  {rejectMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <XCircle className="h-4 w-4 mr-2" />
+                  )}
+                  Confirm Rejection
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </>
+      )}
+
+      {/* User Detail View Dialog */}
+      <Dialog open={isUserViewOpen} onOpenChange={setIsUserViewOpen}>
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Health Card Review</DialogTitle>
+            <DialogTitle>User Registration Review</DialogTitle>
             <DialogDescription>
-              Review the health card details before approval
+              Review the user registration details before approval
             </DialogDescription>
           </DialogHeader>
 
-          {selectedCard && (
+          {selectedUser && (
             <div className="space-y-6">
               <div className="flex items-center gap-4 p-4 bg-muted/50 rounded-lg">
                 <Avatar className="h-16 w-16">
                   <AvatarFallback className="bg-primary/10 text-primary text-xl">
-                    {selectedCard.nameOfChild?.slice(0, 2).toUpperCase() || "ST"}
+                    {selectedUser.fullName?.slice(0, 2).toUpperCase() || "U"}
                   </AvatarFallback>
                 </Avatar>
                 <div>
-                  <h3 className="text-xl font-semibold">{selectedCard.nameOfChild}</h3>
-                  <p className="text-muted-foreground">
-                    Class {selectedCard.classSection} • {selectedCard.gender === "M" ? "Male" : selectedCard.gender === "F" ? "Female" : "Other"}
-                  </p>
+                  <h3 className="text-xl font-semibold">{selectedUser.fullName}</h3>
+                  <p className="text-muted-foreground">{selectedUser.role}</p>
                   <p className="text-sm text-muted-foreground">
-                    Age: {selectedCard.ageYears ?? "N/A"} years {selectedCard.ageMonths ?? "N/A"} months
+                    Requested: {selectedUser.requestedAt ? new Date(selectedUser.requestedAt).toLocaleString() : new Date(selectedUser.createdAt).toLocaleString()}
                   </p>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <h4 className="text-sm font-medium text-muted-foreground mb-2">Anthropometrics</h4>
+                  <h4 className="text-sm font-medium text-muted-foreground mb-2">Contact Information</h4>
                   <div className="space-y-1">
-                    <p><span className="font-medium">Weight:</span> {selectedCard.weightKg} kg</p>
-                    <p><span className="font-medium">Height:</span> {selectedCard.heightCm} cm</p>
-                    <p><span className="font-medium">BMI:</span> {selectedCard.bmi ? parseFloat(selectedCard.bmi).toFixed(1) : "N/A"}</p>
-                    <p><span className="font-medium">Blood Pressure:</span> {selectedCard.sbp}/{selectedCard.dbp}</p>
+                    <p><span className="font-medium">Email:</span> {selectedUser.email}</p>
+                    <p><span className="font-medium">Username:</span> {selectedUser.username}</p>
                   </div>
                 </div>
                 <div>
-                  <h4 className="text-sm font-medium text-muted-foreground mb-2">Vision</h4>
+                  <h4 className="text-sm font-medium text-muted-foreground mb-2">Assignment Details</h4>
                   <div className="space-y-1">
-                    <p><span className="font-medium">Right Eye:</span> {selectedCard.visionRight || "N/A"}</p>
-                    <p><span className="font-medium">Left Eye:</span> {selectedCard.visionLeft || "N/A"}</p>
+                    {selectedUser.district && (
+                      <p><span className="font-medium">District:</span> {selectedUser.district}</p>
+                    )}
+                    {selectedUser.schoolId && (
+                      <p><span className="font-medium">School ID:</span> {selectedUser.schoolId}</p>
+                    )}
+                    {selectedUser.classSection && (
+                      <p><span className="font-medium">Class Section:</span> {selectedUser.classSection}</p>
+                    )}
                   </div>
                 </div>
               </div>
 
-              {selectedCard.deficiencies && selectedCard.deficiencies.length > 0 && (
-                <div>
-                  <h4 className="text-sm font-medium text-muted-foreground mb-2">Deficiencies</h4>
-                  <div className="flex flex-wrap gap-2">
-                    {(Array.isArray(selectedCard.deficiencies) ? selectedCard.deficiencies : []).map((d: string, i: number) => (
-                      <Badge key={i} variant="outline">{d}</Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {selectedCard.referralRecommended && (
-                <div className="p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
-                  <h4 className="font-medium text-amber-800 dark:text-amber-200 mb-2">Referral Recommended</h4>
-                  <p className="text-sm text-amber-700 dark:text-amber-300">
-                    Facility: {selectedCard.referralFacility || "Not specified"}
-                  </p>
-                </div>
-              )}
-
-              {selectedCard.notes && (
-                <div>
-                  <h4 className="text-sm font-medium text-muted-foreground mb-2">Notes</h4>
-                  <p className="text-sm">{selectedCard.notes}</p>
-                </div>
-              )}
+              <div className="p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                <h4 className="font-medium text-amber-800 dark:text-amber-200 mb-2">Review Required</h4>
+                <p className="text-sm text-amber-700 dark:text-amber-300">
+                  Please verify that this {selectedUser.role} registration is legitimate and the details are correct before approving.
+                </p>
+              </div>
             </div>
           )}
 
           <DialogFooter className="gap-2 sm:gap-0">
             <Button
               variant="destructive"
-              onClick={() => setIsRejectOpen(true)}
-              data-testid="button-reject-modal"
+              onClick={() => {
+                setIsUserViewOpen(false);
+                setIsUserRejectOpen(true);
+              }}
             >
               <XCircle className="h-4 w-4 mr-2" />
               Reject
             </Button>
             <Button
-              onClick={handleApprove}
-              disabled={approveMutation.isPending}
-              data-testid="button-approve-modal"
+              onClick={() => {
+                if (selectedUser) {
+                  approveUserMutation.mutate(selectedUser.id);
+                }
+              }}
+              disabled={approveUserMutation.isPending}
             >
-              {approveMutation.isPending ? (
+              {approveUserMutation.isPending ? (
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
               ) : (
                 <CheckCircle2 className="h-4 w-4 mr-2" />
@@ -512,32 +819,177 @@ export default function ApprovalsPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={isRejectOpen} onOpenChange={setIsRejectOpen}>
+      {/* User Rejection Dialog */}
+      <Dialog open={isUserRejectOpen} onOpenChange={setIsUserRejectOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Reject Health Card</DialogTitle>
+            <DialogTitle>Reject User Registration</DialogTitle>
             <DialogDescription>
-              Please provide a reason for rejection. This will be shared with the class teacher.
+              Please provide a reason for rejection. This will be recorded for audit purposes.
             </DialogDescription>
           </DialogHeader>
           <Textarea
             placeholder="Enter rejection reason..."
-            value={rejectionReason}
-            onChange={(e) => setRejectionReason(e.target.value)}
+            value={userRejectionReason}
+            onChange={(e) => setUserRejectionReason(e.target.value)}
             className="min-h-[100px]"
-            data-testid="input-rejection-reason"
           />
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsRejectOpen(false)}>
+            <Button variant="outline" onClick={() => setIsUserRejectOpen(false)}>
               Cancel
             </Button>
             <Button
               variant="destructive"
-              onClick={handleReject}
-              disabled={!rejectionReason.trim() || rejectMutation.isPending}
-              data-testid="button-confirm-reject"
+              onClick={() => {
+                if (selectedUser) {
+                  rejectUserMutation.mutate({ 
+                    userId: selectedUser.id, 
+                    reason: userRejectionReason.trim() || `Rejected by ${user?.role?.toLowerCase()}` 
+                  });
+                }
+              }}
+              disabled={rejectUserMutation.isPending}
             >
-              {rejectMutation.isPending ? (
+              {rejectUserMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <XCircle className="h-4 w-4 mr-2" />
+              )}
+              Confirm Rejection
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* School Detail View Dialog */}
+      <Dialog open={isSchoolViewOpen} onOpenChange={setIsSchoolViewOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>School Registration Review</DialogTitle>
+            <DialogDescription>
+              Review the school registration details before approval
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedSchool && (
+            <div className="space-y-6">
+              <div className="flex items-center gap-4 p-4 bg-muted/50 rounded-lg">
+                <div className="p-3 bg-blue-100 rounded-lg">
+                  <School className="h-8 w-8 text-blue-600" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-semibold">{selectedSchool.name}</h3>
+                  <p className="text-muted-foreground">{selectedSchool.schoolType} School</p>
+                  <p className="text-sm text-muted-foreground">
+                    Requested: {selectedSchool.createdAt ? new Date(selectedSchool.createdAt).toLocaleString() : "Recently"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <h4 className="text-sm font-medium text-muted-foreground mb-2">Location Details</h4>
+                  <div className="space-y-1">
+                    <p><span className="font-medium">District:</span> {selectedSchool.district}</p>
+                    <p><span className="font-medium">Block:</span> {selectedSchool.block}</p>
+                    {selectedSchool.region && (
+                      <p><span className="font-medium">Region:</span> {selectedSchool.region}</p>
+                    )}
+                    {selectedSchool.address && (
+                      <p><span className="font-medium">Address:</span> {selectedSchool.address}</p>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <h4 className="text-sm font-medium text-muted-foreground mb-2">Contact Information</h4>
+                  <div className="space-y-1">
+                    <p><span className="font-medium">Email:</span> {selectedSchool.contactEmail || "Not provided"}</p>
+                    <p><span className="font-medium">Phone:</span> {selectedSchool.contactPhone || "Not provided"}</p>
+                    {selectedSchool.requestedByEmail && (
+                      <p><span className="font-medium">Requested by:</span> {selectedSchool.requestedByEmail}</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {selectedSchool.code && (
+                <div>
+                  <h4 className="text-sm font-medium text-muted-foreground mb-2">School Code</h4>
+                  <p className="font-mono text-sm bg-muted p-2 rounded">{selectedSchool.code}</p>
+                </div>
+              )}
+
+              <div className="p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                <h4 className="font-medium text-amber-800 dark:text-amber-200 mb-2">Review Required</h4>
+                <p className="text-sm text-amber-700 dark:text-amber-300">
+                  Please verify that this school registration is legitimate and all details are correct before approving.
+                </p>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="destructive"
+              onClick={() => {
+                setIsSchoolViewOpen(false);
+                setIsSchoolRejectOpen(true);
+              }}
+            >
+              <XCircle className="h-4 w-4 mr-2" />
+              Reject
+            </Button>
+            <Button
+              onClick={() => {
+                if (selectedSchool) {
+                  approveSchoolMutation.mutate(selectedSchool.id);
+                }
+              }}
+              disabled={approveSchoolMutation.isPending}
+            >
+              {approveSchoolMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <CheckCircle2 className="h-4 w-4 mr-2" />
+              )}
+              Approve
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* School Rejection Dialog */}
+      <Dialog open={isSchoolRejectOpen} onOpenChange={setIsSchoolRejectOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reject School Registration</DialogTitle>
+            <DialogDescription>
+              Please provide a reason for rejection. This will be recorded for audit purposes.
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            placeholder="Enter rejection reason..."
+            value={schoolRejectionReason}
+            onChange={(e) => setSchoolRejectionReason(e.target.value)}
+            className="min-h-[100px]"
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsSchoolRejectOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (selectedSchool) {
+                  rejectSchoolMutation.mutate({ 
+                    schoolId: selectedSchool.id, 
+                    reason: schoolRejectionReason.trim() || `Rejected by ${user?.role?.toLowerCase()}` 
+                  });
+                }
+              }}
+              disabled={rejectSchoolMutation.isPending}
+            >
+              {rejectSchoolMutation.isPending ? (
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
               ) : (
                 <XCircle className="h-4 w-4 mr-2" />

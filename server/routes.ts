@@ -4,11 +4,7 @@ import { storage } from "./storage.js";
 import { reportsStorage } from "./reportsStorage.js";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
-<<<<<<< HEAD
-import { insertStudentSchema, insertSchoolSchema, insertAnnualHealthCardSchema, insertMonthlyCheckupSchema, insertMealLogSchema, insertMedicalTeamSchema, insertMedicalTeamMemberSchema, insertMedicalEventSchema, insertStudentCheckupSchema, loginSchema, registerSchema, hostelAttendance, annualHealthCards, users, schools, students, notifications, referrals } from "../shared/schema.js";
-=======
-import { insertStudentSchema, insertSchoolSchema, insertAnnualHealthCardSchema, insertMonthlyCheckupSchema, insertMealLogSchema, loginSchema, registerSchema, hostelAttendance, annualHealthCards, users, schools, students, notifications, referrals, usageTracking } from "../shared/schema.js";
->>>>>>> origin/ui-dashboard-revamp
+import { insertStudentSchema, insertSchoolSchema, insertMedicalTeamSchema, insertMedicalTeamMemberSchema, insertMedicalEventSchema, insertStudentCheckupSchema, registerSchema, annualHealthCards, users, schools, students, notifications, usageTracking } from "../shared/schema.js";
 import { z } from "zod";
 import PDFDocument from "pdfkit";
 import ExcelJS from "exceljs";
@@ -18,7 +14,7 @@ import path from "path";
 import fs from "fs";
 // @ts-ignore - Module resolution issue, but works at runtime
 import { db } from "./db.js";
-import { sql, eq, and, or, isNull, desc, inArray } from "drizzle-orm";
+import { sql, eq, and, desc, inArray, not } from "drizzle-orm";
 
 // Normalize status values from DB/third-party sources to canonical casing
 function normalizeStatus(s?: string) {
@@ -91,7 +87,7 @@ async function uploadFileToSupabase(localFilePath: string, remotePathPrefix = "m
       // If the error indicates the bucket is missing, try to create it (requires service role key)
       if (msg && /bucket not found|Bucket not found|404|no such bucket/i.test(msg)) {
         console.log(`Bucket "${SUPABASE_UPLOAD_BUCKET}" not found. Attempting to create it...`);
-        const { data: createData, error: createErr } = await supabase.storage.createBucket(SUPABASE_UPLOAD_BUCKET, { public: true });
+        const { error: createErr } = await supabase.storage.createBucket(SUPABASE_UPLOAD_BUCKET, { public: true });
         if (createErr) {
           console.error('Failed to create Supabase bucket:', createErr.message || createErr);
           throw createErr;
@@ -199,7 +195,7 @@ async function generateChartImage(chartConfig: any, width: number = 800, height:
 // Helper for safe sampling of potentially non-serializable objects for logging
 function safeSample(obj: any, maxLen = 1000) {
   try {
-    const s = JSON.stringify(obj, (k, v) => {
+    const s = JSON.stringify(obj, (_k, v) => {
       if (typeof v === 'bigint') return String(v);
       if (v instanceof Date) return v.toISOString();
       return v;
@@ -211,18 +207,6 @@ function safeSample(obj: any, maxLen = 1000) {
     } catch (e) {
       return '<<unable to sample value>>';
     }
-  }
-}
-
-// Convert various inputs (Date, string) into 'YYYY-MM-DD' safely
-function toDateStringSafe(d?: any): string | null {
-  if (!d) return null;
-  try {
-    const dt = d instanceof Date ? d : new Date(d);
-    if (isNaN(dt.getTime())) return null;
-    return dt.toISOString().split('T')[0];
-  } catch (e) {
-    return null;
   }
 }
 
@@ -244,13 +228,6 @@ function ensureSpace(doc: any, requiredHeight: number) {
     doc.addPage();
     drawHeaderFooter(doc, undefined, (doc as any)._generatedDate);
   }
-}
-
-// Helper to estimate and ensure space for a text block
-function ensureTextBlock(doc: any, text: string, opts: any = {}) {
-  const width = opts.width || (doc.page.width - doc.page.margins.left - doc.page.margins.right);
-  const h = doc.heightOfString(text, { width });
-  ensureSpace(doc, h + (opts.buffer || 8));
 }
 
 // Ensure a block of content (title/date/summary) fits together on the same page.
@@ -353,8 +330,6 @@ function drawSimpleChart(doc: any, chartConfig: any, width = 500, height = 300) 
     const values = (chartConfig.data.datasets[0].data || []).map((v: any) => Number(v) || 0);
     const total = values.reduce((s: number, v: number) => s + v, 0) || 1;
     const radius = Math.min(printableWidth, chartHeight) / 4;
-    const cx = startX + printableWidth / 2;
-    const cy = chartTop + radius + 10;
     let startAngle = -Math.PI / 2;
     for (let i = 0; i < labels.length; i++) {
       const slice = values[i] / total;
@@ -416,7 +391,7 @@ async function addChartToDoc(doc: any, chartConfig: any, width = 500, height = 3
   } catch (err: any) {
     console.error('Failed to render chart image, using vector fallback:', (err as any)?.message || err);
     try {
-      await drawSimpleChart(doc, chartConfig, width, height);
+      drawSimpleChart(doc, chartConfig, width, height);
     } catch (fallbackErr) {
       console.error('Fallback chart rendering also failed:', (fallbackErr as any)?.message || fallbackErr);
       // Render a bold placeholder message so the PDF is still useful and it's obvious a chart failed
@@ -425,42 +400,6 @@ async function addChartToDoc(doc: any, chartConfig: any, width = 500, height = 3
       doc.moveDown();
       doc.fillColor('black');
     }
-  }
-}
-
-function renderTable(doc: any, headers: string[], rows: any[][], opts: { rowHeight?: number } = {}) {
-  const rowHeight = opts.rowHeight || 20;
-  // header
-  ensureSpace(doc, rowHeight + 14);
-  doc.fontSize(12).font('Helvetica-Bold');
-  const startX = doc.x;
-  const colWidth = (doc.page.width - doc.page.margins.left - doc.page.margins.right) / headers.length;
-  headers.forEach((h, i) => {
-    const headerText = typeof h === 'string' ? h : String(h);
-    doc.text(headerText, startX + i * colWidth, doc.y, { width: colWidth, align: 'left' });
-  });
-  doc.moveDown();
-
-  // rows
-  doc.fontSize(12).font('Helvetica');
-  for (const row of rows) {
-    // Compute max cell height to avoid row splitting
-    let maxCellHeight = 0;
-    const cellTexts = row.map(c => (c === null || c === undefined) ? '' : String(c));
-    cellTexts.forEach((text, i) => {
-      const h = doc.heightOfString(text, { width: colWidth });
-      if (h > maxCellHeight) maxCellHeight = h;
-    });
-
-    ensureSpace(doc, maxCellHeight + 6);
-    // Render each cell
-    cellTexts.forEach((text, i) => {
-      const x = startX + i * colWidth;
-      const y = doc.y;
-      doc.text(text, x, y, { width: colWidth, align: 'left' });
-    });
-    // Move down by the height that was used
-    doc.moveDown(Math.max(1, Math.ceil((maxCellHeight) / (doc.currentLineHeight() || 12))));
   }
 }
 
@@ -932,7 +871,7 @@ function buildHealthCardPayload(student: any, schoolId: string, healthCardData: 
 }
 
 export async function registerRoutes(
-  httpServer: Server,
+  _httpServer: Server,
   app: Express
 ): Promise<Server> {
   // Health check endpoint for Railway
@@ -1061,8 +1000,8 @@ export async function registerRoutes(
 
         // Notify appropriate approver(s)
         try {
-          if (data.role === "PO" || data.role === "Headmaster") {
-            // For PO and Headmaster registrations, notify Admins
+          if (data.role === "PO") {
+            // For PO registrations, notify Admins
             await storage.createNotification({
               senderId: user.id,
               senderRole: user.role as any,
@@ -1072,6 +1011,30 @@ export async function registerRoutes(
               message: `${user.fullName} (${user.role}) has requested an account. Admin approval required.`,
               metadata: { pendingUserId: user.id },
             } as any);
+          } else if (data.role === "Headmaster") {
+            // For Headmaster registrations, notify POs in the same district
+            if (data.district) {
+              await storage.createNotification({
+                senderId: user.id,
+                senderRole: user.role as any,
+                receiverRole: "PO" as any,
+                type: "system" as any,
+                title: "Headmaster approval request",
+                message: `${user.fullName} (Headmaster) has requested an account for ${data.district} district. PO approval required.`,
+                metadata: { pendingUserId: user.id, district: data.district },
+              } as any);
+            } else {
+              // Fallback to Admin if no district specified
+              await storage.createNotification({
+                senderId: user.id,
+                senderRole: user.role as any,
+                receiverRole: "Admin" as any,
+                type: "system" as any,
+                title: "Account approval request",
+                message: `${user.fullName} (${user.role}) has requested an account. Admin approval required.`,
+                metadata: { pendingUserId: user.id },
+              } as any);
+            }
           } else {
             // Existing behavior: notify the school's headmaster (if configured)
             if (user.schoolId) {
@@ -1101,7 +1064,15 @@ export async function registerRoutes(
 
         console.info(`Registration: created pending user ${user.id} role=${user.role} schoolId=${user.schoolId}`);
 
-        const pendingMessage = (data.role === "PO" || data.role === "Headmaster") ? "Account created and pending admin approval" : "Account created and pending headmaster approval";
+        let pendingMessage = "Account created and pending approval";
+        if (data.role === "PO") {
+          pendingMessage = "Account created and pending admin approval";
+        } else if (data.role === "Headmaster") {
+          pendingMessage = "Account created and pending PO approval";
+        } else {
+          pendingMessage = "Account created and pending headmaster approval";
+        }
+        
         return res.status(202).json({ message: pendingMessage, pending: true, user: { id: user.id, username: user.username, fullName: user.fullName, role: user.role, schoolId: user.schoolId } });
       }
 
@@ -1371,8 +1342,12 @@ export async function registerRoutes(
     }
   });
 
-  // --- Approval endpoints (Headmaster) ---
-  app.get("/api/approvals/pending", authenticateToken, authorizeRoles("Headmaster", "Admin"), async (req: AuthRequest, res) => {
+
+
+
+
+  // --- Approval endpoints (Headmaster and PO) ---
+  app.get("/api/approvals/pending", authenticateToken, authorizeRoles("Headmaster", "PO", "Admin"), async (req: AuthRequest, res) => {
     try {
       const requester = req.user!;
 
@@ -1397,6 +1372,34 @@ export async function registerRoutes(
         }).from(users).where(and(eq(users.schoolId, schoolId), eq(users.approvalStatus, "Pending")));
 
         console.info(`Approvals: headmaster ${requester.id} requested pending users for school ${schoolId}. Found ${pending.length}`);
+      } else if (requester.role === "PO") {
+        // PO can view pending Headmaster accounts in their district
+        const poUser = await storage.getUser(requester.id);
+        const poDistrict = poUser?.district;
+        
+        if (!poDistrict) {
+          return res.status(400).json({ message: "PO district not configured" });
+        }
+
+        pending = await db.select({
+          id: users.id,
+          username: users.username,
+          email: users.email,
+          fullName: users.fullName,
+          role: users.role,
+          schoolId: users.schoolId,
+          classSection: users.classSection,
+          district: users.district,
+          block: users.block,
+          requestedAt: users.requestedAt,
+          createdAt: users.createdAt,
+        }).from(users).where(and(
+          eq(users.role, "Headmaster"), 
+          eq(users.approvalStatus, "Pending"),
+          eq(users.district, poDistrict)
+        ));
+
+        console.info(`Approvals: PO ${requester.id} requested pending Headmaster users for district ${poDistrict}. Found ${pending.length}`);
       } else if (requester.role === "Admin") {
         // Admin can view all pending user approvals across schools
         pending = await db.select({
@@ -1423,7 +1426,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/approvals/:id/approve", authenticateToken, authorizeRoles("Headmaster", "Admin"), async (req: AuthRequest, res) => {
+  app.post("/api/approvals/:id/approve", authenticateToken, authorizeRoles("Headmaster", "PO", "Admin"), async (req: AuthRequest, res) => {
     try {
       const { id } = req.params;
       const requester = req.user!;
@@ -1463,6 +1466,35 @@ export async function registerRoutes(
         } catch (e) {
           console.warn('Failed to create audit log for approval:', (e as any)?.message || e);
         }
+      } else if (requester.role === "PO") {
+        // PO can approve Headmaster accounts in their district
+        if (userToApprove.role !== "Headmaster") {
+          return res.status(403).json({ message: "PO can only approve Headmaster accounts" });
+        }
+        
+        const poUser = await storage.getUser(requester.id);
+        const poDistrict = poUser?.district;
+        
+        if (!poDistrict) {
+          return res.status(400).json({ message: "PO district not configured" });
+        }
+        
+        if (userToApprove.district !== poDistrict) {
+          return res.status(403).json({ message: "Cannot approve Headmaster from a different district" });
+        }
+
+        await db.update(users).set({ 
+          approvalStatus: "Approved" as any, 
+          isActive: true, 
+          approverId: requester.id, 
+          approvedAt: new Date() 
+        } as any).where(eq(users.id, id));
+        
+        try {
+          await storage.createAuditLog({ userId: requester.id, action: 'HEADMASTER_REQUEST_APPROVED', entityType: 'user', entityId: userToApprove.id, details: { approvedBy: requester.id, approvedUserId: userToApprove.id, district: poDistrict } } as any);
+        } catch (e) {
+          console.warn('Failed to create audit log for PO approval:', (e as any)?.message || e);
+        }
       } else if (requester.role === "Admin") {
         // Admin can approve any pending user (including PO and Headmaster)
         await db.update(users).set({ 
@@ -1498,7 +1530,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/approvals/:id/reject", authenticateToken, authorizeRoles("Headmaster", "Admin"), async (req: AuthRequest, res) => {
+  app.post("/api/approvals/:id/reject", authenticateToken, authorizeRoles("Headmaster", "PO", "Admin"), async (req: AuthRequest, res) => {
     try {
       const { id } = req.params;
       const { reason } = req.body || {};
@@ -1526,6 +1558,36 @@ export async function registerRoutes(
           await storage.createAuditLog({ userId: requester.id, action: userToReject.role === 'Lady Superintendent' ? 'LS_REQUEST_REJECTED' : 'USER_REQUEST_REJECTED', entityType: 'user', entityId: userToReject.id, details: { rejectedBy: requester.id, reason: reason ?? null } } as any);
         } catch (e) {
           console.warn('Failed to create audit log for rejection:', (e as any)?.message || e);
+        }
+      } else if (requester.role === "PO") {
+        // PO can reject Headmaster accounts in their district
+        if (userToReject.role !== "Headmaster") {
+          return res.status(403).json({ message: "PO can only reject Headmaster accounts" });
+        }
+        
+        const poUser = await storage.getUser(requester.id);
+        const poDistrict = poUser?.district;
+        
+        if (!poDistrict) {
+          return res.status(400).json({ message: "PO district not configured" });
+        }
+        
+        if (userToReject.district !== poDistrict) {
+          return res.status(403).json({ message: "Cannot reject Headmaster from a different district" });
+        }
+
+        await db.update(users).set({ 
+          approvalStatus: "Rejected" as any, 
+          isActive: false, 
+          approverId: requester.id, 
+          approverNote: reason ?? null, 
+          approvedAt: new Date() 
+        } as any).where(eq(users.id, id));
+        
+        try {
+          await storage.createAuditLog({ userId: requester.id, action: 'HEADMASTER_REQUEST_REJECTED', entityType: 'user', entityId: userToReject.id, details: { rejectedBy: requester.id, reason: reason ?? null, district: poDistrict } } as any);
+        } catch (e) {
+          console.warn('Failed to create audit log for PO rejection:', (e as any)?.message || e);
         }
       } else if (requester.role === "Admin") {
         await db.update(users).set({ 
@@ -1672,12 +1734,26 @@ export async function registerRoutes(
       const school = await storage.createSchool(data as any);
       console.info(`School request created: id=${school.id} approvalStatus=${school.approvalStatus} isActive=${school.isActive} requestedByEmail=${school.requestedByEmail ?? 'n/a'}`);
 
-      // Notify system admins (in-app) about the new school request
+      // Notify system admins and POs about the new school request
       try {
         // Notifications require a valid senderId referencing an existing user.
         // Use an Admin user as the sender for system-generated notifications when possible.
         const [adminUser] = await db.select({ id: users.id, role: users.role }).from(users).where(eq(users.role, "Admin")).limit(1) as any;
         if (adminUser && adminUser.id) {
+          // Notify POs in the same district
+          if (data.district) {
+            await storage.createNotification({
+              senderId: adminUser.id,
+              senderRole: adminUser.role as any,
+              receiverRole: "PO" as any,
+              type: "school_request" as any,
+              title: "New school approval request",
+              message: `New school request: ${school.name} (${school.district} - ${school.block}) requires PO approval`,
+              metadata: { schoolId: school.id, request: school, district: data.district },
+            } as any);
+          }
+          
+          // Also notify Admins as fallback
           await storage.createNotification({
             senderId: adminUser.id,
             senderRole: adminUser.role as any,
@@ -1731,10 +1807,33 @@ export async function registerRoutes(
     }
   });
 
-  // Admin endpoints to review pending school requests
-  app.get("/api/schools/pending", authenticateToken, authorizeRoles("Admin"), async (req: AuthRequest, res) => {
+  // Admin and PO endpoints to review pending school requests
+  app.get("/api/schools/pending", authenticateToken, authorizeRoles("PO", "Admin"), async (req: AuthRequest, res) => {
     try {
-      const pending = await db.select().from(schools).where(eq(schools.approvalStatus, "Pending")).orderBy(desc(schools.createdAt));
+      const requester = req.user!;
+      let pending: any[] = [];
+
+      if (requester.role === "PO") {
+        // PO can only see pending schools in their district
+        const poUser = await storage.getUser(requester.id);
+        const poDistrict = poUser?.district;
+        
+        if (!poDistrict) {
+          return res.status(400).json({ message: "PO district not configured" });
+        }
+
+        pending = await db.select().from(schools).where(and(
+          eq(schools.approvalStatus, "Pending"),
+          eq(schools.district, poDistrict)
+        )).orderBy(desc(schools.createdAt));
+
+        console.info(`PO ${requester.id} requested pending schools for district ${poDistrict}. Found ${pending.length}`);
+      } else if (requester.role === "Admin") {
+        // Admin can see all pending schools
+        pending = await db.select().from(schools).where(eq(schools.approvalStatus, "Pending")).orderBy(desc(schools.createdAt));
+        console.info(`Admin ${requester.id} requested all pending schools. Found ${pending.length}`);
+      }
+
       return res.json({ pending });
     } catch (error: any) {
       console.error("Get pending schools error:", error?.message || String(error));
@@ -1742,7 +1841,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/schools/:id/approve", authenticateToken, authorizeRoles("Admin"), async (req: AuthRequest, res) => {
+  app.post("/api/schools/:id/approve", authenticateToken, authorizeRoles("PO", "Admin"), async (req: AuthRequest, res) => {
     try {
       const { id } = req.params;
       const requester = req.user!;
@@ -1751,6 +1850,20 @@ export async function registerRoutes(
       console.info(`Approvals: fetched school ${id} from DB: approvalStatus=${schoolToApprove?.approvalStatus} isActive=${schoolToApprove?.isActive} requestedByEmail=${schoolToApprove?.requestedByEmail ?? 'n/a'}`);
       if (!schoolToApprove) return res.status(404).json({ message: "School not found" });
       if (schoolToApprove.approvalStatus !== "Pending") return res.status(400).json({ message: "School is not pending approval" });
+
+      // PO can only approve schools in their district
+      if (requester.role === "PO") {
+        const poUser = await storage.getUser(requester.id);
+        const poDistrict = poUser?.district;
+        
+        if (!poDistrict) {
+          return res.status(400).json({ message: "PO district not configured" });
+        }
+        
+        if (schoolToApprove.district !== poDistrict) {
+          return res.status(403).json({ message: "Cannot approve school from a different district" });
+        }
+      }
 
       await db.update(schools).set({ 
         approvalStatus: "Approved" as any, 
@@ -1761,15 +1874,29 @@ export async function registerRoutes(
 
       // Notify admins and the requesting user (if exists)
       try {
-        await storage.createNotification({
-          senderId: requester.id,
-          senderRole: requester.role as any,
-          receiverRole: "Admin" as any,
-          type: "system" as any,
-          title: "School approved",
-          message: `School ${schoolToApprove.name} has been approved by ${requester.username}`,
-          metadata: { schoolId: id },
-        } as any);
+        if (requester.role === "PO") {
+          // Notify admins about PO approval
+          await storage.createNotification({
+            senderId: requester.id,
+            senderRole: requester.role as any,
+            receiverRole: "Admin" as any,
+            type: "system" as any,
+            title: "School approved by PO",
+            message: `School ${schoolToApprove.name} has been approved by PO ${requester.username}`,
+            metadata: { schoolId: id, approvedBy: "PO" },
+          } as any);
+        } else {
+          // Admin approval notification
+          await storage.createNotification({
+            senderId: requester.id,
+            senderRole: requester.role as any,
+            receiverRole: "Admin" as any,
+            type: "system" as any,
+            title: "School approved",
+            message: `School ${schoolToApprove.name} has been approved by ${requester.username}`,
+            metadata: { schoolId: id },
+          } as any);
+        }
 
         if (schoolToApprove.requestedByEmail) {
           const [user] = await db.select().from(users).where(eq(users.email, schoolToApprove.requestedByEmail));
@@ -1797,7 +1924,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/schools/:id/reject", authenticateToken, authorizeRoles("Admin"), async (req: AuthRequest, res) => {
+  app.post("/api/schools/:id/reject", authenticateToken, authorizeRoles("PO", "Admin"), async (req: AuthRequest, res) => {
     try {
       const { id } = req.params;
       const { reason } = req.body || {};
@@ -1806,6 +1933,20 @@ export async function registerRoutes(
       const schoolToReject = await storage.getSchool(id, true);
       if (!schoolToReject) return res.status(404).json({ message: "School not found" });
       if (schoolToReject.approvalStatus !== "Pending") return res.status(400).json({ message: "School is not pending approval" });
+
+      // PO can only reject schools in their district
+      if (requester.role === "PO") {
+        const poUser = await storage.getUser(requester.id);
+        const poDistrict = poUser?.district;
+        
+        if (!poDistrict) {
+          return res.status(400).json({ message: "PO district not configured" });
+        }
+        
+        if (schoolToReject.district !== poDistrict) {
+          return res.status(403).json({ message: "Cannot reject school from a different district" });
+        }
+      }
 
       await db.update(schools).set({ 
         approvalStatus: "Rejected" as any, 
@@ -1816,15 +1957,28 @@ export async function registerRoutes(
       } as any).where(eq(schools.id, id));
 
       try {
-        await storage.createNotification({
-          senderId: requester.id,
-          senderRole: requester.role as any,
-          receiverRole: "Admin" as any,
-          type: "system" as any,
-          title: "School rejected",
-          message: `School ${schoolToReject.name} has been rejected by ${requester.username}. Reason: ${reason ?? "Not provided"}`,
-          metadata: { schoolId: id },
-        } as any);
+        if (requester.role === "PO") {
+          // Notify admins about PO rejection
+          await storage.createNotification({
+            senderId: requester.id,
+            senderRole: requester.role as any,
+            receiverRole: "Admin" as any,
+            type: "system" as any,
+            title: "School rejected by PO",
+            message: `School ${schoolToReject.name} has been rejected by PO ${requester.username}. Reason: ${reason || 'No reason provided'}`,
+            metadata: { schoolId: id, rejectedBy: "PO", reason: reason || null },
+          } as any);
+        } else {
+          await storage.createNotification({
+            senderId: requester.id,
+            senderRole: requester.role as any,
+            receiverRole: "Admin" as any,
+            type: "system" as any,
+            title: "School rejected",
+            message: `School ${schoolToReject.name} has been rejected by ${requester.username}. Reason: ${reason ?? "Not provided"}`,
+            metadata: { schoolId: id },
+          } as any);
+        }
 
         if (schoolToReject.requestedByEmail) {
           const [user] = await db.select().from(users).where(eq(users.email, schoolToReject.requestedByEmail));
@@ -3450,10 +3604,14 @@ export async function registerRoutes(
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 10;
       const status = req.query.status as string;
+      const month = req.query.month ? parseInt(req.query.month as string) : new Date().getMonth() + 1;
+      const year = req.query.year ? parseInt(req.query.year as string) : new Date().getFullYear();
       
       const result = await storage.getStudentCheckups({ 
         eventId: req.params.eventId, 
         status, 
+        month,
+        year,
         page, 
         limit 
       });
@@ -3477,14 +3635,113 @@ export async function registerRoutes(
         }
       }
       
-      res.json({ checkups: checkupsWithStudents, total: checkupsWithStudents.length });
+      res.json({ 
+        checkups: checkupsWithStudents, 
+        total: checkupsWithStudents.length,
+        month,
+        year,
+        isCurrentMonth: month === new Date().getMonth() + 1 && year === new Date().getFullYear()
+      });
     } catch (error: any) {
       console.error("Get event checkups error:", error?.message || String(error));
       res.status(500).json({ message: error?.message || "Failed to fetch event checkups" });
     }
   });
 
-  app.put("/api/student-checkups/:id", authenticateToken, authorizeRoles("Admin", "MedicalTeam", "ClassTeacher"), async (req: AuthRequest, res) => {
+  // Create new monthly checkup for a student
+  app.post("/api/medical-events/:eventId/checkups", authenticateToken, authorizeRoles("Admin", "MedicalTeam", "ClassTeacher"), async (req: AuthRequest, res) => {
+    try {
+      const { studentId, month, year } = req.body;
+      const eventId = req.params.eventId;
+      
+      // Validate required fields
+      if (!studentId || !month || !year) {
+        return res.status(400).json({ message: "Student ID, month, and year are required" });
+      }
+      
+      // Validate month and year ranges
+      if (month < 1 || month > 12) {
+        return res.status(400).json({ message: "Month must be between 1 and 12" });
+      }
+      
+      if (year < 2020 || year > new Date().getFullYear() + 10) {
+        return res.status(400).json({ message: `Year must be between 2020 and ${new Date().getFullYear() + 10}` });
+      }
+      
+      // For ClassTeacher, ensure they can only create checkups for students in their assigned class
+      if (req.user?.role === "ClassTeacher") {
+        const teacher = await storage.getUser(req.user.id);
+        const student = await storage.getStudent(studentId);
+        
+        if (!student) {
+          return res.status(404).json({ message: "Student not found" });
+        }
+        
+        if (teacher?.schoolId !== student.schoolId) {
+          return res.status(403).json({ message: "You can only create checkups for students in your school" });
+        }
+        
+        if (teacher?.classSection && student.classSection !== teacher.classSection) {
+          return res.status(403).json({ message: "You can only create checkups for students in your assigned class" });
+        }
+      }
+      
+      // Check if checkup already exists for this student/event/month/year
+      const existingCheckup = await storage.getStudentCheckupByMonthYear(studentId, eventId, month, year);
+      if (existingCheckup) {
+        return res.status(409).json({ 
+          message: `A checkup already exists for this student in ${getMonthName(month)} ${year}`,
+          existingCheckup,
+          canEdit: existingCheckup.status !== "Completed"
+        });
+      }
+      
+      // Get event and team info
+      const event = await storage.getMedicalEvent(eventId);
+      if (!event) {
+        return res.status(404).json({ message: "Medical event not found" });
+      }
+      
+      // Create new checkup
+      const checkupData = {
+        studentId,
+        eventId,
+        teamId: event.teamId,
+        checkupMonth: month,
+        checkupYear: year,
+        status: "Not started" as const,
+        present: true,
+        ...req.body
+      };
+      
+      const checkup = await storage.createStudentCheckup(checkupData);
+      res.status(201).json(checkup);
+      
+    } catch (error: any) {
+      console.error("Create monthly checkup error:", error?.message || String(error));
+      
+      // Handle unique constraint violation
+      if (error?.code === '23505' && error?.constraint === 'unique_student_event_month_year') {
+        return res.status(409).json({ 
+          message: "A checkup already exists for this student in the selected month and year" 
+        });
+      }
+      
+      res.status(500).json({ message: error?.message || "Failed to create monthly checkup" });
+    }
+  });
+
+  // Helper function to get month name
+  function getMonthName(month: number): string {
+    const months = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+    return months[month - 1] || 'Unknown';
+  }
+
+  // Update student checkup
+  app.put("/api/student-checkups/:id", authenticateToken, async (req: AuthRequest, res: Response) => {
     try {
       const checkupData = insertStudentCheckupSchema.partial().parse(req.body);
       
@@ -3525,7 +3782,7 @@ export async function registerRoutes(
       let bmi = existingCheckup.bmi;
       if (checkupData.heightCm && checkupData.weightKg) {
         const heightM = checkupData.heightCm / 100;
-        bmi = parseFloat((checkupData.weightKg / (heightM * heightM)).toFixed(2));
+        bmi = (checkupData.weightKg / (heightM * heightM)).toFixed(2);
       }
       
       // Add BMI to update data
@@ -3548,7 +3805,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/meals", authenticateToken, denyAdmin, async (req: AuthRequest, res) => {
+  app.get("/api/meals", authenticateToken, denyAdmin, async (req: AuthRequest, res: Response) => {
     try {
       const date = req.query.date as string || new Date().toISOString().split("T")[0];
       // Determine requested schoolId safely: prefer user's assigned school, otherwise use query
@@ -3617,7 +3874,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/meals/compliance", authenticateToken, denyAdmin, async (req: AuthRequest, res) => {
+  app.get("/api/meals/compliance", authenticateToken, denyAdmin, async (req: AuthRequest, res: Response) => {
     try {
       // Determine requested schoolId safely: prefer user's assigned school, otherwise use query
       let schoolId = req.user?.schoolId || req.query.schoolId as string | undefined;
@@ -3968,7 +4225,7 @@ export async function registerRoutes(
 
 
 
-  app.get("/api/hostel/attendance", authenticateToken, denyAdmin, authorizeRoles("ClassTeacher", "Headmaster", "PO", "HostelWarden"), async (req: AuthRequest, res) => {
+  app.get("/api/hostel/attendance", authenticateToken, denyAdmin, authorizeRoles("ClassTeacher", "Headmaster", "PO", "HostelWarden", "Lady Superintendent", "MealSuperintendent"), async (req: AuthRequest, res) => {
     try {
       const date = req.query.date as string || new Date().toISOString().split("T")[0];
       const requestedSchool = req.query.schoolId as string;
@@ -3987,6 +4244,8 @@ export async function registerRoutes(
       // Determine which school(s) data to return based on role
       let schoolId: string | undefined;
       let teacherClassSection: string | undefined;
+      let genderFilter: string | undefined; // For LS/MS gender-based filtering
+      
       if (role === "ClassTeacher") {
         schoolId = req.user?.schoolId; // CT sees only their school
         // Get ClassTeacher's assigned class
@@ -3994,6 +4253,18 @@ export async function registerRoutes(
         teacherClassSection = teacher?.classSection ?? undefined;
       } else if (role === "Headmaster" || role === "HostelWarden") {
         schoolId = req.user?.schoolId; // HM and Warden see only their school (warden sees all students, not filtered by class)
+      } else if (role === "Lady Superintendent") {
+        schoolId = req.user?.schoolId; // LS sees only their school
+        genderFilter = "F"; // LS can only see female students
+        if (!schoolId) {
+          return res.status(400).json({ message: "Lady Superintendent is not assigned to a school" });
+        }
+      } else if (role === "MealSuperintendent") {
+        schoolId = req.user?.schoolId; // MS sees only their school
+        genderFilter = "M"; // MS can only see male students
+        if (!schoolId) {
+          return res.status(400).json({ message: "Meal Superintendent is not assigned to a school" });
+        }
       } else if (role === "PO" || role === "Admin") {
         schoolId = requestedSchool; // PO can filter by school or see aggregated
 
@@ -4057,8 +4328,13 @@ export async function registerRoutes(
         }
       }
 
+      // Apply gender filtering for LS and MS roles
+      if (genderFilter) {
+        baseStudents = baseStudents.filter(s => s.gender === genderFilter);
+      }
+
       // For ClassTeacher, filter students by their assigned class
-      console.info(`Hostel attendance request: role=${role} requestedSchool=${requestedSchool ?? 'none'} poDistrict=${poDistrict ?? 'none'} poSchoolId=${poSchoolId ?? 'none'} baseStudents=${baseStudents.length}`);
+      console.info(`Hostel attendance request: role=${role} requestedSchool=${requestedSchool ?? 'none'} poDistrict=${poDistrict ?? 'none'} poSchoolId=${poSchoolId ?? 'none'} genderFilter=${genderFilter ?? 'none'} baseStudents=${baseStudents.length}`);
       const students = role === "ClassTeacher" && teacherClassSection
         ? baseStudents.filter(s => s.classSection === teacherClassSection)
         : baseStudents;
@@ -4185,7 +4461,7 @@ export async function registerRoutes(
     }
   });
 
-  // General image upload endpoint used by client (meals and others). Mirrors check-in behavior.
+  // General image upload endpoint used by client (meals and others). Fallback to local storage if Supabase fails.
   app.post("/api/upload/image", upload.single("image"), async (req: any, res) => {
     try {
       const authHeader = req.headers["authorization"];
@@ -4210,24 +4486,47 @@ export async function registerRoutes(
 
       const localPath = req.file.path;
       let publicUrl: string | null = null;
+      
+      // Try Supabase first, fallback to local storage
       try {
-        publicUrl = await uploadFileToSupabase(localPath, "meals");
-        if (!publicUrl) throw new Error('Supabase upload did not return a public URL');
+        if (supabaseUrl && supabaseServiceKey) {
+          publicUrl = await uploadFileToSupabase(localPath, "meals");
+          if (!publicUrl) throw new Error('Supabase upload did not return a public URL');
+        } else {
+          throw new Error('Supabase not configured');
+        }
       } catch (err: any) {
-        // Cleanup local file before returning
-        try { if (fs.existsSync(localPath)) fs.unlinkSync(localPath); } catch (e) { console.warn('Failed to delete temp upload file:', e); }
-        console.error("Supabase upload failed:", err?.message || err);
-        return res.status(500).json({ message: "Supabase upload failed. Ensure SUPABASE_UPLOAD_BUCKET exists and SUPABASE_SERVICE_ROLE_KEY has correct storage permissions.", details: err?.message || String(err) });
+        console.warn("Supabase upload failed, using local storage:", err?.message || err);
+        
+        // Fallback to local storage - move file to uploads directory
+        const uploadsDir = path.join(process.cwd(), 'uploads');
+        if (!fs.existsSync(uploadsDir)) {
+          fs.mkdirSync(uploadsDir, { recursive: true });
+        }
+        
+        const fileName = `meal-${Date.now()}-${path.basename(req.file.originalname)}`;
+        const finalPath = path.join(uploadsDir, fileName);
+        
+        try {
+          fs.copyFileSync(localPath, finalPath);
+          publicUrl = `/uploads/${fileName}`;
+          console.log(`Image saved locally: ${publicUrl}`);
+        } catch (localErr: any) {
+          console.error("Local storage fallback failed:", localErr?.message || localErr);
+          // Cleanup local file before returning
+          try { if (fs.existsSync(localPath)) fs.unlinkSync(localPath); } catch (e) { console.warn('Failed to delete temp upload file:', e); }
+          return res.status(500).json({ message: "Both Supabase and local storage failed", details: localErr?.message || String(localErr) });
+        }
       }
 
-      // Cleanup local file after success
+      // Cleanup temp file after success
       try {
         if (fs.existsSync(localPath)) fs.unlinkSync(localPath);
       } catch (e) {
         console.warn("Failed to delete temp upload file:", e);
       }
 
-      // Return public URL from Supabase
+      // Return public URL (either from Supabase or local)
       res.json({ imageUrl: publicUrl });
     } catch (error: any) {
       console.error("Upload error:", error?.message || String(error));
@@ -4235,13 +4534,32 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/hostel/checkin", authenticateToken, denyAdmin, authorizeRoles("ClassTeacher", "Headmaster", "HostelWarden"), async (req: AuthRequest, res) => {
+  app.post("/api/hostel/checkin", authenticateToken, denyAdmin, authorizeRoles("ClassTeacher", "Headmaster", "HostelWarden", "Lady Superintendent", "MealSuperintendent"), async (req: AuthRequest, res) => {
     try {
       const { studentId, date, checkInTime, checkInImageUrl, checkInReason } = req.body;
       const student = await storage.getStudent(studentId);
 
       if (!student) {
         return res.status(404).json({ message: "Student not found" });
+      }
+
+      // Gender-based access control for LS and MS
+      if (req.user?.role === "Lady Superintendent") {
+        if (!req.user.schoolId || req.user.schoolId !== student.schoolId) {
+          return res.status(403).json({ message: "Insufficient permissions for this student" });
+        }
+        if (student.gender !== "F") {
+          return res.status(403).json({ message: "Lady Superintendent can only manage female students" });
+        }
+      }
+
+      if (req.user?.role === "MealSuperintendent") {
+        if (!req.user.schoolId || req.user.schoolId !== student.schoolId) {
+          return res.status(403).json({ message: "Insufficient permissions for this student" });
+        }
+        if (student.gender !== "M") {
+          return res.status(403).json({ message: "Meal Superintendent can only manage male students" });
+        }
       }
 
       // Get existing attendance records for this student/date to determine event index
@@ -4282,7 +4600,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/hostel/checkout", authenticateToken, denyAdmin, authorizeRoles("ClassTeacher", "Headmaster", "HostelWarden"), async (req: AuthRequest, res) => {
+  app.post("/api/hostel/checkout", authenticateToken, denyAdmin, authorizeRoles("ClassTeacher", "Headmaster", "HostelWarden", "Lady Superintendent", "MealSuperintendent"), async (req: AuthRequest, res) => {
     try {
       const { studentId, date, checkOutTime, attendanceId, checkOutReason } = req.body;
 
@@ -4298,6 +4616,25 @@ export async function registerRoutes(
 
       if (!student) {
         return res.status(404).json({ message: "Student not found" });
+      }
+
+      // Gender-based access control for LS and MS
+      if (req.user?.role === "Lady Superintendent") {
+        if (!req.user.schoolId || req.user.schoolId !== student.schoolId) {
+          return res.status(403).json({ message: "Insufficient permissions for this student" });
+        }
+        if (student.gender !== "F") {
+          return res.status(403).json({ message: "Lady Superintendent can only manage female students" });
+        }
+      }
+
+      if (req.user?.role === "MealSuperintendent") {
+        if (!req.user.schoolId || req.user.schoolId !== student.schoolId) {
+          return res.status(403).json({ message: "Insufficient permissions for this student" });
+        }
+        if (student.gender !== "M") {
+          return res.status(403).json({ message: "Meal Superintendent can only manage male students" });
+        }
       }
 
       // If attendanceId is provided, update that specific record
@@ -4352,7 +4689,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/hostel/vacation", authenticateToken, denyAdmin, authorizeRoles("ClassTeacher", "HostelWarden"), async (req: AuthRequest, res) => {
+  app.post("/api/hostel/vacation", authenticateToken, denyAdmin, authorizeRoles("ClassTeacher", "HostelWarden", "Lady Superintendent", "MealSuperintendent"), async (req: AuthRequest, res) => {
     try {
       const { studentId, vacationStartDate, vacationEndDate, vacationReason } = req.body;
 
@@ -4377,6 +4714,26 @@ export async function registerRoutes(
         }
         if (req.user.classSection && student.classSection !== req.user.classSection) {
           return res.status(403).json({ message: `You can only mark vacations for students in ${req.user.classSection || 'your assigned class section'}` });
+        }
+      }
+
+      // If the caller is a Lady Superintendent, ensure they can only mark vacations for female students in their school
+      if (req.user?.role === "Lady Superintendent") {
+        if (!req.user.schoolId || req.user.schoolId !== student.schoolId) {
+          return res.status(403).json({ message: "Insufficient permissions for this student" });
+        }
+        if (student.gender !== "F") {
+          return res.status(403).json({ message: "Lady Superintendent can only mark vacations for female students" });
+        }
+      }
+
+      // If the caller is a Meal Superintendent, ensure they can only mark vacations for male students in their school
+      if (req.user?.role === "MealSuperintendent") {
+        if (!req.user.schoolId || req.user.schoolId !== student.schoolId) {
+          return res.status(403).json({ message: "Insufficient permissions for this student" });
+        }
+        if (student.gender !== "M") {
+          return res.status(403).json({ message: "Meal Superintendent can only mark vacations for male students" });
         }
       }
 
@@ -4409,7 +4766,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/hostel/monthly-report", authenticateToken, denyAdmin, authorizeRoles("ClassTeacher", "Headmaster", "PO", "HostelWarden"), async (req: AuthRequest, res) => {
+  app.get("/api/hostel/monthly-report", authenticateToken, denyAdmin, authorizeRoles("ClassTeacher", "Headmaster", "PO", "HostelWarden", "Lady Superintendent", "MealSuperintendent"), async (req: AuthRequest, res) => {
     try {
       const month = parseInt(req.query.month as string) || new Date().getMonth() + 1;
       const year = parseInt(req.query.year as string) || new Date().getFullYear();
@@ -4425,8 +4782,22 @@ export async function registerRoutes(
 
       // Determine which school(s) data to return based on role
       let schoolId: string | undefined;
-      if (role === "ClassTeacher" || role === "Headmaster") {
-        schoolId = req.user?.schoolId; // CT/HM see only their school
+      let genderFilter: string | undefined; // For LS/MS gender-based filtering
+      
+      if (role === "ClassTeacher" || role === "Headmaster" || role === "HostelWarden") {
+        schoolId = req.user?.schoolId; // CT/HM/Warden see only their school
+      } else if (role === "Lady Superintendent") {
+        schoolId = req.user?.schoolId; // LS sees only their school
+        genderFilter = "F"; // LS can only see female students
+        if (!schoolId) {
+          return res.status(400).json({ message: "Lady Superintendent is not assigned to a school" });
+        }
+      } else if (role === "MealSuperintendent") {
+        schoolId = req.user?.schoolId; // MS sees only their school
+        genderFilter = "M"; // MS can only see male students
+        if (!schoolId) {
+          return res.status(400).json({ message: "Meal Superintendent is not assigned to a school" });
+        }
       } else if (role === "PO" || role === "Admin") {
         schoolId = requestedSchool; // PO can filter by school
       }
@@ -4442,6 +4813,18 @@ export async function registerRoutes(
           summary: {
             ...stats.summary,
             totalStudents: stats.students?.filter((s: any) => s.classSection === teacherClassSection).length || 0,
+          },
+        };
+      }
+
+      // Apply gender filtering for LS and MS roles
+      if (genderFilter) {
+        finalStats = {
+          ...finalStats,
+          students: finalStats.students?.filter((s: any) => s.gender === genderFilter) || [],
+          summary: {
+            ...finalStats.summary,
+            totalStudents: finalStats.students?.filter((s: any) => s.gender === genderFilter).length || 0,
           },
         };
       }
@@ -4718,72 +5101,182 @@ async function getMenstrualHealthAnalytics(schools: any[], selectedMonth: number
       console.log('========== PO DASHBOARD REQUEST START ==========');
       console.log('Request params:', { selectedMonth, selectedYear, selectedSchoolType, userId: req.user!.id });
 
+      // Validate input parameters
+      if (selectedMonth < 1 || selectedMonth > 12) {
+        return res.status(400).json({ message: "Invalid month parameter. Must be between 1 and 12." });
+      }
+      
+      if (selectedYear < 2020 || selectedYear > new Date().getFullYear() + 1) {
+        return res.status(400).json({ message: "Invalid year parameter. Must be between 2020 and current year + 1." });
+      }
+
+      if (selectedSchoolType && !['Government', 'Aided', 'All'].includes(selectedSchoolType)) {
+        return res.status(400).json({ message: "Invalid school type. Must be 'Government', 'Aided', or 'All'." });
+      }
+
       // Get PO's district to filter schools
       const user = await storage.getUser(req.user!.id);
       const poDistrict: string | undefined = user?.district ?? undefined;
 
       console.log('PO user district:', poDistrict);
 
-      // Get all schools and apply filters
-      let schools: any[] = [];
-      if (req.user?.role === "Admin") {
-        const result = await storage.getSchools(1, 1000);
-        schools = result.schools;
-      } else if (poDistrict) {
-        // For PO, filter by district first
-        const allSchools = await storage.getSchools(1, 1000);
-        schools = allSchools.schools.filter(s => s.district === poDistrict);
-      } else {
-        // If PO has no district, show no schools
-        schools = [];
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
       }
+
+      // Get all schools and apply filters with better error handling
+      let schools: any[] = [];
+      try {
+        if (req.user?.role === "Admin") {
+          const result = await storage.getSchools(1, 1000);
+          schools = result.schools || [];
+        } else if (poDistrict) {
+          // For PO, filter by district first
+          const allSchools = await storage.getSchools(1, 1000);
+          schools = (allSchools.schools || []).filter(s => s.district === poDistrict);
+        } else {
+          console.warn('PO user has no district assigned, returning empty data');
+          schools = [];
+        }
+      } catch (error) {
+        console.error('Error fetching schools:', error);
+        return res.status(500).json({ message: "Failed to fetch schools data" });
+      }
+
+      console.log(`Found ${schools.length} schools for district: ${poDistrict}`);
 
       // Apply school type filter
       if (selectedSchoolType && selectedSchoolType !== "All") {
         schools = schools.filter(s => s.schoolType === selectedSchoolType);
+        console.log(`After school type filter (${selectedSchoolType}): ${schools.length} schools`);
+      }
+
+      if (schools.length === 0) {
+        console.warn('No schools found for the given criteria');
+        return res.json({
+          districtKPIs: {
+            totalSchools: 0,
+            totalStudentsScreened: 0,
+            totalHealthCards: 0,
+            totalCheckups: 0,
+            totalReferrals: 0,
+            healthCardCompletionRate: 0,
+            checkupCoverageRate: 0,
+            referralRate: 0,
+            avgBMIDistrict: 0,
+            schoolsCompletedScreeningPercent: 0,
+            studentsReferredPercent: 0,
+            totalPendingReferrals: 0,
+            highRiskCasesToday: 0,
+            prevalenceRates: {
+              underweightPercent: 0,
+              obesityPercent: 0,
+              severeAnemiaPercent: 0,
+              goitrePercent: 0,
+              tbSuspicionPercent: 0,
+              leprosySuspicionPercent: 0,
+            },
+            schoolTypeBreakdown: {
+              government: { schoolCount: 0, totalStudents: 0, healthCardCompletion: 0, checkupCoverage: 0, referralRate: 0 },
+              aided: { schoolCount: 0, totalStudents: 0, healthCardCompletion: 0, checkupCoverage: 0, referralRate: 0 },
+              overall: { schoolCount: 0, totalStudents: 0, healthCardCompletion: 0, checkupCoverage: 0, referralRate: 0 },
+            }
+          },
+          referralHeatmap: { schools: [], maxReferrals: 0 },
+          anthropometryAnalytics: { stats: { bmiDistribution: {}, underweightPercent: 0, normalPercent: 0, obesePercent: 0 }, bmiTrendOverTime: [], schoolNutritionRanking: [], genderSplit: { male: {}, female: {} } },
+          deficienciesInsights: {},
+          deficienciesHeatmap: { schools: [] },
+          diseasesInsights: {},
+          leprosyAnalytics: { totalSuspectedCases: 0, referralStatus: { completed: 0, total: 0 }, facilityLoad: [], subTypeDistribution: {}, showRedAlert: false },
+          tbAnalytics: { totalSuspectedCases: 0, contactHistoryPercent: 0, referralStatus: { completed: 0, total: 0 }, dotsCenterLoad: [], symptomsBreakdown: { counts: {}, labels: {} }, showRedAlert: false },
+          developmentalDelays: { speechDelayPercent: 0, motorDelayPercent: 0, cognitiveDelayPercent: 0, socialDelayPercent: 0 },
+          adolescentHealth: { totalAdolescents: 0, adolescentCardCount: 0, screenedPercent: 0 },
+          menstrualHealthAnalytics: { totalEligibleStudents: 0, totalTrackedStudents: 0, monthlyTrend: [], cycleRegularity: { regular: 0, irregular: 0, unknown: 0 }, lateMenstruationCases: [], symptomAnalysis: { symptoms: [], moods: [] }, referralAnalysis: { total: 0, byFacility: {} }, ageWiseAnalysis: { distribution: {}, irregularities: {}, irregularityRates: {} } },
+          referralManagement: { totalReferralsGenerated: 0, referralCompletionPercent: 0, pendingReferrals: 0, overdueReferrals: [], facilityWiseLoad: [], mostReferredSchools: [], mostReferredIssues: [] },
+          complianceAnalytics: { dataCompletenessPercent: 0, invalidBMI: 0, incompleteCriticalCases: 0, healthCardCompliance: 0, checkupCompliance: 0, reportingCompliance: 0, overallCompliance: 0, auditLogs: { invalidBMI: 0, incompleteC7C8: 0 } },
+          alerts: { leprosyAlert: false, tbAlert: false, severeAnemiaAlert: false },
+          exportCapabilities: { availableFormats: ["pdf", "excel", "json"], lastExportDate: null, exportHistory: [] },
+          metadata: { generatedAt: new Date().toISOString(), dataFreshness: "real-time", coverage: "0 schools, 0 students", lastUpdated: new Date().toISOString() },
+          metrics: {},
+          schools: []
+        });
       }
 
       // Separate schools by type for aggregated metrics
       const governmentSchools = schools.filter(s => s.schoolType === "Government");
       const aidedSchools = schools.filter(s => s.schoolType === "Aided");
 
-      const metrics = await storage.getDashboardMetrics("PO", req.user!.id, undefined, undefined, poDistrict);
+      // Get dashboard metrics with error handling
+      let metrics = {};
+      try {
+        metrics = await storage.getDashboardMetrics("PO", req.user!.id, undefined, undefined, poDistrict);
+      } catch (error) {
+        console.error('Error fetching dashboard metrics:', error);
+        metrics = {};
+      }
 
-      // Calculate aggregated metrics by school type
+      // Calculate aggregated metrics by school type with improved error handling
       const calculateSchoolTypeMetrics = async (schoolList: any[], schoolTypeName: string) => {
         let totalStudents = 0;
         let totalHealthCards = 0;
         let totalCheckups = 0;
         let totalReferrals = 0;
 
-        const schoolsWithMetrics = await Promise.all(
+        const schoolsWithMetrics = await Promise.allSettled(
           schoolList.map(async (school) => {
-            const { students } = await storage.getStudents({ schoolId: school.id, limit: 1000 });
-            const { cards } = await storage.getAnnualHealthCards({ schoolId: school.id, status: "Approved", year: selectedYear, limit: 1000 });
-            const { checkups } = await storage.getMonthlyCheckups({ schoolId: school.id, month: selectedMonth, year: selectedYear });
-
-            totalStudents += students.length;
-            totalHealthCards += cards.length;
-            totalCheckups += checkups.length;
-
-            // Get referrals for this school
             try {
-              const { referrals } = await storage.getReferrals({ schoolId: school.id, limit: 1000 });
-              totalReferrals += referrals.length;
-            } catch (error) {
-              console.warn(`Referrals not available for school ${school.id}:`, error);
-            }
+              const [studentsResult, cardsResult, checkupsResult] = await Promise.allSettled([
+                storage.getStudents({ schoolId: school.id, limit: 1000 }),
+                storage.getAnnualHealthCards({ schoolId: school.id, status: "Approved", year: selectedYear, limit: 1000 }),
+                storage.getMonthlyCheckups({ schoolId: school.id, month: selectedMonth, year: selectedYear })
+              ]);
 
-            return {
-              ...school,
-              studentCount: students.length,
-              healthCardCount: cards.length,
-              checkupCount: checkups.length,
-              healthCardCompletion: students.length > 0 ? Math.round((cards.length / students.length) * 100) : 0,
-              checkupCoverage: students.length > 0 ? Math.round((checkups.length / students.length) * 100) : 0,
-            };
+              const students = studentsResult.status === 'fulfilled' ? studentsResult.value.students || [] : [];
+              const cards = cardsResult.status === 'fulfilled' ? cardsResult.value.cards || [] : [];
+              const checkups = checkupsResult.status === 'fulfilled' ? checkupsResult.value.checkups || [] : [];
+
+              totalStudents += students.length;
+              totalHealthCards += cards.length;
+              totalCheckups += checkups.length;
+
+              // Get referrals for this school with error handling
+              let schoolReferrals = 0;
+              try {
+                const { referrals } = await storage.getReferrals({ schoolId: school.id, limit: 1000 });
+                schoolReferrals = referrals ? referrals.length : 0;
+                totalReferrals += schoolReferrals;
+              } catch (error) {
+                console.warn(`Referrals not available for school ${school.id}:`, error);
+                schoolReferrals = 0;
+              }
+
+              return {
+                ...school,
+                studentCount: students.length,
+                healthCardCount: cards.length,
+                checkupCount: checkups.length,
+                referralCount: schoolReferrals,
+                healthCardCompletion: students.length > 0 ? Math.round((cards.length / students.length) * 100) : 0,
+                checkupCoverage: students.length > 0 ? Math.round((checkups.length / students.length) * 100) : 0,
+              };
+            } catch (error) {
+              console.error(`Error processing school ${school.id}:`, error);
+              return {
+                ...school,
+                studentCount: 0,
+                healthCardCount: 0,
+                checkupCount: 0,
+                referralCount: 0,
+                healthCardCompletion: 0,
+                checkupCoverage: 0,
+              };
+            }
           })
         );
+
+        const successfulSchools = schoolsWithMetrics
+          .filter(result => result.status === 'fulfilled')
+          .map(result => (result as PromiseFulfilledResult<any>).value);
 
         return {
           schoolType: schoolTypeName,
@@ -4795,35 +5288,57 @@ async function getMenstrualHealthAnalytics(schools: any[], selectedMonth: number
           healthCardCompletion: totalStudents > 0 ? Math.round((totalHealthCards / totalStudents) * 100) : 0,
           checkupCoverage: totalStudents > 0 ? Math.round((totalCheckups / totalStudents) * 100) : 0,
           referralRate: totalStudents > 0 ? Math.round((totalReferrals / totalStudents) * 100) : 0,
-          schools: schoolsWithMetrics,
+          schools: successfulSchools,
         };
       };
 
-      // Calculate metrics for each school type
-      const governmentMetrics = await calculateSchoolTypeMetrics(governmentSchools, "Government");
-      const aidedMetrics = await calculateSchoolTypeMetrics(aidedSchools, "Aided");
-      const overallMetrics = await calculateSchoolTypeMetrics(schools, "Overall");
+      // Calculate metrics for each school type with error handling
+      const [governmentMetricsResult, aidedMetricsResult, overallMetricsResult] = await Promise.allSettled([
+        calculateSchoolTypeMetrics(governmentSchools, "Government"),
+        calculateSchoolTypeMetrics(aidedSchools, "Aided"),
+        calculateSchoolTypeMetrics(schools, "Overall")
+      ]);
+
+      const governmentMetrics = governmentMetricsResult.status === 'fulfilled' ? governmentMetricsResult.value : {
+        schoolType: "Government", schoolCount: 0, totalStudents: 0, totalHealthCards: 0, totalCheckups: 0, totalReferrals: 0,
+        healthCardCompletion: 0, checkupCoverage: 0, referralRate: 0, schools: []
+      };
+
+      const aidedMetrics = aidedMetricsResult.status === 'fulfilled' ? aidedMetricsResult.value : {
+        schoolType: "Aided", schoolCount: 0, totalStudents: 0, totalHealthCards: 0, totalCheckups: 0, totalReferrals: 0,
+        healthCardCompletion: 0, checkupCoverage: 0, referralRate: 0, schools: []
+      };
+
+      const overallMetrics = overallMetricsResult.status === 'fulfilled' ? overallMetricsResult.value : {
+        schoolType: "Overall", schoolCount: 0, totalStudents: 0, totalHealthCards: 0, totalCheckups: 0, totalReferrals: 0,
+        healthCardCompletion: 0, checkupCoverage: 0, referralRate: 0, schools: []
+      };
 
       // Calculate basic district KPIs from real data
-      let totalStudents = 0;
-      let totalHealthCards = 0;
-      let totalCheckups = 0;
-      let totalReferrals = 0;
+      let totalStudents = overallMetrics.totalStudents;
+      let totalHealthCards = overallMetrics.totalHealthCards;
+      let totalCheckups = overallMetrics.totalCheckups;
+      let totalReferrals = overallMetrics.totalReferrals;
 
-      // Get all health cards for prevalence calculations for the selected year only
+      // Get all health cards for prevalence calculations for the selected year only with improved error handling
       console.log('Fetching health cards for', schools.length, 'schools');
       const allCardsPromises = schools.map(async (school) => {
         console.log('Fetching cards for school:', school.id, school.name);
         try {
           const { cards } = await storage.getAnnualHealthCards({ schoolId: school.id, year: selectedYear, limit: 1000 });
-          console.log('Retrieved', cards.length, 'cards for school', school.id);
-          return cards;
+          const validCards = cards || [];
+          console.log('Retrieved', validCards.length, 'cards for school', school.id);
+          return validCards;
         } catch (error) {
           console.error('Error fetching cards for school', school.id, ':', error);
           return [];
         }
       });
-      const allCardsArrays = await Promise.all(allCardsPromises);
+      
+      const allCardsResults = await Promise.allSettled(allCardsPromises);
+      const allCardsArrays = allCardsResults
+        .filter(result => result.status === 'fulfilled')
+        .map(result => (result as PromiseFulfilledResult<any[]>).value);
       const flatCards = allCardsArrays.flat();
 
       // Debug log: number of cards returned for the selected year
@@ -4834,6 +5349,11 @@ async function getMenstrualHealthAnalytics(schools: any[], selectedMonth: number
         const sampleCard = flatCards[0];
         console.log('Sample card data:', {
           id: sampleCard.id,
+          studentId: sampleCard.studentId,
+          schoolId: sampleCard.schoolId,
+          bmi: sampleCard.bmi,
+          heightCm: sampleCard.heightCm,
+          weightKg: sampleCard.weightKg,
           c7_suspected: sampleCard.c7_suspected,
           c8_suspected: sampleCard.c8_suspected,
           d1_seeing_difficulty: sampleCard.d1_seeing_difficulty,
@@ -4841,6 +5361,11 @@ async function getMenstrualHealthAnalytics(schools: any[], selectedMonth: number
           d7_learning_difficulty: sampleCard.d7_learning_difficulty,
           d2_walking_delay: sampleCard.d2_walking_delay,
           d9_behavioral_concerns: sampleCard.d9_behavioral_concerns,
+          e1_life_events_difficulty: sampleCard.e1_life_events_difficulty,
+          e2_peer_pressure_substance: sampleCard.e2_peer_pressure_substance,
+          e3_persistent_sadness: sampleCard.e3_persistent_sadness,
+          b3_severe_anemia: sampleCard.b3_severe_anemia,
+          b6_goitre: sampleCard.b6_goitre,
         });
         
         // Check how many cards have any disease/adolescent fields set
@@ -4854,10 +5379,20 @@ async function getMenstrualHealthAnalytics(schools: any[], selectedMonth: number
           c.e5_pain_urination || c.e6_foul_discharge
         ).length;
         
+        const cardsWithAnyDeficiency = flatCards.filter((c: any) => 
+          c.b3_severe_anemia || c.b4_vitamin_a_deficiency || c.b5_vitamin_d_deficiency || 
+          c.b6_goitre || c.b8_vitb_deficiency
+        ).length;
+        
         console.log(`Cards with ANY disease field set: ${cardsWithAnyDisease}/${flatCards.length}`);
         console.log(`Cards with ANY adolescent field set: ${cardsWithAnyAdolescent}/${flatCards.length}`);
+        console.log(`Cards with ANY deficiency field set: ${cardsWithAnyDeficiency}/${flatCards.length}`);
       } else {
-        console.log('⚠️ NO HEALTH CARDS FOUND FOR SELECTED YEAR/MONTH');
+        console.log('⚠️ NO HEALTH CARDS FOUND FOR SELECTED YEAR/MONTH - This may indicate:');
+        console.log('  1. No health cards have been created for this year');
+        console.log('  2. Health cards exist but are not approved');
+        console.log('  3. Database connection issues');
+        console.log('  4. Incorrect year filter');
       }
 
       // Calculate prevalence rates from actual health card data
@@ -5575,7 +6110,8 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
       console.log('Adolescent health metrics:', adolescentHealth);
 
       // Calculate real referral management using the referrals table (fallback to health-card derived referrals if table empty)
-      console.log('Fetching referrals for', schools.length, 'schools');
+      // IMPORTANT: Fetch referrals ONLY for schools in the PO's district
+      console.log('Fetching referrals for', schools.length, 'schools in district:', poDistrict);
       const allReferrals = await Promise.all(
         schools.map(async (school) => {
           try {
@@ -5588,11 +6124,12 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
         })
       );
       let flatReferrals = allReferrals.flat();
-      console.log('Total referrals found:', flatReferrals.length);
+      console.log('Total referrals found for PO district:', flatReferrals.length);
 
       // If there are no explicit referrals in DB, derive referrals from health-cards as a best-effort fallback
       if (!flatReferrals.length) {
         console.log('No referrals found in referrals table; deriving referrals from health cards as fallback');
+        console.log('Available health cards for derivation:', flatCards.length);
         const derived = flatCards.map((c: any) => {
           // Detect referral-related flags on the card
           const issues: string[] = [];
@@ -5623,12 +6160,26 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
         console.log('Derived referrals from health cards:', flatReferrals.length);
       }
 
-      // Filter referrals by selected month/year
+      // For referral management, use ALL district referrals (not month-filtered)
+      // This ensures PO sees the complete picture of their district's referral activities
+      const allDistrictReferrals = flatReferrals;
+      
+      // Also create month-filtered version for drill-down analysis (optional)
       const monthReferrals = flatReferrals.filter(r => {
         const referralDate = new Date(r.referralDate);
+        // Handle missing/null dates by including them
+        if (!referralDate || isNaN(referralDate.getTime())) return true;
         return referralDate.getMonth() + 1 === selectedMonth && referralDate.getFullYear() === selectedYear;
       });
-      console.log('Referrals for selected month/year:', monthReferrals.length);
+      
+      console.log(`Total district referrals: ${allDistrictReferrals.length}`);
+      console.log(`Referrals for selected month/year (${selectedMonth}/${selectedYear}):`, monthReferrals.length);
+      console.log('Sample referrals:', flatReferrals.slice(0, 3).map(r => ({ 
+        id: r.id, 
+        referralDate: r.referralDate, 
+        issue: r.issue, 
+        status: r.status 
+      })));
 
       // Build a referral map by student to enable disease->referral linkage (used to compute completion rates)
       const referralMapByStudent = new Map<string, any[]>();
@@ -5690,10 +6241,10 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
       };
 
       const referralManagement = {
-        totalReferralsGenerated: monthReferrals.length,
-        referralCompletionPercent: monthReferrals.length > 0 ? Math.round((monthReferrals.filter(r => r.status === "Completed").length / monthReferrals.length) * 100) : 0,
+        totalReferralsGenerated: allDistrictReferrals.length,
+        referralCompletionPercent: allDistrictReferrals.length > 0 ? Math.round((allDistrictReferrals.filter(r => r.status === "Completed").length / allDistrictReferrals.length) * 100) : 0,
         pendingReferralsList: await Promise.all(
-          monthReferrals.filter(r => r.status === "Pending").slice(0, 10).map(async (referral) => {
+          allDistrictReferrals.filter(r => r.status === "Pending").slice(0, 10).map(async (referral) => {
             const student = await storage.getStudent(referral.studentId);
             const school = schools.find(s => s.id === referral.schoolId);
 
@@ -5708,9 +6259,9 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
             };
           })
         ),
-        pendingReferrals: monthReferrals.filter(r => r.status === "Pending").length,
+        pendingReferrals: allDistrictReferrals.filter(r => r.status === "Pending").length,
         overdueReferrals: await Promise.all(
-          monthReferrals.filter(r => {
+          allDistrictReferrals.filter(r => {
             const daysSinceReferral = Math.floor((new Date().getTime() - new Date(r.referralDate).getTime()) / (1000 * 60 * 60 * 24));
             return daysSinceReferral > 30 && r.status === "Pending";
           }).slice(0, 5).map(async (referral) => {
@@ -5729,7 +6280,7 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
         facilityWiseLoad: (() => {
           const facilityMap = new Map<string, { pending: number; completed: number }>();
 
-          monthReferrals.forEach(referral => {
+          allDistrictReferrals.forEach(referral => {
             const facility = referral.facility || "PHC Center";
             if (!facilityMap.has(facility)) {
               facilityMap.set(facility, { pending: 0, completed: 0 });
@@ -5750,7 +6301,7 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
         mostReferredSchools: (() => {
           const schoolReferralCount = new Map<string, { schoolName: string; count: number }>();
 
-          monthReferrals.forEach(referral => {
+          allDistrictReferrals.forEach(referral => {
             const school = schools.find(s => s.id === referral.schoolId);
             if (school) {
               const existing = schoolReferralCount.get(school.id) || { schoolName: school.name, count: 0 };
@@ -5770,7 +6321,7 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
         mostReferredIssues: (() => {
           const issueCount = new Map<string, number>();
 
-          monthReferrals.forEach(referral => {
+          allDistrictReferrals.forEach(referral => {
             const existing = issueCount.get(referral.issue) || 0;
             issueCount.set(referral.issue, existing + 1);
           });
@@ -7338,406 +7889,7 @@ async function generatePDFReport(reportData: any, reportType: string, userRole: 
     }
   });
 
-  app.get("/api/po/dashboard", authenticateToken, authorizeRoles("PO", "Admin"), async (req: AuthRequest, res) => {
-    return res.status(501).json({ message: "Duplicate PO handler disabled (use primary /api/po/dashboard implementation)" });
-    try {
-      const user = req.user!;
-      const { month, year } = req.query;
-      const selectedMonth = month ? parseInt(month as string) : new Date().getMonth() + 1;
-      const selectedYear = year ? parseInt(year as string) : new Date().getFullYear();
-
-      // Get PO's district
-      const poUser = await storage.getUser(user.id);
-      const poDistrict = poUser?.district ?? undefined;
-
-      // Get all schools in the district
-      let schools: any[] = [];
-      if (user.role === "Admin") {
-        const result = await storage.getSchools(1, 1000);
-        schools = result.schools;
-      } else if (poDistrict) {
-        const allSchools = await storage.getSchools(1, 1000);
-        schools = allSchools.schools.filter(s => sameDistrict(s.district, poDistrict));
-      }
-
-      // Get all students in the district
-      const allStudents: any[] = [];
-      for (const school of schools) {
-        const { students } = await storage.getStudents({ schoolId: school.id, limit: 1000 });
-        allStudents.push(...students);
-      }
-
-      // Get all health cards for the year
-      const allCards: any[] = [];
-      for (const school of schools) {
-        const { cards } = await storage.getAnnualHealthCards({ schoolId: school.id, year: selectedYear, limit: 1000 });
-        allCards.push(...cards);
-      }
-
-      // Get all referrals
-      const { referrals: allReferrals } = await storage.getReferrals({ limit: 10000 });
-
-      // Calculate district KPIs
-      const districtKPIs = {
-        totalSchools: schools.length,
-        totalStudentsScreened: allCards.length,
-        schoolsCompletedScreeningPercent: schools.length > 0 ? Math.round((schools.filter(school => {
-          const schoolCards = allCards.filter(card => card.schoolId === school.id);
-          return schoolCards.length > 0;
-        }).length / schools.length) * 100) : 0,
-        studentsReferredPercent: allCards.length > 0 ? Math.round((allReferrals.length / allCards.length) * 100) : 0,
-        totalPendingReferrals: allReferrals.filter(r => r.status === "Pending").length,
-        highRiskCasesToday: allCards.filter(card =>
-          card.c7_suspected || card.c8_suspected || card.b3_severe_anemia
-        ).length,
-        avgBMIDistrict: allCards.length > 0 ? allCards.reduce((sum, card) => {
-          const bmi = typeof card.bmi === 'number' ? card.bmi : parseFloat(card.bmi as string);
-          return sum + (isNaN(bmi) ? 0 : bmi);
-        }, 0) / allCards.length : 0,
-        prevalenceRates: {
-          underweightPercent: allCards.length > 0 ? Math.round(allCards.filter(card => {
-            const bmi = typeof card.bmi === 'number' ? card.bmi : parseFloat(card.bmi as string);
-            return bmi && bmi < 18.5;
-          }).length / allCards.length * 100) : 0,
-          obesityPercent: allCards.length > 0 ? Math.round(allCards.filter(card => {
-            const bmi = typeof card.bmi === 'number' ? card.bmi : parseFloat(card.bmi as string);
-            return bmi && bmi >= 30;
-          }).length / allCards.length * 100) : 0,
-          severeAnemiaPercent: allCards.length > 0 ? Math.round(allCards.filter(card => card.b3_severe_anemia).length / allCards.length * 100) : 0,
-          goitrePercent: allCards.length > 0 ? Math.round(allCards.filter(card => card.b6_goitre).length / allCards.length * 100) : 0,
-          tbSuspicionPercent: allCards.length > 0 ? Math.round(allCards.filter(card => card.c8_suspected).length / allCards.length * 100) : 0,
-          leprosySuspicionPercent: allCards.length > 0 ? Math.round(allCards.filter(card => card.c7_suspected).length / allCards.length * 100) : 0,
-        }
-      };
-
-      // Referral heatmap
-      const referralHeatmap = {
-        schools: schools.map(school => {
-          const schoolReferrals = allReferrals.filter(r => {
-            const student = allStudents.find(s => s.id === r.studentId);
-            return student?.schoolId === school.id;
-          });
-          return {
-            schoolName: school.name,
-            count: schoolReferrals.length,
-          };
-        }).sort((a, b) => b.count - a.count)
-      };
-
-      // Anthropometry analytics
-      const anthropometryAnalytics = {
-        stats: {
-          bmiDistribution: {
-            "Severe Underweight (<16.0)": allCards.filter(card => {
-              const bmi = typeof card.bmi === 'number' ? card.bmi : parseFloat(card.bmi as string);
-              return bmi && bmi < 16;
-            }).length,
-            "Moderate Underweight (16.0-16.9)": allCards.filter(card => {
-              const bmi = typeof card.bmi === 'number' ? card.bmi : parseFloat(card.bmi as string);
-              return bmi && bmi >= 16 && bmi < 17;
-            }).length,
-            "Mild Underweight (17.0-18.4)": allCards.filter(card => {
-              const bmi = typeof card.bmi === 'number' ? card.bmi : parseFloat(card.bmi as string);
-              return bmi && bmi >= 17 && bmi < 18.5;
-            }).length,
-            "Normal (18.5-24.9)": allCards.filter(card => {
-              const bmi = typeof card.bmi === 'number' ? card.bmi : parseFloat(card.bmi as string);
-              return bmi && bmi >= 18.5 && bmi < 25;
-            }).length,
-            "Overweight (25.0-29.9)": allCards.filter(card => {
-              const bmi = typeof card.bmi === 'number' ? card.bmi : parseFloat(card.bmi as string);
-              return bmi && bmi >= 25 && bmi < 30;
-            }).length,
-            "Obese (≥30.0)": allCards.filter(card => {
-              const bmi = typeof card.bmi === 'number' ? card.bmi : parseFloat(card.bmi as string);
-              return bmi && bmi >= 30;
-            }).length,
-          },
-          underweightPercent: districtKPIs.prevalenceRates.underweightPercent,
-          normalPercent: allCards.length > 0 ? Math.round(allCards.filter(card => {
-            const bmi = typeof card.bmi === 'number' ? card.bmi : parseFloat(card.bmi as string);
-            return bmi && bmi >= 18.5 && bmi < 25;
-          }).length / allCards.length * 100) : 0,
-          obesePercent: districtKPIs.prevalenceRates.obesityPercent,
-        },
-        bmiTrendOverTime: [], // Placeholder
-        schoolNutritionRanking: schools.map(school => {
-          const schoolCards = allCards.filter(card => card.schoolId === school.id);
-          const underweight = schoolCards.filter(card => {
-            const bmi = typeof card.bmi === 'number' ? card.bmi : parseFloat(card.bmi as string);
-            return bmi && bmi < 18.5;
-          }).length;
-          const obese = schoolCards.filter(card => {
-            const bmi = typeof card.bmi === 'number' ? card.bmi : parseFloat(card.bmi as string);
-            return bmi && bmi >= 30;
-          }).length;
-          const riskScore = schoolCards.length > 0 ? Math.round(((underweight + obese) / schoolCards.length) * 100) : 0;
-
-          return {
-            schoolId: school.id,
-            schoolName: school.name,
-            underweightCount: underweight,
-            obeseCount: obese,
-            riskScore,
-            riskLevel: riskScore > 25 ? "High" : riskScore > 15 ? "Medium" : "Low",
-          };
-        }).sort((a, b) => b.riskScore - a.riskScore),
-        genderSplit: {
-          male: {
-            underweightPercent: 0, // Placeholder
-            normalPercent: 0,
-            obesePercent: 0,
-          },
-          female: {
-            underweightPercent: 0,
-            normalPercent: 0,
-            obesePercent: 0,
-          }
-        }
-      };
-
-      // Deficiencies insights
-      const deficienciesInsights = {
-        severeAnemia: {
-          totalCases: allCards.filter(card => card.b3_severe_anemia).length,
-          pendingReferrals: allReferrals.filter(r => r.referralType === "deficiency" && r.issue.toLowerCase().includes("anemia") && r.status === "Pending").length,
-        },
-        vitaminADeficiency: {
-          totalCases: allCards.filter(card => card.b4_vitamin_a_deficiency).length,
-          pendingReferrals: allReferrals.filter(r => r.referralType === "deficiency" && r.issue.toLowerCase().includes("vitamin a") && r.status === "Pending").length,
-        },
-        goitre: {
-          totalCases: allCards.filter(card => card.b6_goitre).length,
-          pendingReferrals: allReferrals.filter(r => r.referralType === "deficiency" && r.issue.toLowerCase().includes("goitre") && r.status === "Pending").length,
-        },
-      };
-
-      // Diseases insights
-      const diseasesInsights = {
-        leprosy: {
-          totalCases: allCards.filter(card => card.c7_suspected).length,
-          referralCompletion: allReferrals.filter(r => r.referralType === "disease" && r.issue.toLowerCase().includes("leprosy") && r.status === "Completed").length,
-        },
-        tuberculosis: {
-          totalCases: allCards.filter(card => card.c8_suspected).length,
-          referralCompletion: allReferrals.filter(r => r.referralType === "disease" && r.issue.toLowerCase().includes("tuberculosis") && r.status === "Completed").length,
-        },
-      };
-
-
-
-      // TB analytics
-      // Build a symptoms breakdown from c8_symptoms across annual health cards
-      const tbSymptomsCounts: Record<string, number> = {};
-      let hemoptysisCount = 0;
-      let tbSuspectedCount = 0;
-      allCards.forEach((card: any) => {
-        if (card.c8_symptoms) {
-          const symptoms = card.c8_symptoms;
-          Object.entries(symptoms).forEach(([k, v]: any) => {
-            if (v === true) {
-              tbSymptomsCounts[k] = (tbSymptomsCounts[k] || 0) + 1;
-            } else if (typeof v === 'string' && v.trim().length > 0) {
-              // e.g., hemoptysis may be a string describing severity
-              if (k === 'hemoptysis') {
-                hemoptysisCount++;
-              } else {
-                tbSymptomsCounts[k] = (tbSymptomsCounts[k] || 0) + 1;
-              }
-            }
-          });
-        }
-        if (card.c8_suspected) tbSuspectedCount++;
-      });
-
-      const tbAnalytics = {
-        totalSuspectedCases: tbSuspectedCount,
-        showRedAlert: tbSuspectedCount > 0,
-        contactHistoryPercent: 0, // Placeholder (could be enhanced using c8_relevant_history)
-        referralStatus: {
-          completed: allReferrals.filter(r => r.referralType === "disease" && r.issue.toLowerCase().includes("tuberculosis") && r.status === "Completed").length,
-        },
-        dotsCenterLoad: [], // Placeholder
-        symptomsBreakdown: {
-          counts: tbSymptomsCounts,
-          hemoptysisCount,
-          totalSuspected: tbSuspectedCount,
-        },
-      };
-
-      // Leprosy analytics - derive subtype distribution and symptom counts
-      const leprosyTypeCounts: Record<string, number> = {};
-      const leprosyFeatureCounts: Record<string, number> = {};
-      let leprosySuspectedCount = 0;
-      allCards.forEach((card: any) => {
-        if (card.c7_types) {
-          const types = card.c7_types;
-          Object.entries(types).forEach(([k, v]: any) => {
-            if (v === true) leprosyTypeCounts[k] = (leprosyTypeCounts[k] || 0) + 1;
-          });
-        }
-        if (card.c7_clinical_features) {
-          const feats = card.c7_clinical_features;
-          Object.entries(feats).forEach(([k, v]: any) => {
-            if (v === true) leprosyFeatureCounts[k] = (leprosyFeatureCounts[k] || 0) + 1;
-          });
-        }
-        if (card.c7_suspected) leprosySuspectedCount++;
-      });
-
-      const leprosyAnalyticsDetailed = {
-        totalSuspectedCases: leprosySuspectedCount,
-        showRedAlert: leprosySuspectedCount > 0,
-        referralStatus: {
-          completed: allReferrals.filter(r => r.referralType === "disease" && r.issue.toLowerCase().includes("leprosy") && r.status === "Completed").length,
-        },
-        facilityLoad: [], // Placeholder
-        subTypeDistribution: leprosyTypeCounts,
-        featureCounts: leprosyFeatureCounts,
-      };
-
-      // Adolescent health
-      // Ensure age calculation: fall back to student DOB when card.ageYears is not available
-      const studentById: Record<string, any> = {};
-      allStudents.forEach(s => studentById[s.id] = s);
-
-      const adolescentCards = allCards.filter((card: any) => {
-        let age = card.ageYears;
-        if (age == null) {
-          const student = studentById[card.studentId];
-          if (student && student.dateOfBirth) {
-            const dob = new Date(student.dateOfBirth);
-            const refDate = new Date(`${selectedYear}-01-01`);
-            age = refDate.getFullYear() - dob.getFullYear();
-          } else {
-            age = 0;
-          }
-        }
-        return age >= 10;
-      });
-
-      const adolescentCounts: Record<string, number> = {};
-      const adolescentSymptomKeys = ['e1_life_events_difficulty','e2_peer_pressure_substance','e3_persistent_sadness','e5_pain_urination','e6_foul_discharge'];
-      adolescentSymptomKeys.forEach(k => adolescentCounts[k] = 0);
-      const adolescentSamples: any[] = [];
-
-      adolescentCards.forEach((card: any) => {
-        adolescentSymptomKeys.forEach(k => {
-          if (card[k]) adolescentCounts[k] = (adolescentCounts[k] || 0) + 1;
-        });
-        if (adolescentSamples.length < 5) {
-          const student = studentById[card.studentId];
-          adolescentSamples.push({
-            studentId: card.studentId,
-            studentName: student?.fullName || card.nameOfChild || 'Unknown',
-            classSection: card.classSection,
-            ageYears: card.ageYears || (student?.dateOfBirth ? (new Date(selectedYear,0,1).getFullYear() - new Date(student.dateOfBirth).getFullYear()) : undefined),
-            symptoms: adolescentSymptomKeys.reduce((acc: any, k) => { if (card[k]) acc[k] = card[k]; return acc; }, {}),
-            notes: card.notes || null,
-          });
-        }
-      });
-
-      const adolescentHealthDetailed = {
-        emotionalDistressPercent: adolescentCards.length > 0 ? Math.round(adolescentCounts['e1_life_events_difficulty'] / adolescentCards.length * 100) : 0,
-        peerPressurePercent: adolescentCards.length > 0 ? Math.round(adolescentCounts['e2_peer_pressure_substance'] / adolescentCards.length * 100) : 0,
-        depressionSymptomsPercent: adolescentCards.length > 0 ? Math.round(adolescentCounts['e3_persistent_sadness'] / adolescentCards.length * 100) : 0,
-        utiSymptomsPercent: adolescentCards.length > 0 ? Math.round((adolescentCounts['e5_pain_urination'] || adolescentCounts['e6_foul_discharge']) / adolescentCards.length * 100) : 0,
-        adolescentCardCount: adolescentCards.length,
-        samples: adolescentSamples,
-      };
-
-      // Referral management
-      let referralManagement: any = {
-        totalReferralsGenerated: 0,
-        referralCompletionPercent: 0,
-        pendingReferralsList: [],
-        overdueReferrals: [],
-        mostReferredSchools: [],
-        mostReferredIssues: [],
-        facilityWiseLoad: [],
-      };
-
-      try {
-        const referralsResult = await storage.getReferrals({ limit: 1000 });
-        const allReferrals = referralsResult.referrals;
-        referralManagement = {
-          totalReferralsGenerated: allReferrals.length,
-          referralCompletionPercent: allReferrals.length > 0 ? Math.round(allReferrals.filter(r => r.status === "Completed").length / allReferrals.length * 100) : 0,
-          pendingReferralsList: allReferrals.filter(r => r.status === "Pending").slice(0, 10).map(r => {
-            const student = allStudents.find(s => s.id === r.studentId);
-            return {
-              studentId: r.studentId,
-              studentName: student?.fullName || "Unknown",
-              schoolName: schools.find(s => s.id === r.schoolId)?.name || "Unknown",
-              issue: r.issue,
-              category: r.referralType,
-              facility: r.facility,
-              daysPending: Math.floor((new Date().getTime() - new Date(r.createdAt as Date).getTime()) / (1000 * 60 * 60 * 24)),
-            };
-          }),
-          overdueReferrals: allReferrals.filter(r => {
-            if (r.status !== "Pending") return false;
-            const daysPending = Math.floor((new Date().getTime() - new Date(r.createdAt as Date).getTime()) / (1000 * 60 * 60 * 24));
-            return daysPending > 30;
-          }),
-          mostReferredSchools: schools.map(school => {
-            const schoolReferrals = allReferrals.filter(r => r.schoolId === school.id);
-            return {
-              schoolId: school.id,
-              schoolName: school.name,
-              referralCount: schoolReferrals.length,
-            };
-          }).sort((a, b) => b.referralCount - a.referralCount).slice(0, 10),
-          mostReferredIssues: [
-            { issue: "Severe Anemia", count: allReferrals.filter(r => r.issue.toLowerCase().includes("anemia")).length },
-            { issue: "Goitre", count: allReferrals.filter(r => r.issue.toLowerCase().includes("goitre")).length },
-            { issue: "Leprosy", count: allReferrals.filter(r => r.issue.toLowerCase().includes("leprosy")).length },
-            { issue: "Tuberculosis", count: allReferrals.filter(r => r.issue.toLowerCase().includes("tuberculosis")).length },
-          ].filter(item => item.count > 0),
-          facilityWiseLoad: [], // Placeholder
-        };
-      } catch (error: any) {
-        console.warn("Referrals table not available for referral management:", error?.message || String(error));
-      }
-
-      res.json({
-        districtKPIs,
-        referralHeatmap,
-        anthropometryAnalytics,
-        deficienciesInsights,
-        deficienciesHeatmap: [], // Placeholder
-        diseasesInsights,
-        leprosyAnalytics: leprosyAnalyticsDetailed,
-        tbAnalytics,
-        developmentalDelays: {}, // Placeholder
-        adolescentHealth: adolescentHealthDetailed,
-        referralManagement,
-        complianceAnalytics: {
-          dataCompletenessPercent: 85, // Placeholder
-          auditLogs: {
-            invalidBMI: 0,
-            incompleteC7C8: 0,
-          }
-        },
-        alerts: {
-          leprosyAlert: leprosyAnalyticsDetailed.totalSuspectedCases > 0,
-          tbAlert: tbAnalytics.totalSuspectedCases > 0,
-          severeAnemiaAlert: districtKPIs.prevalenceRates.severeAnemiaPercent > 5,
-        },
-        exportCapabilities: {},
-        metadata: {
-          generatedAt: new Date().toISOString(),
-          district: poDistrict,
-          month: selectedMonth,
-          year: selectedYear,
-        }
-      });
-    } catch (error: any) {
-      console.error("PO dashboard error:", error?.message || String(error));
-      res.status(500).json({ message: error?.message || "Failed to fetch PO dashboard data" });
-    }
-  });
+  // Duplicate endpoint removed - use the primary /api/po/dashboard at line 5299
 
   app.get("/api/headmaster/dashboard", authenticateToken, authorizeRoles("Headmaster", "Admin"), async (req: AuthRequest, res) => {
     try {
@@ -7977,6 +8129,11 @@ async function generatePDFReport(reportData: any, reportType: string, userRole: 
   app.get("/api/teacher/dashboard", authenticateToken, authorizeRoles("ClassTeacher", "Admin"), async (req: AuthRequest, res) => {
     try {
       const schoolId = req.user?.role === "Admin" ? undefined : req.user?.schoolId;
+      
+      // Get month and year from query parameters
+      const month = parseInt(req.query.month as string) || new Date().getMonth() + 1;
+      const year = parseInt(req.query.year as string) || new Date().getFullYear();
+      
       // Get teacher's assigned class
       const teacher = await storage.getUser(req.user!.id);
       const classSection = teacher?.classSection;
@@ -7991,8 +8148,8 @@ async function generatePDFReport(reportData: any, reportType: string, userRole: 
 
       const studentsWithStatus = await Promise.all(
         students.map(async (student) => {
-          const { cards } = await storage.getAnnualHealthCards({ studentId: student.id });
-          const { checkups } = await storage.getMonthlyCheckups({ studentId: student.id, limit: 1 });
+          const { cards } = await storage.getAnnualHealthCards({ studentId: student.id, year });
+          const { checkups } = await storage.getMonthlyCheckups({ studentId: student.id, month, year, limit: 1 });
           const latestCard = cards && cards.length > 0 ? cards[0] : null;
 
           // Flatten commonly-used health card fields into the student object so UIs and exports
@@ -8022,18 +8179,16 @@ async function generatePDFReport(reportData: any, reportType: string, userRole: 
 
       const upcomingCheckups = studentsWithStatus.filter(s => !s.lastCheckup);
 
-      // Add meal participation metrics for ClassTeacher view (real data)
-      const nowYear = new Date().getFullYear();
-      const nowMonth = new Date().getMonth() + 1;
-      const monthStart = new Date(nowYear, nowMonth - 1, 1).toISOString().split("T")[0];
-      const monthEnd = new Date(nowYear, nowMonth, 0).toISOString().split("T")[0];
+      // Add meal participation metrics for ClassTeacher view (filtered by month/year)
+      const monthStart = new Date(year, month - 1, 1).toISOString().split("T")[0];
+      const monthEnd = new Date(year, month, 0).toISOString().split("T")[0];
 
       let totalMeals = 0;
       let expectedMeals = 0;
       try {
         const meals = await storage.getMealLogs({ schoolId: schoolId || undefined, startDate: monthStart, endDate: monthEnd });
         totalMeals = meals.length;
-        const daysInMonth = new Date(nowYear, nowMonth, 0).getDate();
+        const daysInMonth = new Date(year, month, 0).getDate();
         expectedMeals = students.length > 0 ? students.length * daysInMonth : 0; // assume 1 meal per student per day for expected
       } catch (err) {
         console.warn('Failed to compute meal participation for teacher dashboard:', (err as any)?.message || err);
@@ -9363,6 +9518,10 @@ async function generatePDFReport(reportData: any, reportType: string, userRole: 
   app.get("/api/alerts", authenticateToken, async (req: AuthRequest, res) => {
     try {
       const user = req.user!;
+      
+      // Get month and year from query parameters
+      const month = parseInt(req.query.month as string) || new Date().getMonth() + 1;
+      const year = parseInt(req.query.year as string) || new Date().getFullYear();
 
       // Get students for this teacher/class
       const { students } = await storage.getStudents({
@@ -9378,11 +9537,11 @@ async function generatePDFReport(reportData: any, reportType: string, userRole: 
         low: [] as any[]
       };
 
-      // Get health cards for risk assessment
+      // Get health cards for risk assessment (filtered by year)
       for (const student of students) {
         const { cards } = await storage.getAnnualHealthCards({
           studentId: student.id,
-          year: new Date().getFullYear(),
+          year,
           limit: 1
         });
 
@@ -9542,6 +9701,10 @@ async function generatePDFReport(reportData: any, reportType: string, userRole: 
   app.get("/api/vaccination-tracking", authenticateToken, async (req: AuthRequest, res) => {
     try {
       const user = req.user!;
+      
+      // Get month and year from query parameters
+      const month = parseInt(req.query.month as string) || new Date().getMonth() + 1;
+      const year = parseInt(req.query.year as string) || new Date().getFullYear();
 
       // Get students for this teacher/class
       const { students } = await storage.getStudents({
@@ -9550,12 +9713,12 @@ async function generatePDFReport(reportData: any, reportType: string, userRole: 
         limit: 1000
       });
 
-      // Get vaccination data from health cards
+      // Get vaccination data from health cards (filtered by year)
       const vaccinationData = [];
       for (const student of students) {
         const { cards } = await storage.getAnnualHealthCards({
           studentId: student.id,
-          year: new Date().getFullYear(),
+          year,
           limit: 1
         });
 
@@ -9596,7 +9759,10 @@ async function generatePDFReport(reportData: any, reportType: string, userRole: 
   app.get("/api/growth-trends", authenticateToken, async (req: AuthRequest, res) => {
     try {
       const user = req.user!;
-      const currentYear = new Date().getFullYear();
+      
+      // Get month and year from query parameters
+      const month = parseInt(req.query.month as string) || new Date().getMonth() + 1;
+      const year = parseInt(req.query.year as string) || new Date().getFullYear();
 
       // Get students for this teacher/class
       const { students } = await storage.getStudents({
@@ -9605,16 +9771,14 @@ async function generatePDFReport(reportData: any, reportType: string, userRole: 
         limit: 1000
       });
 
-      // Generate growth trends for the last 12 months
+      // Generate growth trends for the selected year, focusing on the selected month
       const growthTrends = [];
       const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-      for (let i = 11; i >= 0; i--) {
-        const date = new Date();
-        date.setMonth(date.getMonth() - i);
-        const month = date.getMonth() + 1;
-        const year = date.getFullYear();
+      // Generate data for the selected month and a few months around it for context
+      const monthsToShow = [month - 2, month - 1, month, month + 1, month + 2].filter(m => m >= 1 && m <= 12);
 
+      for (const targetMonth of monthsToShow) {
         // Get health cards for this month/year
         const monthCards = [];
         for (const student of students) {
@@ -9628,7 +9792,7 @@ async function generatePDFReport(reportData: any, reportType: string, userRole: 
           const relevantCards = cards.filter(card => {
             if (!card.createdAt) return false;
             const cardDate = new Date(card.createdAt);
-            return cardDate.getFullYear() === year && cardDate.getMonth() + 1 <= month;
+            return cardDate.getFullYear() === year && cardDate.getMonth() + 1 <= targetMonth;
           });
 
           if (relevantCards.length > 0) {
@@ -9661,7 +9825,7 @@ async function generatePDFReport(reportData: any, reportType: string, userRole: 
           : 0;
 
         growthTrends.push({
-          month: months[month - 1],
+          month: months[targetMonth - 1],
           year,
           avgHeight: parseFloat(avgHeight.toFixed(1)),
           avgWeight: parseFloat(avgWeight.toFixed(1)),
@@ -9670,12 +9834,12 @@ async function generatePDFReport(reportData: any, reportType: string, userRole: 
         });
       }
 
-      // Calculate health risk metrics
+      // Calculate health risk metrics for the selected year
       const latestCards = [];
       for (const student of students) {
         const { cards } = await storage.getAnnualHealthCards({
           studentId: student.id,
-          year: currentYear,
+          year,
           limit: 1
         });
         if (cards.length > 0) {
@@ -10764,7 +10928,7 @@ async function generatePDFReport(reportData: any, reportType: string, userRole: 
   });
 
 
-  return httpServer;
+  return _httpServer;
 }
 
 

@@ -7,6 +7,7 @@ import { BarChart } from "@/components/charts/BarChart";
 import { PieChart } from "@/components/charts/PieChart";
 import { DataTable } from "@/components/dashboard/DataTable";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
+import { generateYearOptions } from "@/lib/dateUtils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -41,16 +42,12 @@ const months = [
   { value: "12", label: "December" },
 ];
 
-const years = [
-  { value: "2025", label: "2025" },
-  { value: "2024", label: "2024" },
-  { value: "2023", label: "2023" },
-];
+const years = generateYearOptions();
 
 export default function DataQualityDashboard() {
   const [selectedMonth, setSelectedMonth] = useState(String(new Date().getMonth() + 1));
   const [selectedYear, setSelectedYear] = useState(String(new Date().getFullYear()));
-  const [selectedSchool, setSelectedSchool] = useState("");
+  const [selectedSchool, setSelectedSchool] = useState("all");
 
   const { user } = useAuth();
 
@@ -68,7 +65,7 @@ export default function DataQualityDashboard() {
       const params = new URLSearchParams();
       params.append("month", selectedMonth);
       params.append("year", selectedYear);
-      if (selectedSchool) {
+      if (selectedSchool && selectedSchool !== "all") {
         params.append("schoolId", selectedSchool);
       }
       const res = await apiRequest("GET", `/api/data-quality?${params}`);
@@ -102,7 +99,7 @@ export default function DataQualityDashboard() {
                 <SelectValue placeholder="All Schools" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">All Schools</SelectItem>
+                <SelectItem value="all">All Schools</SelectItem>
                 {schoolsData?.schools?.map((school: any) => (
                   <SelectItem key={school.id} value={school.id}>
                     {school.name}

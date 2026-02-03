@@ -36,7 +36,7 @@ export function InteractivePieChart({
 }: InteractivePieChartProps) {
   const [hoveredElement, setHoveredElement] = useState<number | null>(null);
   const [clickedElement, setClickedElement] = useState<number | null>(null);
-  const chartRef = useRef<ChartJS<"pie" | "doughnut">>(null);
+  const chartRef = useRef<any>(null);
 
   // Provide default values to prevent runtime errors
   const safeLabels = labels || [];
@@ -137,7 +137,7 @@ export function InteractivePieChart({
           padding: 20,
           font: {
             size: 13,
-            weight: '500',
+            weight: 500,
           },
           color: "hsl(var(--foreground))",
           generateLabels: (chart: any) => {
@@ -173,11 +173,11 @@ export function InteractivePieChart({
         boxPadding: 6,
         titleFont: {
           size: 14,
-          weight: '600',
+          weight: 600,
         },
         bodyFont: {
           size: 13,
-          weight: '500',
+          weight: 500,
         },
         callbacks: {
           label: (context: any) => {

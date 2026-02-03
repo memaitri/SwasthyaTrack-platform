@@ -8,6 +8,7 @@ import { PieChart } from "@/components/charts/PieChart";
 import { LineChart } from "@/components/charts/LineChart";
 import { DataTable } from "@/components/dashboard/DataTable";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
+import { generateYearOptions } from "@/lib/dateUtils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -483,8 +484,8 @@ export default function HeadmasterDashboard() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {[2024, 2025, 2026].map(year => (
-                  <SelectItem key={year} value={String(year)}>{year}</SelectItem>
+                {generateYearOptions().map(year => (
+                  <SelectItem key={year.value} value={year.value}>{year.label}</SelectItem>
                 ))}
               </SelectContent>
             </Select>

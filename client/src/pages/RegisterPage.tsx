@@ -69,6 +69,16 @@ const registerSchema = z.object({
   }, {
     message: "Region, district, and block are required for PO",
     path: ["region"],
+  })
+  // Require district for Headmaster (for PO approval workflow)
+  .refine((data) => {
+    if (data.role === "Headmaster") {
+      return !!data.district;
+    }
+    return true;
+  }, {
+    message: "District is required for Headmaster",
+    path: ["district"],
   });
 
 const schoolFormSchema = z.object({
@@ -350,6 +360,12 @@ export default function RegisterPage() {
                       {['ClassTeacher','MedicalTeam','HostelWarden','MealSuperintendent','Lady Superintendent'].includes(role) && (
                         <p className="text-xs text-muted-foreground mt-2">Accounts for this role require Headmaster approval and will be activated only after approval.</p>
                       )}
+                      {role === "Headmaster" && (
+                        <p className="text-xs text-muted-foreground mt-2">Headmaster accounts require PO approval and will be activated only after approval.</p>
+                      )}
+                      {role === "PO" && (
+                        <p className="text-xs text-muted-foreground mt-2">PO accounts require Admin approval and will be activated only after approval.</p>
+                      )}
                     </FormItem>
                   )}
                 />
@@ -522,6 +538,22 @@ export default function RegisterPage() {
                         </FormItem>
                       )}
                     />
+                    {role === "Headmaster" && (
+                      <FormField
+                        control={form.control}
+                        name="district"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>District *</FormLabel>
+                            <FormControl>
+                              <Input placeholder="Enter district name" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                            <p className="text-xs text-muted-foreground">Required for PO approval workflow</p>
+                          </FormItem>
+                        )}
+                      />
+                    )}
                     {role === "ClassTeacher" && (
                       <FormField
                         control={form.control}
@@ -541,6 +573,10 @@ export default function RegisterPage() {
                                     Class {i + 1}-A
                                   </SelectItem>
                                 ))}
+                                <SelectItem value="11-Science">Class 11 - Science</SelectItem>
+                                <SelectItem value="11-Arts">Class 11 - Arts</SelectItem>
+                                <SelectItem value="12-Science">Class 12 - Science</SelectItem>
+                                <SelectItem value="12-Arts">Class 12 - Arts</SelectItem>
                               </SelectContent>
                             </Select>
                             <FormMessage />

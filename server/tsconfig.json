@@ -1,6 +1,7 @@
 {
   "extends": "../tsconfig.json",
   "compilerOptions": {
+    "ignoreDeprecations": "6.0",
     "outDir": "dist",
     "rootDir": "..",
     "noEmit": false,
@@ -19,7 +20,6 @@
     "noImplicitReturns": false,
     "noUnusedLocals": false,
     "noUnusedParameters": false,
-    "baseUrl": "..",
     "paths": {
       "@/*": ["./client/src/*"],
       "@shared/*": ["./shared/*"]

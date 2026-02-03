@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import MealMenuForm from "@/components/meal/MealMenuForm";
+import { NutritionDisplay } from "@/components/meal/NutritionDisplay";
+import { CameraCapture } from "@/components/ui/camera-capture";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -47,6 +49,8 @@ import {
   Download,
   Pencil,
   Trash2,
+  Smartphone,
+  Zap,
 } from "lucide-react";
 
 const mealFormSchema = z.object({
@@ -85,12 +89,14 @@ export default function MealLogsPage() {
   }, [user, setLocation]);
 
   if (user?.role === "Admin") return null;
+  
   const userClassSection = user?.classSection || "";
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split("T")[0]);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [geoLocation, setGeoLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
   const canFilterSchool = hasRole("Admin", "PO");
   const defaultSchoolFilter = canFilterSchool ? "all" : user?.schoolId || "self";
   const [selectedSchool, setSelectedSchool] = useState(defaultSchoolFilter);
@@ -99,6 +105,7 @@ export default function MealLogsPage() {
   const [editingMeal, setEditingMeal] = useState<any | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
   const today = new Date().toISOString().split("T")[0];
+
   // No class-level selection: feature scoped to whole school only
   useEffect(() => {
     if (!canFilterSchool && user?.schoolId) {
@@ -165,7 +172,6 @@ export default function MealLogsPage() {
       mealType: "breakfast",
       menuItems: "",
       notes: "",
-      // remove classSection: meals are school-level
     },
   });
 
@@ -176,7 +182,6 @@ export default function MealLogsPage() {
       mealType: "breakfast",
       menuItems: "",
       notes: "",
-      // classSection omitted for edits
     },
   });
 
@@ -199,8 +204,6 @@ export default function MealLogsPage() {
       form.setValue("date", selectedDate);
     }
   }, [selectedDate, form]);
-
-  // classSection is no longer used; meals are school-level
 
   const createMutation = useMutation({
     mutationFn: async (data: MealForm) => {
@@ -289,6 +292,54 @@ export default function MealLogsPage() {
       });
     },
   });
+
+  const handleCameraCapture = async (file: File) => {
+    console.log("Camera capture handler called with file:", file.name, file.size);
+    setIsUploadingImage(true);
+    try {
+      const formData = new FormData();
+      formData.append("image", file);
+      console.log("Uploading file to server...");
+      
+      const res = await fetch("/api/upload/image", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("accessToken") || ""}`,
+        },
+        body: formData,
+      });
+      
+      console.log("Upload response status:", res.status);
+      
+      if (!res.ok) {
+        const errorText = (await res.text()) || "Failed to upload image";
+        throw new Error(errorText);
+      }
+      
+      const data = await res.json();
+      console.log("Upload successful, response:", data);
+      
+      if (imagePreview) {
+        URL.revokeObjectURL(imagePreview);
+      }
+      setUploadedImageUrl(data.imageUrl);
+      setImagePreview(URL.createObjectURL(file));
+      setIsCameraOpen(false);
+      toast({
+        title: "Photo captured",
+        description: "Meal photo captured and uploaded successfully.",
+      });
+    } catch (error: any) {
+      console.error("Camera capture error:", error);
+      toast({
+        title: "Upload failed",
+        description: error.message || "Could not upload captured photo",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUploadingImage(false);
+    }
+  };
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -391,7 +442,8 @@ export default function MealLogsPage() {
       toast({ title: "Validation", description: "Please upload a photo of the meal before submitting.", variant: "destructive" });
       return;
     }
-    // Validate mandatory groups based on mealType. `MealMenuForm` syncs selections to `menuItems` hidden field.
+    
+    // Validate mandatory groups based on mealType
     const menuStr = (data.menuItems || "").toLowerCase();
     const items = menuStr.split(",").map((s) => s.trim()).filter(Boolean);
 
@@ -450,7 +502,7 @@ export default function MealLogsPage() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <h2 className="text-2xl font-bold text-foreground">Meal Tracking</h2>
-            <p className="text-muted-foreground">Log and monitor daily meal service</p>
+            <p className="text-muted-foreground">Log and monitor daily meal service with nutrition tracking</p>
           </div>
           <div className="flex items-center gap-2">
             <Button
@@ -524,36 +576,36 @@ export default function MealLogsPage() {
           </div>
         </div>
 
-          {/* Monthly Compliance Summary moved to top for quick access */}
-          <div className="grid grid-cols-1 gap-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Monthly Compliance Summary</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <div className="p-4 rounded-lg bg-muted/50 text-center">
-                    <p className="text-3xl font-bold text-foreground">{complianceData?.overallCompliance || 0}%</p>
-                    <p className="text-sm text-muted-foreground">Overall Compliance</p>
-                  </div>
-                  <div className="p-4 rounded-lg bg-muted/50 text-center">
-                    <p className="text-3xl font-bold text-emerald-600">{complianceData?.daysLogged || 0}</p>
-                    <p className="text-sm text-muted-foreground">Days Logged</p>
-                  </div>
-                  <div className="p-4 rounded-lg bg-muted/50 text-center">
-                    <p className="text-3xl font-bold text-amber-600">{complianceData?.daysMissed || 0}</p>
-                    <p className="text-sm text-muted-foreground">Days Missed</p>
-                  </div>
-                  <div className="p-4 rounded-lg bg-muted/50 text-center">
-                    <p className="text-3xl font-bold text-blue-600">{complianceData?.totalMeals || 0}</p>
-                    <p className="text-sm text-muted-foreground">Total Meals</p>
-                  </div>
+        {/* Monthly Compliance Summary */}
+        <div className="grid grid-cols-1 gap-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Monthly Compliance Summary</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="p-4 rounded-lg bg-muted/50 text-center">
+                  <p className="text-3xl font-bold text-foreground">{complianceData?.overallCompliance || 0}%</p>
+                  <p className="text-sm text-muted-foreground">Overall Compliance</p>
                 </div>
-              </CardContent>
-            </Card>
-          </div>
+                <div className="p-4 rounded-lg bg-muted/50 text-center">
+                  <p className="text-3xl font-bold text-emerald-600">{complianceData?.daysLogged || 0}</p>
+                  <p className="text-sm text-muted-foreground">Days Logged</p>
+                </div>
+                <div className="p-4 rounded-lg bg-muted/50 text-center">
+                  <p className="text-3xl font-bold text-amber-600">{complianceData?.daysMissed || 0}</p>
+                  <p className="text-sm text-muted-foreground">Days Missed</p>
+                </div>
+                <div className="p-4 rounded-lg bg-muted/50 text-center">
+                  <p className="text-3xl font-bold text-blue-600">{complianceData?.totalMeals || 0}</p>
+                  <p className="text-sm text-muted-foreground">Total Meals</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2">
             <Card>
               <CardHeader>
@@ -590,7 +642,7 @@ export default function MealLogsPage() {
                             </div>
                             {meal ? (
                               <div className="flex items-center gap-2">
-                                <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 no-default-hover-elevate no-default-active-elevate">
+                                <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
                                   <CheckCircle2 className="h-3 w-3 mr-1" />
                                   Logged
                                 </Badge>
@@ -602,6 +654,7 @@ export default function MealLogsPage() {
                                       className="h-8 w-8"
                                       onClick={() => startEditMeal(meal)}
                                       data-testid={`button-edit-meal-${type}`}
+                                      disabled // Disable editing to prevent misuse
                                     >
                                       <Pencil className="h-4 w-4" />
                                     </Button>
@@ -611,6 +664,7 @@ export default function MealLogsPage() {
                                       className="h-8 w-8 text-destructive"
                                       onClick={() => setDeleteTarget(meal)}
                                       data-testid={`button-delete-meal-${type}`}
+                                      disabled // Disable deletion to prevent misuse
                                     >
                                       <Trash2 className="h-4 w-4" />
                                     </Button>
@@ -618,20 +672,36 @@ export default function MealLogsPage() {
                                 )}
                               </div>
                             ) : (
-                              <Badge variant="outline" className="text-muted-foreground no-default-hover-elevate no-default-active-elevate">
+                              <Badge variant="outline" className="text-muted-foreground">
                                 Not logged
                               </Badge>
                             )}
                           </div>
                           {meal ? (
-                            <div className="space-y-2">
+                            <div className="space-y-3">
                               <div className="flex flex-wrap gap-2">
                                 {(Array.isArray(meal.menuItems) ? meal.menuItems : []).map((item: string, i: number) => (
-                                  <Badge key={i} variant="secondary" className="no-default-hover-elevate no-default-active-elevate">
+                                  <Badge key={i} variant="secondary">
                                     {item}
                                   </Badge>
                                 ))}
                               </div>
+                              
+                              {/* Nutrition Display */}
+                              {meal.totalCalories && (
+                                <NutritionDisplay
+                                  nutrition={{
+                                    totalCalories: Number(meal.totalCalories) || 0,
+                                    totalProtein: Number(meal.totalProtein) || 0,
+                                    totalFat: Number(meal.totalFat) || 0,
+                                    totalCarbs: Number(meal.totalCarbs) || 0,
+                                    totalFiber: Number(meal.totalFiber) || 0,
+                                    itemBreakdown: meal.nutritionBreakdown || [],
+                                  }}
+                                  compact={true}
+                                />
+                              )}
+                              
                               {meal.imageUrl && (
                                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                                   <a 
@@ -673,14 +743,12 @@ export default function MealLogsPage() {
                 Log New Meal
               </CardTitle>
               <CardDescription>
-                Record meal details with photo and location
+                Record meal details with photo, location and nutrition tracking
               </CardDescription>
             </CardHeader>
             <CardContent>
               <Form {...form}>
                 <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                  {/* Class selection removed — meals are school-level */}
-
                   <FormField
                     control={form.control}
                     name="mealType"
@@ -707,7 +775,7 @@ export default function MealLogsPage() {
                   <MealMenuForm form={form} />
 
                   <div>
-                    <FormLabel>Photo</FormLabel>
+                    <FormLabel>Photo *</FormLabel>
                     <div className="mt-2">
                       {imagePreview ? (
                         <div className="relative">
@@ -728,30 +796,47 @@ export default function MealLogsPage() {
                           </Button>
                         </div>
                       ) : (
-                        <label
-                          className={`flex flex-col items-center justify-center h-32 border-2 border-dashed rounded-lg ${
-                            isUploadingImage ? "cursor-not-allowed opacity-70" : "cursor-pointer hover:bg-muted/50 transition-colors"
-                          }`}
-                        >
-                          <Camera className="h-8 w-8 text-muted-foreground mb-2" />
-                          <span className="text-sm text-muted-foreground">
-                            {isUploadingImage ? "Uploading..." : "Click to upload photo"}
-                          </span>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            className="hidden"
-                            onChange={handleImageUpload}
-                            data-testid="input-image"
+                        <div className="space-y-2">
+                          <label
+                            className={`flex flex-col items-center justify-center h-32 border-2 border-dashed rounded-lg ${
+                              isUploadingImage ? "cursor-not-allowed opacity-70" : "cursor-pointer hover:bg-muted/50 transition-colors"
+                            }`}
+                          >
+                            <Camera className="h-8 w-8 text-muted-foreground mb-2" />
+                            <span className="text-sm text-muted-foreground">
+                              {isUploadingImage ? "Uploading..." : "Click to upload photo"}
+                            </span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={handleImageUpload}
+                              data-testid="input-image"
+                              disabled={isUploadingImage}
+                            />
+                          </label>
+                          
+                          <div className="text-center">
+                            <span className="text-xs text-muted-foreground">or</span>
+                          </div>
+                          
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="w-full"
+                            onClick={() => setIsCameraOpen(true)}
                             disabled={isUploadingImage}
-                          />
-                        </label>
+                          >
+                            <Smartphone className="h-4 w-4 mr-2" />
+                            Open Camera
+                          </Button>
+                        </div>
                       )}
                     </div>
                   </div>
 
                   <div>
-                    <FormLabel>Location</FormLabel>
+                    <FormLabel>Location *</FormLabel>
                     <div className="mt-2">
                       {geoLocation ? (
                         <div className="flex items-center justify-between p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg border border-emerald-200 dark:border-emerald-800">
@@ -825,105 +910,42 @@ export default function MealLogsPage() {
             </CardContent>
           </Card>
         </div>
-
-        {/* Monthly Compliance Summary already shown at top */}
       </div>
 
-      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+      {/* Camera Capture Modal */}
+      <CameraCapture
+        isOpen={isCameraOpen}
+        onCapture={handleCameraCapture}
+        onCancel={() => setIsCameraOpen(false)}
+      />
+
+      {/* Edit Dialog - Disabled to prevent misuse */}
+      <Dialog open={false} onOpenChange={setIsEditDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Edit Meal Entry</DialogTitle>
           </DialogHeader>
-          <Form {...editForm}>
-            <form onSubmit={editForm.handleSubmit(onEditSubmit)} className="space-y-4">
-              <FormField
-                control={editForm.control}
-                name="date"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Date *</FormLabel>
-                    <FormControl>
-                      <Input type="date" {...field} max={today} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              {/* Class selection removed — meals are school-level */}
-              <FormField
-                control={editForm.control}
-                name="mealType"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Meal Type *</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select meal type" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="breakfast">Breakfast</SelectItem>
-                        <SelectItem value="lunch">Lunch</SelectItem>
-                        <SelectItem value="dinner">Dinner</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={editForm.control}
-                name="menuItems"
-                render={({ field }) => (
-                  <MealMenuForm form={editForm} />
-                )}
-              />
-              <FormField
-                control={editForm.control}
-                name="notes"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Notes</FormLabel>
-                    <FormControl>
-                      <Textarea placeholder="Optional notes" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)}>
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={updateMutation.isPending}>
-                  {updateMutation.isPending ? "Saving..." : "Save Changes"}
-                </Button>
-              </DialogFooter>
-            </form>
-          </Form>
+          <div className="p-4 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
+            <p className="text-sm text-amber-700 dark:text-amber-300">
+              Meal editing has been disabled to prevent misuse. Once a meal is submitted, it cannot be modified.
+            </p>
+          </div>
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => {
+      {/* Delete Dialog - Disabled to prevent misuse */}
+      <AlertDialog open={false} onOpenChange={(open) => {
         if (!open) setDeleteTarget(null);
       }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete this meal entry?</AlertDialogTitle>
+            <AlertDialogTitle>Delete Meal Entry</AlertDialogTitle>
             <AlertDialogDescription>
-              This action will permanently remove the meal log and cannot be undone.
+              Meal deletion has been disabled to prevent misuse and maintain data integrity.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
-              disabled={deleteMutation.isPending}
-            >
-              {deleteMutation.isPending ? "Deleting..." : "Delete"}
-            </AlertDialogAction>
+            <AlertDialogCancel>Close</AlertDialogCancel>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
