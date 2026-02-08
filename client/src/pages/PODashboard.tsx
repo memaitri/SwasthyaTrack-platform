@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { MetricCard } from "@/components/dashboard/MetricCard";
+import { DrillDownModal, type DrillDownColumn } from "@/components/dashboard/DrillDownModal";
+import { CriticalStudentsList } from "@/components/dashboard/CriticalStudentsList";
 import { ChartContainer } from "@/components/charts/ChartContainer";
 import { BarChart } from "@/components/charts/BarChart";
 import { PieChart } from "@/components/charts/PieChart";
@@ -9,10 +11,8 @@ import { LineChart } from "@/components/charts/LineChart";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { apiRequest } from "@/lib/queryClient";
-import { exportToPDF } from "@/lib/exportService";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { SharedReports } from "@/components/reports/SharedReports";
 import { InlineFilterControls } from "@/components/filters/FilterControls";
 import { usePOFilters } from "@/hooks/useFilters";
 import {
@@ -24,7 +24,6 @@ import {
   TrendingUp,
   Calendar,
   Clock,
-  Download,
   FileText,
   Heart,
   Shield,
@@ -37,8 +36,39 @@ import {
   Flame,
   Thermometer,
   ExternalLink,
+  Utensils,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+
+// Drill-down modal state type
+type DrillDownType = 
+  | "pending-referrals" 
+  | "schools" 
+  | "students-underweight"
+  | "students-obese"
+  | "students-leprosy"
+  | "students-tb"
+  | "students-anemia"
+  | "students-adolescent"
+  | "students-high-risk"
+  | "students-goitre"
+  | "all-students"
+  | "screened-students"
+  | "referred-students"
+  | "all-students-bmi"
+  | "all-referrals"
+  | "completed-referrals"
+  | "overdue-referrals"
+  | "adolescent-emotional-distress"
+  | "adolescent-peer-pressure"
+  | "adolescent-depression"
+  | "adolescent-menstrual"
+  | "menstrual-eligible"
+  | "menstrual-tracked"
+  | "menstrual-late"
+  | "menstrual-referrals"
+  | "deficiencies"
+  | null;
 
 // Type definitions for data structures
 interface FacilityLoad {
@@ -126,6 +156,11 @@ export default function PODashboard() {
    const [activeTab, setActiveTab] = useState("overview");
    const [heatmapStatus, setHeatmapStatus] = useState<string | 'all'>('all');
    const [heatmapCategory, setHeatmapCategory] = useState<string | 'all'>('all');
+   
+   // Drill-down modal state
+   const [drillDownType, setDrillDownType] = useState<DrillDownType>(null);
+   const [drillDownData, setDrillDownData] = useState<any[]>([]);
+   const [drillDownLoading, setDrillDownLoading] = useState(false);
 
    // Use the new filtering system
    const {
@@ -140,119 +175,6 @@ export default function PODashboard() {
    } = usePOFilters();
 
    // Export function for PO dashboard
-   const handleExport = async (type: string, format: string = "excel") => {
-     try {
-       const params = buildParams();
-       params.append("format", format);
-
-       const response = await apiRequest("GET", `/api/po/export/${type}?${params}`);
-       const blob = await response.blob();
-
-       // Create download link
-       const url = window.URL.createObjectURL(blob);
-       const a = document.createElement("a");
-       a.href = url;
-       a.download = `${type}-report-${filters.year}-${filters.month}.${format === "excel" ? "csv" : format}`;
-       document.body.appendChild(a);
-       a.click();
-       window.URL.revokeObjectURL(url);
-       document.body.removeChild(a);
-     } catch (error) {
-       console.error("Export failed:", error);
-       // You could add a toast notification here
-     }
-   };
-
-  // Try client-side pretty PDF generation first (for charts/visuals), fallback to server export
-  const handlePOQuickExport = async (type: string) => {
-    try {
-      // For monthly-health prefer client-side charted PDF
-      if (type === 'monthly-health') {
-        try {
-          const { generatePdfReport } = await import('@/lib/pdfReports');
-          const { blob, filename } = await generatePdfReport({ type: 'monthly-checkup', month: filters.month, year: filters.year });
-          const url = window.URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = filename || `${type}-${filters.year}-${filters.month}.pdf`;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          window.URL.revokeObjectURL(url);
-          return;
-        } catch (err) {
-          console.warn('Client-side monthly-health export failed, falling back to server export', err);
-        }
-      }
-
-      // For other types try to fetch JSON and use exportService for pretty tabular PDFs when feasible
-      try {
-        const token = localStorage.getItem('accessToken');
-        const params = buildParams();
-        params.append('format', 'json');
-        const res = await fetch(`/api/po/export/${type}?${params}`, {
-          headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
-        });
-        if (res.ok) {
-          const json = await res.json();
-          // If server returned rows array, use client PDF exporter
-          if (Array.isArray(json.rows) && json.rows.length > 0) {
-            const columns = Object.keys(json.rows[0]).map((k) => ({ key: k, header: k }));
-            const rows = json.rows;
-            exportToPDF(rows as any, { columns }, 'PO');
-            return;
-          }
-        }
-      } catch (err) {
-        console.warn('Attempt to use server JSON for client export failed, will fallback to server blob export', err);
-      }
-
-      // Final fallback: use existing server blob export (default format excel)
-      await handleExport(type, 'excel');
-    } catch (error) {
-      console.error('PO quick export failed:', error);
-    }
-  };
-
-  // Unified report generation handler
-  const handleUnifiedReport = async (reportType: string, format: string = "excel") => {
-    try {
-      const params = buildParams();
-      params.append("type", reportType);
-      params.append("format", format);
-
-      const response = await apiRequest("GET", `/api/reports/unified?${params}`);
-      
-      if (format === 'json') {
-        const data = await response.json();
-        console.log('Report data:', data);
-        // Could show in a modal or download as JSON
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `${reportType}-report-${filters.year}-${filters.month}.json`;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-      } else {
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `${reportType}-report-${filters.year}-${filters.month}.${format === "excel" ? "xlsx" : format}`;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-      }
-    } catch (error) {
-      console.error("Unified report generation failed:", error);
-      // You could add a toast notification here
-    }
-  };
-
   const { data: dashboardData, isLoading, error, refetch } = useQuery<PODashboardData>({
     queryKey,
     queryFn: async () => {
@@ -325,6 +247,318 @@ export default function PODashboard() {
       }
     }
   }, [isLoading, dashboardData, error, refetch]);
+
+  // Drill-down handler functions
+  const handleDrillDown = async (type: DrillDownType, params?: Record<string, any>) => {
+    setDrillDownType(type);
+    setDrillDownLoading(true);
+    setDrillDownData([]);
+
+    try {
+      // Normalize schoolType to match backend expectations
+      let schoolType: string = filters.schoolType || "All";
+      if (schoolType === "all") schoolType = "All";
+      
+      // Ensure month and year are properly formatted
+      const month = filters.month ? String(filters.month) : String(new Date().getMonth() + 1);
+      const year = filters.year ? String(filters.year) : String(new Date().getFullYear());
+      
+      const queryParams = new URLSearchParams({
+        month,
+        year,
+        schoolType,
+        ...params,
+      });
+
+      console.log('Drill-down params:', { type, month, year, schoolType, params });
+
+      let endpoint = "";
+      switch (type) {
+        case "pending-referrals":
+          endpoint = `/api/po/drilldown/pending-referrals?${queryParams}`;
+          break;
+        case "schools":
+          endpoint = `/api/po/drilldown/schools?${queryParams}`;
+          break;
+        case "all-students":
+        case "screened-students":
+        case "all-students-bmi":
+          endpoint = `/api/po/drilldown/students?${queryParams}&condition=all`;
+          break;
+        case "referred-students":
+          endpoint = `/api/po/drilldown/students?${queryParams}&condition=referred`;
+          break;
+        case "students-underweight":
+          endpoint = `/api/po/drilldown/students?${queryParams}&condition=underweight`;
+          break;
+        case "students-obese":
+          endpoint = `/api/po/drilldown/students?${queryParams}&condition=obese`;
+          break;
+        case "students-leprosy":
+          endpoint = `/api/po/drilldown/students?${queryParams}&condition=leprosy`;
+          break;
+        case "students-tb":
+          endpoint = `/api/po/drilldown/students?${queryParams}&condition=tb`;
+          break;
+        case "students-anemia":
+          endpoint = `/api/po/drilldown/students?${queryParams}&condition=anemia`;
+          break;
+        case "students-adolescent":
+        case "adolescent-emotional-distress":
+        case "adolescent-peer-pressure":
+        case "adolescent-depression":
+        case "adolescent-menstrual":
+          endpoint = `/api/po/drilldown/students?${queryParams}&condition=adolescent`;
+          break;
+        case "students-high-risk":
+          endpoint = `/api/po/drilldown/students?${queryParams}&condition=high-risk`;
+          break;
+        case "students-goitre":
+          endpoint = `/api/po/drilldown/students?${queryParams}&condition=goitre`;
+          break;
+        case "all-referrals":
+          endpoint = `/api/po/drilldown/all-referrals?${queryParams}`;
+          break;
+        case "completed-referrals":
+          endpoint = `/api/po/drilldown/pending-referrals?${queryParams}&status=completed`;
+          break;
+        case "overdue-referrals":
+          endpoint = `/api/po/drilldown/pending-referrals?${queryParams}&status=overdue`;
+          break;
+        case "menstrual-eligible":
+        case "menstrual-tracked":
+        case "menstrual-late":
+        case "menstrual-referrals":
+          endpoint = `/api/po/drilldown/menstrual-health?${queryParams}&type=${type}`;
+          break;
+        case "deficiencies":
+          endpoint = `/api/po/drilldown/deficiencies?${queryParams}`;
+          break;
+        default:
+          throw new Error("Unknown drill-down type");
+      }
+
+      console.log('Drill-down request:', { type, endpoint, params: queryParams.toString() });
+
+      const res = await apiRequest("GET", endpoint);
+      
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ message: res.statusText }));
+        console.error('Drill-down API error:', res.status, errorData);
+        throw new Error(errorData.message || `HTTP ${res.status}: ${res.statusText}`);
+      }
+      
+      const data = await res.json();
+      console.log('Drill-down response:', data);
+      console.log('Drill-down response keys:', Object.keys(data));
+      console.log('Drill-down response.schools:', data.schools);
+      console.log('Drill-down response.referrals:', data.referrals);
+      console.log('Drill-down response.students:', data.students);
+      console.log('Drill-down response.cases:', data.cases);
+      
+      const items = data.referrals || data.schools || data.students || data.cases || [];
+      console.log('Drill-down items extracted:', items.length, 'items');
+      console.log('Drill-down items sample:', items[0]);
+      
+      setDrillDownData(items);
+    } catch (error) {
+      console.error("Drill-down error:", error);
+      setDrillDownData([]);
+      // Show error to user
+      alert(`Failed to load data: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setDrillDownLoading(false);
+    }
+  };
+
+  const closeDrillDown = () => {
+    setDrillDownType(null);
+    setDrillDownData([]);
+  };
+
+  // Get drill-down modal configuration
+  const getDrillDownConfig = () => {
+    switch (drillDownType) {
+      case "pending-referrals":
+        return {
+          title: "Pending Referrals",
+          description: "List of all pending referrals in your district",
+          columns: [
+            { key: "studentName", label: "Student Name" },
+            { key: "schoolName", label: "School" },
+            { key: "issue", label: "Issue" },
+            { key: "category", label: "Category", render: (val: string) => <Badge variant="outline">{val}</Badge> },
+            { key: "facility", label: "Facility" },
+            { key: "daysPending", label: "Days Pending", render: (val: any) => {
+              const days = typeof val === 'number' ? val : 0;
+              return (
+                <Badge variant={days > 30 ? "destructive" : days > 14 ? "default" : "secondary"}>
+                  {days} days
+                </Badge>
+              );
+            }},
+            { key: "priority", label: "Priority", render: (val: string) => (
+              <Badge variant={val === "High" ? "destructive" : val === "Medium" ? "default" : "secondary"}>
+                {val}
+              </Badge>
+            )},
+          ] as DrillDownColumn[],
+        };
+      case "schools":
+        return {
+          title: "Schools Overview",
+          description: "Detailed metrics for all schools in your district",
+          columns: [
+            { key: "name", label: "School Name" },
+            { key: "schoolType", label: "Type", render: (val: string) => <Badge>{val}</Badge> },
+            { key: "totalStudents", label: "Students" },
+            { key: "healthCardCompletion", label: "Health Card %", render: (val: any) => typeof val === 'number' ? `${val}%` : "-" },
+            { key: "checkupCoverage", label: "Checkup %", render: (val: any) => typeof val === 'number' ? `${val}%` : "-" },
+            { key: "totalReferrals", label: "Referrals" },
+            { key: "pendingReferrals", label: "Pending", render: (val: any) => (
+              <Badge variant={(typeof val === 'number' && val > 0) ? "destructive" : "secondary"}>{val || 0}</Badge>
+            )},
+            { key: "completionScore", label: "Score", render: (val: any) => (
+              <Badge variant={(typeof val === 'number' && val >= 80) ? "default" : (typeof val === 'number' && val >= 60) ? "secondary" : "destructive"}>
+                {typeof val === 'number' ? `${val}%` : "0%"}
+              </Badge>
+            )},
+          ] as DrillDownColumn[],
+        };
+      case "students-underweight":
+      case "students-obese":
+      case "students-leprosy":
+      case "students-tb":
+      case "students-anemia":
+      case "students-adolescent":
+      case "students-high-risk":
+      case "students-goitre":
+      case "all-students":
+      case "screened-students":
+      case "referred-students":
+      case "all-students-bmi":
+      case "adolescent-emotional-distress":
+      case "adolescent-peer-pressure":
+      case "adolescent-depression":
+      case "adolescent-menstrual":
+        const conditionLabels: Record<string, string> = {
+          "students-underweight": "Underweight Students",
+          "students-obese": "Obese Students",
+          "students-leprosy": "Leprosy Suspected Cases",
+          "students-tb": "TB Suspected Cases",
+          "students-anemia": "Severe Anemia Cases",
+          "students-adolescent": "Adolescent Health Concerns",
+          "students-high-risk": "High-Risk Cases (C7+C8+Anemia+SAM)",
+          "students-goitre": "Goitre Cases (Iodine Deficiency)",
+          "all-students": "All Students",
+          "screened-students": "Screened Students",
+          "referred-students": "Referred Students",
+          "all-students-bmi": "All Students with BMI Data",
+          "adolescent-emotional-distress": "Adolescent Emotional Distress Cases",
+          "adolescent-peer-pressure": "Adolescent Peer Pressure Cases",
+          "adolescent-depression": "Adolescent Depression Cases",
+          "adolescent-menstrual": "Adolescent Menstrual Health Issues",
+        };
+        return {
+          title: conditionLabels[drillDownType] || "Students",
+          description: "List of students matching the selected condition",
+          columns: [
+            { key: "name", label: "Student Name" },
+            { key: "schoolName", label: "School" },
+            { key: "age", label: "Age" },
+            { key: "gender", label: "Gender", render: (val: string) => <Badge variant="outline">{val}</Badge> },
+            { key: "classSection", label: "Class" },
+            { key: "bmi", label: "BMI", render: (val: any) => (val && typeof val === 'number') ? val.toFixed(1) : "-" },
+            { key: "referralRecommended", label: "Referral", render: (val: boolean) => (
+              <Badge variant={val ? "destructive" : "secondary"}>
+                {val ? "Yes" : "No"}
+              </Badge>
+            )},
+          ] as DrillDownColumn[],
+        };
+      case "deficiencies":
+        return {
+          title: "Deficiency Cases",
+          description: "Students with nutritional deficiencies",
+          columns: [
+            { key: "studentName", label: "Student Name" },
+            { key: "schoolName", label: "School" },
+            { key: "age", label: "Age" },
+            { key: "gender", label: "Gender", render: (val: string) => <Badge variant="outline">{val}</Badge> },
+            { key: "deficiencyType", label: "Deficiency Type", render: (val: string) => <Badge>{val}</Badge> },
+            { key: "severity", label: "Severity", render: (val: string) => (
+              <Badge variant={val === "Severe" ? "destructive" : "default"}>{val}</Badge>
+            )},
+            { key: "referralStatus", label: "Referral Status" },
+          ] as DrillDownColumn[],
+        };
+      case "all-referrals":
+      case "completed-referrals":
+      case "overdue-referrals":
+        const referralLabels: Record<string, string> = {
+          "all-referrals": "All Referrals",
+          "completed-referrals": "Completed Referrals",
+          "overdue-referrals": "Overdue Referrals",
+        };
+        return {
+          title: referralLabels[drillDownType] || "Referrals",
+          description: "List of referrals in your district",
+          columns: [
+            { key: "studentName", label: "Student Name" },
+            { key: "schoolName", label: "School" },
+            { key: "issue", label: "Issue" },
+            { key: "category", label: "Category", render: (val: string) => <Badge variant="outline">{val}</Badge> },
+            { key: "facility", label: "Facility" },
+            { key: "status", label: "Status", render: (val: string) => (
+              <Badge variant={val === "Completed" ? "default" : val === "Pending" ? "destructive" : "secondary"}>
+                {val}
+              </Badge>
+            )},
+            { key: "daysPending", label: "Days", render: (val: any) => {
+              const days = typeof val === 'number' ? val : 0;
+              return (
+                <Badge variant={days > 30 ? "destructive" : days > 14 ? "default" : "secondary"}>
+                  {days} days
+                </Badge>
+              );
+            }},
+          ] as DrillDownColumn[],
+        };
+      case "menstrual-eligible":
+      case "menstrual-tracked":
+      case "menstrual-late":
+      case "menstrual-referrals":
+        const menstrualLabels: Record<string, string> = {
+          "menstrual-eligible": "Eligible Students (Female, Age 10+)",
+          "menstrual-tracked": "Actively Tracked Students",
+          "menstrual-late": "Late Menstruation Cases",
+          "menstrual-referrals": "Menstrual Health Referrals",
+        };
+        return {
+          title: menstrualLabels[drillDownType] || "Menstrual Health",
+          description: "Menstrual health tracking data",
+          columns: [
+            { key: "studentName", label: "Student Name" },
+            { key: "schoolName", label: "School" },
+            { key: "age", label: "Age" },
+            { key: "classSection", label: "Class" },
+            { key: "lastPeriodDate", label: "Last Period", render: (val: string) => val || "-" },
+            { key: "cycleRegularity", label: "Cycle", render: (val: string) => (
+              <Badge variant={val === "Regular" ? "default" : "secondary"}>{val || "Unknown"}</Badge>
+            )},
+            { key: "referralStatus", label: "Referral", render: (val: string) => (
+              <Badge variant={val === "Referred" ? "destructive" : "secondary"}>{val || "None"}</Badge>
+            )},
+          ] as DrillDownColumn[],
+        };
+      default:
+        return {
+          title: "Details",
+          description: "",
+          columns: [],
+        };
+    }
+  };
 
   // Handle error state
   if (error) {
@@ -427,15 +661,14 @@ export default function PODashboard() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-8">
+          <TabsList className="grid w-full grid-cols-7">
             <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="critical">Critical Students</TabsTrigger>
             <TabsTrigger value="referrals">Referrals</TabsTrigger>
             <TabsTrigger value="nutrition">Nutrition</TabsTrigger>
             <TabsTrigger value="diseases">Diseases</TabsTrigger>
             <TabsTrigger value="adolescent">Adolescent</TabsTrigger>
             <TabsTrigger value="menstrual">Menstrual Health</TabsTrigger>
-            <TabsTrigger value="reports">Reports</TabsTrigger>
-            <TabsTrigger value="shared">Shared Reports</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
@@ -462,11 +695,31 @@ export default function PODashboard() {
             {/* ⚡ KPIs - District Health Snapshot */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
               <MetricCard
+                title="Total Schools"
+                value={districtKPIs.totalSchools || 0}
+                icon={School}
+                variant="info"
+                subtitle="In district"
+                onClick={() => handleDrillDown("schools")}
+                clickable
+              />
+              <MetricCard
+                title="Total Students"
+                value={(districtKPIs.totalStudentsScreened || 0).toLocaleString()}
+                icon={Users}
+                variant="default"
+                subtitle="Enrolled students"
+                onClick={() => handleDrillDown("all-students")}
+                clickable
+              />
+              <MetricCard
                 title="Students Screened"
                 value={totalStudentsScreened.toLocaleString()}
                 icon={Users}
                 variant="default"
-                subtitle="Total screenings"
+                subtitle="Health screenings"
+                onClick={() => handleDrillDown("screened-students")}
+                clickable
               />
               <MetricCard
                 title="% Schools Completed"
@@ -474,6 +727,8 @@ export default function PODashboard() {
                 icon={School}
                 variant="success"
                 subtitle={`${schoolsWithCompletedScreening}/${districtKPIs.totalSchools || 1} schools`}
+                onClick={() => handleDrillDown("schools", { metric: "healthCardCompletion" })}
+                clickable
               />
               <MetricCard
                 title="% Students Referred"
@@ -481,6 +736,8 @@ export default function PODashboard() {
                 icon={AlertTriangle}
                 variant="warning"
                 subtitle={`${Math.round(percentStudentsReferred / 100 * totalStudentsScreened)} referrals`}
+                onClick={() => handleDrillDown("referred-students")}
+                clickable
               />
               <MetricCard
                 title="Pending Referrals"
@@ -488,13 +745,21 @@ export default function PODashboard() {
                 icon={AlertCircle}
                 variant="danger"
                 subtitle="Awaiting action"
+                onClick={() => handleDrillDown("pending-referrals")}
+                clickable
               />
+            </div>
+
+            {/* Additional KPIs Row */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               <MetricCard
                 title="High-Risk Cases Today"
                 value={highRiskCasesToday}
                 icon={Zap}
                 variant="danger"
                 subtitle="C7+C8+Anemia+SAM"
+                onClick={() => handleDrillDown("students-high-risk")}
+                clickable
               />
               <MetricCard
                 title="Avg District BMI"
@@ -502,9 +767,19 @@ export default function PODashboard() {
                 icon={Target}
                 variant="info"
                 subtitle="Population average"
+                onClick={() => handleDrillDown("all-students-bmi")}
+                clickable
+              />
+              <MetricCard
+                title="Health Card Completion"
+                value={`${districtKPIs.healthCardCompletionRate || 0}%`}
+                icon={FileText}
+                variant="success"
+                subtitle={`${districtKPIs.totalHealthCards || 0} cards`}
+                onClick={() => handleDrillDown("schools", { metric: "healthCardCompletion" })}
+                clickable
               />
             </div>
-
             {/* 📊 Prevalence Rates */}
             <Card>
               <CardHeader>
@@ -512,33 +787,57 @@ export default function PODashboard() {
                   <Thermometer className="h-5 w-5" />
                   Prevalence Rates Dashboard
                 </CardTitle>
-                <p className="text-sm text-muted-foreground">Key health indicators across the district</p>
+                <p className="text-sm text-muted-foreground">Key health indicators across the district - Click to view details</p>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-                  <div className="text-center p-4 bg-red-50 dark:bg-red-900/20 rounded-lg">
+                  <div 
+                    className="text-center p-4 bg-red-50 dark:bg-red-900/20 rounded-lg cursor-pointer hover:shadow-lg transition-all hover:scale-105"
+                    onClick={() => handleDrillDown("students-underweight")}
+                  >
                     <div className="text-2xl font-bold text-red-700 dark:text-red-400">{underweightPercent}%</div>
                     <div className="text-sm text-red-600 dark:text-red-500">Underweight</div>
+                    <div className="text-xs text-blue-600 dark:text-blue-400 mt-1">Click for list →</div>
                   </div>
-                  <div className="text-center p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
+                  <div 
+                    className="text-center p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg cursor-pointer hover:shadow-lg transition-all hover:scale-105"
+                    onClick={() => handleDrillDown("students-obese")}
+                  >
                     <div className="text-2xl font-bold text-yellow-700 dark:text-yellow-400">{obesityPercent}%</div>
                     <div className="text-sm text-yellow-600 dark:text-yellow-500">Obesity</div>
+                    <div className="text-xs text-blue-600 dark:text-blue-400 mt-1">Click for list →</div>
                   </div>
-                  <div className="text-center p-4 bg-red-50 dark:bg-red-900/20 rounded-lg">
+                  <div 
+                    className="text-center p-4 bg-red-50 dark:bg-red-900/20 rounded-lg cursor-pointer hover:shadow-lg transition-all hover:scale-105"
+                    onClick={() => handleDrillDown("students-anemia")}
+                  >
                     <div className="text-2xl font-bold text-red-700 dark:text-red-400">{severeAnemiaPercent}%</div>
                     <div className="text-sm text-red-600 dark:text-red-500">Severe Anemia</div>
+                    <div className="text-xs text-blue-600 dark:text-blue-400 mt-1">Click for list →</div>
                   </div>
-                  <div className="text-center p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
+                  <div 
+                    className="text-center p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg cursor-pointer hover:shadow-lg transition-all hover:scale-105"
+                    onClick={() => handleDrillDown("deficiencies", { deficiencyType: "iodine" })}
+                  >
                     <div className="text-2xl font-bold text-purple-700 dark:text-purple-400">{goitrePercent}%</div>
                     <div className="text-sm text-purple-600 dark:text-purple-500">Goitre</div>
+                    <div className="text-xs text-blue-600 dark:text-blue-400 mt-1">Click for list →</div>
                   </div>
-                  <div className="text-center p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                  <div 
+                    className="text-center p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg cursor-pointer hover:shadow-lg transition-all hover:scale-105"
+                    onClick={() => handleDrillDown("students-tb")}
+                  >
                     <div className="text-2xl font-bold text-blue-700 dark:text-blue-400">{tbSuspectedPercent}%</div>
                     <div className="text-sm text-blue-600 dark:text-blue-500">TB Suspected</div>
+                    <div className="text-xs text-blue-600 dark:text-blue-400 mt-1">Click for list →</div>
                   </div>
-                  <div className="text-center p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                  <div 
+                    className="text-center p-4 bg-green-50 dark:bg-green-900/20 rounded-lg cursor-pointer hover:shadow-lg transition-all hover:scale-105"
+                    onClick={() => handleDrillDown("students-leprosy")}
+                  >
                     <div className="text-2xl font-bold text-green-700 dark:text-green-400">{leprosySuspectedPercent}%</div>
                     <div className="text-sm text-green-600 dark:text-green-500">Leprosy Suspected</div>
+                    <div className="text-xs text-blue-600 dark:text-blue-400 mt-1">Click for list →</div>
                   </div>
                 </div>
               </CardContent>
@@ -618,31 +917,36 @@ export default function PODashboard() {
 
                 {/* Comparative Chart */}
                 <div className="mt-6">
-                  <ChartContainer title="Government vs Aided Schools - Key Metrics Comparison" isLoading={isLoading}>
-                    <BarChart
-                      labels={["Health Card Completion %", "Checkup Coverage %", "Referral Rate %"]}
-                      datasets={[
-                        {
-                          label: "Government Schools",
-                          data: [
-                            districtKPIs.schoolTypeBreakdown?.government?.healthCardCompletion || 0,
-                            districtKPIs.schoolTypeBreakdown?.government?.checkupCoverage || 0,
-                            districtKPIs.schoolTypeBreakdown?.government?.referralRate || 0
-                          ],
-                          backgroundColor: "hsl(210, 70%, 50%)",
-                        },
-                        {
-                          label: "Aided Schools",
-                          data: [
-                            districtKPIs.schoolTypeBreakdown?.aided?.healthCardCompletion || 0,
-                            districtKPIs.schoolTypeBreakdown?.aided?.checkupCoverage || 0,
-                            districtKPIs.schoolTypeBreakdown?.aided?.referralRate || 0
-                          ],
-                          backgroundColor: "hsl(142, 76%, 36%)",
-                        }
-                      ]}
-                    />
-                  </ChartContainer>
+                  <div 
+                    onClick={() => handleDrillDown("schools", { metric: "schoolType" })}
+                    className="cursor-pointer hover:shadow-lg transition-all"
+                  >
+                    <ChartContainer title="Government vs Aided Schools - Key Metrics Comparison" isLoading={isLoading}>
+                      <BarChart
+                        labels={["Health Card Completion %", "Checkup Coverage %", "Referral Rate %"]}
+                        datasets={[
+                          {
+                            label: "Government Schools",
+                            data: [
+                              districtKPIs.schoolTypeBreakdown?.government?.healthCardCompletion || 0,
+                              districtKPIs.schoolTypeBreakdown?.government?.checkupCoverage || 0,
+                              districtKPIs.schoolTypeBreakdown?.government?.referralRate || 0
+                            ],
+                            backgroundColor: "hsl(210, 70%, 50%)",
+                          },
+                          {
+                            label: "Aided Schools",
+                            data: [
+                              districtKPIs.schoolTypeBreakdown?.aided?.healthCardCompletion || 0,
+                              districtKPIs.schoolTypeBreakdown?.aided?.checkupCoverage || 0,
+                              districtKPIs.schoolTypeBreakdown?.aided?.referralRate || 0
+                            ],
+                            backgroundColor: "hsl(142, 76%, 36%)",
+                          }
+                        ]}
+                      />
+                    </ChartContainer>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -793,6 +1097,92 @@ export default function PODashboard() {
             </Card>
           </TabsContent>
 
+          <TabsContent value="critical" className="space-y-6">
+            {/* Critical Students Section */}
+            <Card className="border-red-200 bg-red-50 dark:bg-red-950/20">
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-3">
+                  <Flame className="h-6 w-6 text-red-500" />
+                  <div>
+                    <h3 className="text-lg font-semibold text-red-700 dark:text-red-400">Critical Students Identification</h3>
+                    <p className="text-red-600 dark:text-red-300">
+                      Students identified as requiring immediate attention based on health metrics, nutrition deficiency, poor attendance, or medical checkup flags.
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Critical Students List Component */}
+            <CriticalStudentsList 
+              schoolType={filters.schoolType || 'All'}
+              minPriorityScore={0}
+              limit={100}
+            />
+
+            {/* Information Card */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <AlertTriangle className="h-5 w-5 text-orange-500" />
+                  Critical Student Criteria
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <h4 className="font-semibold text-sm mb-2 flex items-center gap-2">
+                      <Activity className="h-4 w-4" />
+                      Health Metrics
+                    </h4>
+                    <ul className="text-sm text-muted-foreground space-y-1 ml-6 list-disc">
+                      <li>BMI below 13.5 (Severely Underweight)</li>
+                      <li>BMI below 16.0 (Underweight)</li>
+                      <li>BMI above 30.0 (Obese)</li>
+                      <li>Severe Anemia detected</li>
+                      <li>Critical diseases (Leprosy, TB, Sickle Cell)</li>
+                      <li>Vitamin deficiencies (A, D)</li>
+                    </ul>
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-sm mb-2 flex items-center gap-2">
+                      <Utensils className="h-4 w-4" />
+                      Nutrition & Attendance
+                    </h4>
+                    <ul className="text-sm text-muted-foreground space-y-1 ml-6 list-disc">
+                      <li>Daily calories below 1500 kcal</li>
+                      <li>Daily protein below 40g</li>
+                      <li>Irregular meal intake (less than 5 days/week)</li>
+                      <li>Attendance below 75% (last 30 days)</li>
+                    </ul>
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-sm mb-2 flex items-center gap-2">
+                      <Stethoscope className="h-4 w-4" />
+                      Medical Flags
+                    </h4>
+                    <ul className="text-sm text-muted-foreground space-y-1 ml-6 list-disc">
+                      <li>Referral recommended but pending</li>
+                      <li>Overdue referrals (more than 14 days)</li>
+                      <li>Recent medical checkup requiring referral</li>
+                    </ul>
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-sm mb-2 flex items-center gap-2">
+                      <Target className="h-4 w-4" />
+                      Priority Scoring
+                    </h4>
+                    <ul className="text-sm text-muted-foreground space-y-1 ml-6 list-disc">
+                      <li><Badge variant="destructive" className="text-xs">High (70-100)</Badge> - Immediate action required</li>
+                      <li><Badge variant="default" className="text-xs">Medium (40-69)</Badge> - Attention needed soon</li>
+                      <li><Badge variant="secondary" className="text-xs">Low (0-39)</Badge> - Monitor closely</li>
+                    </ul>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
           <TabsContent value="referrals" className="space-y-6">
             {/* Summary Notice */}
             <Card className="border-blue-200 bg-blue-50 dark:bg-blue-950/20">
@@ -816,82 +1206,100 @@ export default function PODashboard() {
                 value={referralManagement.totalReferralsGenerated || 0}
                 icon={AlertTriangle}
                 variant="warning"
+                onClick={() => handleDrillDown("all-referrals")}
+                clickable
               />
               <MetricCard
                 title="Referral Completion Rate"
                 value={`${referralManagement.referralCompletionPercent || 0}%`}
                 icon={CheckCircle2}
                 variant="success"
+                onClick={() => handleDrillDown("completed-referrals")}
+                clickable
               />
               <MetricCard
                 title="Pending Referrals"
                 value={referralManagement.pendingReferrals || 0}
                 icon={Clock}
                 variant="danger"
+                onClick={() => handleDrillDown("pending-referrals")}
+                clickable
               />
               <MetricCard
                 title="Overdue Referrals"
                 value={referralManagement.overdueReferrals?.length || 0}
                 icon={AlertCircle}
                 variant="danger"
+                onClick={() => handleDrillDown("overdue-referrals")}
+                clickable
               />
             </div>
 
             {/* Facility Load - Summary Only */}
-            <ChartContainer title="Facility-wise Referral Load (Aggregated)" isLoading={isLoading}>
-              <BarChart
-                labels={referralManagement.facilityWiseLoad?.map((f: FacilityLoad) => f.facility) || []}
-                datasets={[{
-                  label: "Pending",
-                  data: referralManagement.facilityWiseLoad?.map((f: FacilityLoad) => f.pending) || [],
-                  backgroundColor: "hsl(0, 84%, 60%)",
-                }, {
-                  label: "Completed",
-                  data: referralManagement.facilityWiseLoad?.map((f: FacilityLoad) => f.completed) || [],
-                  backgroundColor: "hsl(142, 76%, 36%)",
-                }]}
-              />
-            </ChartContainer>
-
-            {/* Most Referred Issues - Summary Only */}
-            <ChartContainer title="Most Referred Health Issues (District Summary)" isLoading={isLoading}>
-              {(() => {
-              // Create concise external labels to avoid very long, detailed text in the chart area
-              const conciseLabel = (s?: string) => {
-                if (!s) return "";
-                const rules: Array<[RegExp, string]> = [
-                  [/tubercul/i, "TB suspected"],
-                  [/leprosy/i, "Leprosy suspected"],
-                  [/severe anemia/i, "Severe anemia"],
-                  [/anemia/i, "Anemia"],
-                  [/goitr/i, "Goitre"],
-                  [/cough/i, "Persistent cough"],
-                  [/deformit/i, "Deformities"],
-                  [/contractur/i, "Contractures"],
-                  [/vision|eye|eyes/i, "Eye issues"],
-                ];
-                for (const [re, out] of rules) if (re.test(s)) return out;
-                // fallback: brief truncated label
-                return s.length > 28 ? s.slice(0, 25).trimEnd() + "..." : s;
-              };
-
-              const externalLabels = referralManagement.mostReferredIssues?.map((i: ReferredIssue) => conciseLabel(i.issue)) || [];
-
-              return (
+            <div 
+              onClick={() => handleDrillDown("all-referrals")}
+              className="cursor-pointer hover:shadow-lg transition-all"
+            >
+              <ChartContainer title="Facility-wise Referral Load (Aggregated)" isLoading={isLoading}>
                 <BarChart
-                  horizontal={true}
-                  renderLabelsOutside={true}
-                  externalLabels={externalLabels}
-                  labels={referralManagement.mostReferredIssues?.map((i: ReferredIssue) => i.issue) || []}
+                  labels={referralManagement.facilityWiseLoad?.map((f: FacilityLoad) => f.facility) || []}
                   datasets={[{
-                    label: "Referral Count",
-                    data: referralManagement.mostReferredIssues?.map((i: ReferredIssue) => i.count) || [],
-                    backgroundColor: "hsl(45, 93%, 47%)",
+                    label: "Pending",
+                    data: referralManagement.facilityWiseLoad?.map((f: FacilityLoad) => f.pending) || [],
+                    backgroundColor: "hsl(0, 84%, 60%)",
+                  }, {
+                    label: "Completed",
+                    data: referralManagement.facilityWiseLoad?.map((f: FacilityLoad) => f.completed) || [],
+                    backgroundColor: "hsl(142, 76%, 36%)",
                   }]}
                 />
-              );
-            })()}
-            </ChartContainer>
+              </ChartContainer>
+            </div>
+
+            {/* Most Referred Issues - Summary Only */}
+            <div 
+              onClick={() => handleDrillDown("all-referrals")}
+              className="cursor-pointer hover:shadow-lg transition-all"
+            >
+              <ChartContainer title="Most Referred Health Issues (District Summary)" isLoading={isLoading}>
+                {(() => {
+                // Create concise external labels to avoid very long, detailed text in the chart area
+                const conciseLabel = (s?: string) => {
+                  if (!s) return "";
+                  const rules: Array<[RegExp, string]> = [
+                    [/tubercul/i, "TB suspected"],
+                    [/leprosy/i, "Leprosy suspected"],
+                    [/severe anemia/i, "Severe anemia"],
+                    [/anemia/i, "Anemia"],
+                    [/goitr/i, "Goitre"],
+                    [/cough/i, "Persistent cough"],
+                    [/deformit/i, "Deformities"],
+                    [/contractur/i, "Contractures"],
+                    [/vision|eye|eyes/i, "Eye issues"],
+                  ];
+                  for (const [re, out] of rules) if (re.test(s)) return out;
+                  // fallback: brief truncated label
+                  return s.length > 28 ? s.slice(0, 25).trimEnd() + "..." : s;
+                };
+
+                const externalLabels = referralManagement.mostReferredIssues?.map((i: ReferredIssue) => conciseLabel(i.issue)) || [];
+
+                return (
+                  <BarChart
+                    horizontal={true}
+                    renderLabelsOutside={true}
+                    externalLabels={externalLabels}
+                    labels={referralManagement.mostReferredIssues?.map((i: ReferredIssue) => i.issue) || []}
+                    datasets={[{
+                      label: "Referral Count",
+                      data: referralManagement.mostReferredIssues?.map((i: ReferredIssue) => i.count) || [],
+                      backgroundColor: "hsl(45, 93%, 47%)",
+                    }]}
+                  />
+                );
+              })()}
+              </ChartContainer>
+            </div>
 
             {/* School Type Referral Comparison */}
             <Card>
@@ -950,30 +1358,39 @@ export default function PODashboard() {
 
             {/* Anthropometry Analytics */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <ChartContainer title="BMI Distribution Across District" isLoading={isLoading}>
-                <PieChart
-                  labels={anthropometryAnalytics.stats?.bmiDistribution ?
-                    Object.keys(anthropometryAnalytics.stats.bmiDistribution) : []}
-                  data={anthropometryAnalytics.stats?.bmiDistribution ?
-                    Object.values(anthropometryAnalytics.stats.bmiDistribution) : []}
-                  backgroundColor={[
-                    "hsl(0, 84%, 60%)",   // Severe Underweight - red
-                    "hsl(15, 84%, 60%)",  // Moderate Underweight
-                    "hsl(30, 84%, 60%)",  // Mild Underweight
-                    "hsl(142, 76%, 36%)", // Normal - green
-                    "hsl(45, 93%, 47%)",  // Overweight - yellow
-                    "hsl(280, 65%, 60%)", // Obese - purple
-                  ]}
-                />
-              </ChartContainer>
+              <div 
+                onClick={() => handleDrillDown("all-students-bmi")}
+                className="cursor-pointer hover:shadow-lg transition-all"
+              >
+                <ChartContainer title="BMI Distribution Across District" isLoading={isLoading}>
+                  <PieChart
+                    labels={anthropometryAnalytics.stats?.bmiDistribution ?
+                      Object.keys(anthropometryAnalytics.stats.bmiDistribution) : []}
+                    data={anthropometryAnalytics.stats?.bmiDistribution ?
+                      Object.values(anthropometryAnalytics.stats.bmiDistribution) : []}
+                    backgroundColor={[
+                      "hsl(0, 84%, 60%)",   // Severe Underweight - red
+                      "hsl(15, 84%, 60%)",  // Moderate Underweight
+                      "hsl(30, 84%, 60%)",  // Mild Underweight
+                      "hsl(142, 76%, 36%)", // Normal - green
+                      "hsl(45, 93%, 47%)",  // Overweight - yellow
+                      "hsl(280, 65%, 60%)", // Obese - purple
+                    ]}
+                  />
+                </ChartContainer>
+              </div>
 
-              <ChartContainer title="BMI Categories by Percentage" isLoading={isLoading}>
-                <BarChart
-                  labels={["Underweight %", "Normal %", "Obese %"]}
-                  datasets={[{
-                    label: "Percentage",
-                    data: [
-                      anthropometryAnalytics.stats?.underweightPercent || 0,
+              <div 
+                onClick={() => handleDrillDown("all-students-bmi")}
+                className="cursor-pointer hover:shadow-lg transition-all"
+              >
+                <ChartContainer title="BMI Categories by Percentage" isLoading={isLoading}>
+                  <BarChart
+                    labels={["Underweight %", "Normal %", "Obese %"]}
+                    datasets={[{
+                      label: "Percentage",
+                      data: [
+                        anthropometryAnalytics.stats?.underweightPercent || 0,
                       anthropometryAnalytics.stats?.normalPercent || 0,
                       anthropometryAnalytics.stats?.obesePercent || 0
                     ],
@@ -982,23 +1399,28 @@ export default function PODashboard() {
                 />
               </ChartContainer>
             </div>
+            </div>
 
             {/* BMI Trend Over Time */}
-            <ChartContainer title="BMI Trend Over Time (Last 12 Months)" isLoading={isLoading}>
-              <LineChart
-                labels={anthropometryAnalytics.bmiTrendOverTime?.map((t: BMITrend) => t.month) || []}
-                datasets={[
-                  {
-                    label: "Underweight",
-                    data: anthropometryAnalytics.bmiTrendOverTime?.map((t: BMITrend) => t.underweight) || [],
-                    borderColor: "hsl(0, 84%, 60%)",
-                    backgroundColor: "hsl(0, 84%, 60%, 0.1)",
-                  },
-                  {
-                    label: "Normal",
-                    data: anthropometryAnalytics.bmiTrendOverTime?.map((t: BMITrend) => t.normal) || [],
-                    borderColor: "hsl(142, 76%, 36%)",
-                    backgroundColor: "hsl(142, 76%, 36%, 0.1)",
+            <div 
+              onClick={() => handleDrillDown("all-students-bmi")}
+              className="cursor-pointer hover:shadow-lg transition-all"
+            >
+              <ChartContainer title="BMI Trend Over Time (Last 12 Months)" isLoading={isLoading}>
+                <LineChart
+                  labels={anthropometryAnalytics.bmiTrendOverTime?.map((t: BMITrend) => t.month) || []}
+                  datasets={[
+                    {
+                      label: "Underweight",
+                      data: anthropometryAnalytics.bmiTrendOverTime?.map((t: BMITrend) => t.underweight) || [],
+                      borderColor: "hsl(0, 84%, 60%)",
+                      backgroundColor: "hsl(0, 84%, 60%, 0.1)",
+                    },
+                    {
+                      label: "Normal",
+                      data: anthropometryAnalytics.bmiTrendOverTime?.map((t: BMITrend) => t.normal) || [],
+                      borderColor: "hsl(142, 76%, 36%)",
+                      backgroundColor: "hsl(142, 76%, 36%, 0.1)",
                   },
                   {
                     label: "Overweight/Obese",
@@ -1009,6 +1431,7 @@ export default function PODashboard() {
                 ]}
               />
             </ChartContainer>
+          </div>
 
             {/* Nutrition Risk Summary by School Type */}
             <Card>
@@ -1118,93 +1541,108 @@ export default function PODashboard() {
                 </div>
               </CardContent>
             </Card>
-            {/* Deficiencies Insights */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Section B - Deficiencies Insights</CardTitle>
-                <p className="text-sm text-muted-foreground">Critical deficiencies requiring immediate attention</p>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {Object.entries(deficienciesInsights).map(([key, deficiency]: [string, any]) => (
-                    deficiency.totalCases > 0 && (
-                      <div key={key} className="flex items-center justify-between p-4 border rounded-lg">
-                        <div className="flex items-center gap-3">
-                          <Badge variant={
-                            deficiency.totalCases > 50 ? "destructive" :
-                            deficiency.totalCases > 20 ? "default" : "secondary"
-                          }>
-                            {key.toUpperCase()}
-                          </Badge>
-                          <div>
-                            <div className="font-medium">{key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}</div>
-                            <div className="text-sm text-muted-foreground">{deficiency.totalCases} cases</div>
+            {/* Deficiencies Insights - Only show if data exists */}
+            {Object.keys(deficienciesInsights).some(key => 
+              deficienciesInsights[key]?.totalCases > 0
+            ) && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Section B - Deficiencies Insights</CardTitle>
+                  <p className="text-sm text-muted-foreground">Critical deficiencies requiring immediate attention</p>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    {Object.entries(deficienciesInsights)
+                      .filter(([key, deficiency]: [string, any]) => 
+                        deficiency?.totalCases > 0 && !key.includes('Percent')
+                      )
+                      .map(([key, deficiency]: [string, any]) => (
+                        <div key={key} className="flex items-center justify-between p-4 border rounded-lg">
+                          <div className="flex items-center gap-3">
+                            <Badge variant={
+                              deficiency.totalCases > 50 ? "destructive" :
+                              deficiency.totalCases > 20 ? "default" : "secondary"
+                            }>
+                              {key.toUpperCase()}
+                            </Badge>
+                            <div>
+                              <div className="font-medium">{key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}</div>
+                              <div className="text-sm text-muted-foreground">{deficiency.totalCases} cases</div>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-sm text-muted-foreground">Pending referrals</div>
+                            <div className="font-medium">{deficiency.pendingReferrals || 0}</div>
                           </div>
                         </div>
-                        <div className="text-right">
-                          <div className="text-sm text-muted-foreground">Pending referrals</div>
-                          <div className="font-medium">{deficiency.pendingReferrals}</div>
-                        </div>
-                      </div>
-                    )
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
+                      ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
-            {/* Deficiencies Heatmap */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Deficiencies Severity Heatmap</CardTitle>
-                <p className="text-sm text-muted-foreground">Schools with highest deficiency rates</p>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {(Array.isArray(deficienciesHeatmap) ? deficienciesHeatmap : deficienciesHeatmap.schools || []).slice(0, 10).map((school: any) => (
-                    <div key={school.schoolId} className="flex items-center justify-between p-3 border rounded">
-                      <div className="font-medium">{school.schoolName}</div>
-                      <div className="flex items-center gap-2">
-                        <div className={`w-4 h-4 rounded ${
-                          school.severity > 20 ? 'bg-red-500' :
-                          school.severity > 10 ? 'bg-orange-500' :
-                          school.severity > 5 ? 'bg-yellow-500' : 'bg-green-500'
-                        }`}></div>
-                        <span className="text-sm">{school.severity}% severity</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Diseases Insights */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Section C - Diseases Insights</CardTitle>
-                <p className="text-sm text-muted-foreground">Chronic recurring health issues</p>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {Object.entries(diseasesInsights).map(([key, disease]: [string, any]) => (
-                    disease.totalCases > 0 && (
-                      <div key={key} className="flex items-center justify-between p-4 border rounded-lg">
-                        <div className="flex items-center gap-3">
-                          <Badge variant="outline">{key.toUpperCase()}</Badge>
-                          <div>
-                            <div className="font-medium">{key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}</div>
-                            <div className="text-sm text-muted-foreground">{disease.totalCases} cases</div>
+            {/* Deficiencies Heatmap - Only show if data exists */}
+            {(Array.isArray(deficienciesHeatmap) ? deficienciesHeatmap : deficienciesHeatmap.schools || []).length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Deficiencies Severity Heatmap</CardTitle>
+                  <p className="text-sm text-muted-foreground">Schools with highest deficiency rates</p>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    {(Array.isArray(deficienciesHeatmap) ? deficienciesHeatmap : deficienciesHeatmap.schools || [])
+                      .filter((school: any) => school.severity > 0)
+                      .slice(0, 10)
+                      .map((school: any) => (
+                        <div key={school.schoolId} className="flex items-center justify-between p-3 border rounded">
+                          <div className="font-medium">{school.schoolName}</div>
+                          <div className="flex items-center gap-2">
+                            <div className={`w-4 h-4 rounded ${
+                              school.severity > 20 ? 'bg-red-500' :
+                              school.severity > 10 ? 'bg-orange-500' :
+                              school.severity > 5 ? 'bg-yellow-500' : 'bg-green-500'
+                            }`}></div>
+                            <span className="text-sm">{school.severity}% severity</span>
                           </div>
                         </div>
-                        <div className="text-right">
-                          <div className="text-sm text-muted-foreground">Referral completion</div>
-                          <div className="font-medium">{disease.referralCompletion} completed</div>
+                      ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Diseases Insights - Only show if data exists */}
+            {Object.keys(diseasesInsights).some(key => 
+              diseasesInsights[key]?.totalCases > 0
+            ) && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Section C - Diseases Insights</CardTitle>
+                  <p className="text-sm text-muted-foreground">Chronic recurring health issues</p>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    {Object.entries(diseasesInsights)
+                      .filter(([key, disease]: [string, any]) => disease?.totalCases > 0)
+                      .map(([key, disease]: [string, any]) => (
+                        <div key={key} className="flex items-center justify-between p-4 border rounded-lg">
+                          <div className="flex items-center gap-3">
+                            <Badge variant="outline">{key.toUpperCase()}</Badge>
+                            <div>
+                              <div className="font-medium">{key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}</div>
+                              <div className="text-sm text-muted-foreground">{disease.totalCases} cases</div>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-sm text-muted-foreground">Referral completion</div>
+                            <div className="font-medium">{disease.referralCompletion || 0} completed</div>
+                          </div>
                         </div>
-                      </div>
-                    )
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
+                      ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
             {/* C7 Leprosy Analytics */}
             <Card className="border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-950/20">
@@ -1303,124 +1741,148 @@ export default function PODashboard() {
               </CardContent>
             </Card>
             {/* Adolescent Health Monitoring */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <MetricCard
-                title="Emotional Distress"
-                value={`${adolescentHealth.emotionalDistressPercent || 0}%`}
-                icon={Heart}
-                variant="warning"
-                subtitle="Students affected"
-              />
-              <MetricCard
-                title="Peer Pressure Issues"
-                value={`${adolescentHealth.peerPressurePercent || 0}%`}
-                icon={Users}
-                variant="default"
-                subtitle="Substance pressure"
-              />
-              <MetricCard
-                title="Depression Symptoms"
-                value={`${adolescentHealth.depressionSymptomsPercent || 0}%`}
-                icon={AlertTriangle}
-                variant="danger"
-                subtitle="Requires attention"
-              />
-              <MetricCard
-                title="Menstrual Health Issues"
-                value={`${adolescentHealth.menstrualHealthIssuesPercent || 0}%`}
-                icon={Shield}
-                variant="info"
-                subtitle="Reproductive health"
-              />
-            </div>
+            {adolescentHealth?.totalAdolescents && adolescentHealth.totalAdolescents > 0 ? (
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <MetricCard
+                    title="Emotional Distress"
+                    value={`${adolescentHealth.emotionalDistressPercent || 0}%`}
+                    icon={Heart}
+                    variant="warning"
+                    subtitle="Students affected"
+                    onClick={() => handleDrillDown("adolescent-emotional-distress")}
+                    clickable
+                  />
+                  <MetricCard
+                    title="Peer Pressure Issues"
+                    value={`${adolescentHealth.peerPressurePercent || 0}%`}
+                    icon={Users}
+                    variant="default"
+                    subtitle="Substance pressure"
+                    onClick={() => handleDrillDown("adolescent-peer-pressure")}
+                    clickable
+                  />
+                  <MetricCard
+                    title="Depression Symptoms"
+                    value={`${adolescentHealth.depressionSymptomsPercent || 0}%`}
+                    icon={AlertTriangle}
+                    variant="danger"
+                    subtitle="Requires attention"
+                    onClick={() => handleDrillDown("adolescent-depression")}
+                    clickable
+                  />
+                  <MetricCard
+                    title="Menstrual Health Issues"
+                    value={`${adolescentHealth.menstrualHealthIssuesPercent || 0}%`}
+                    icon={Shield}
+                    variant="info"
+                    subtitle="Reproductive health"
+                    onClick={() => handleDrillDown("adolescent-menstrual")}
+                    clickable
+                  />
+                </div>
 
-            {/* Adolescent Health Concerns */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Section E - Adolescent Health Concerns</CardTitle>
-                <p className="text-sm text-muted-foreground">Mental & reproductive health tracking (10-18 years)</p>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-4">
-                    <h4 className="font-medium">Mental Health Indicators</h4>
-                    <div className="space-y-3">
-                      <div className="flex justify-between items-center p-3 border rounded">
-                        <span>Emotional Distress/Difficulty</span>
-                        <Badge variant="secondary">{adolescentHealth.emotionalDistressPercent}%</Badge>
+                {/* Adolescent Health Concerns */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Section E - Adolescent Health Concerns</CardTitle>
+                    <p className="text-sm text-muted-foreground">Mental & reproductive health tracking (10-18 years) - {adolescentHealth.totalAdolescents} adolescents</p>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="space-y-4">
+                        <h4 className="font-medium">Mental Health Indicators</h4>
+                        <div className="space-y-3">
+                          <div className="flex justify-between items-center p-3 border rounded">
+                            <span>Emotional Distress/Difficulty</span>
+                            <Badge variant="secondary">{adolescentHealth.emotionalDistressPercent || 0}%</Badge>
+                          </div>
+                          <div className="flex justify-between items-center p-3 border rounded">
+                            <span>Peer Pressure/Substance Issues</span>
+                            <Badge variant="secondary">{adolescentHealth.peerPressurePercent || 0}%</Badge>
+                          </div>
+                          <div className="flex justify-between items-center p-3 border rounded">
+                            <span>Persistent Sadness/Depression</span>
+                            <Badge variant="destructive">{adolescentHealth.depressionSymptomsPercent || 0}%</Badge>
+                          </div>
+                        </div>
                       </div>
-                      <div className="flex justify-between items-center p-3 border rounded">
-                        <span>Peer Pressure/Substance Issues</span>
-                        <Badge variant="secondary">{adolescentHealth.peerPressurePercent}%</Badge>
-                      </div>
-                      <div className="flex justify-between items-center p-3 border rounded">
-                        <span>Persistent Sadness/Depression</span>
-                        <Badge variant="destructive">{adolescentHealth.depressionSymptomsPercent}%</Badge>
+
+                      <div className="space-y-4">
+                        <h4 className="font-medium">Reproductive Health Indicators</h4>
+                        <div className="space-y-3">
+                          <div className="flex justify-between items-center p-3 border rounded">
+                            <span>Menstruation Started</span>
+                            <Badge variant="default">{adolescentHealth.menstrualHealthIssuesPercent || 0}%</Badge>
+                          </div>
+                          <div className="flex justify-between items-center p-3 border rounded">
+                            <span>Pain on Urination</span>
+                            <Badge variant="secondary">{adolescentHealth.utiSymptomsPercent || 0}%</Badge>
+                          </div>
+                          <div className="flex justify-between items-center p-3 border rounded">
+                            <span>Foul Smell Discharge</span>
+                            <Badge variant="secondary">{adolescentHealth.utiSymptomsPercent || 0}%</Badge>
+                          </div>
+                          <div className="flex justify-between items-center p-3 border rounded">
+                            <span>Severe Menstrual Pain</span>
+                            <Badge variant="destructive">{adolescentHealth.menstrualHealthIssuesPercent || 0}%</Badge>
+                          </div>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  </CardContent>
+                </Card>
 
-                  <div className="space-y-4">
-                    <h4 className="font-medium">Reproductive Health Indicators</h4>
-                    <div className="space-y-3">
-                      <div className="flex justify-between items-center p-3 border rounded">
-                        <span>Menstruation Started</span>
-                        <Badge variant="default">{adolescentHealth.menstrualHealthIssuesPercent}%</Badge>
+                {/* Developmental Delays - Section D */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Section D - Developmental Delays</CardTitle>
+                    <p className="text-sm text-muted-foreground">Vision, hearing, learning, motor, and behavioral concerns</p>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                      <div className="text-center p-4 border rounded-lg bg-blue-50 dark:bg-blue-950/20">
+                        <div className="text-2xl font-bold text-blue-700 dark:text-blue-400">{adolescentHealth.visionConcerns || 0}</div>
+                        <div className="text-sm text-muted-foreground">Vision concerns</div>
+                        <div className="text-xs text-muted-foreground">reported cases</div>
                       </div>
-                      <div className="flex justify-between items-center p-3 border rounded">
-                        <span>Pain on Urination</span>
-                        <Badge variant="secondary">{adolescentHealth.utiSymptomsPercent}%</Badge>
+                      <div className="text-center p-4 border rounded-lg bg-orange-50 dark:bg-orange-950/20">
+                        <div className="text-2xl font-bold text-orange-700 dark:text-orange-400">{adolescentHealth.hearingConcerns || 0}</div>
+                        <div className="text-sm text-muted-foreground">Hearing concerns</div>
+                        <div className="text-xs text-muted-foreground">reported cases</div>
                       </div>
-                      <div className="flex justify-between items-center p-3 border rounded">
-                        <span>Foul Smell Discharge</span>
-                        <Badge variant="secondary">{adolescentHealth.utiSymptomsPercent}%</Badge>
+                      <div className="text-center p-4 border rounded-lg bg-green-50 dark:bg-green-950/20">
+                        <div className="text-2xl font-bold text-green-700 dark:text-green-400">{adolescentHealth.learningConcerns || 0}</div>
+                        <div className="text-sm text-muted-foreground">Learning concerns</div>
+                        <div className="text-xs text-muted-foreground">reported cases</div>
                       </div>
-                      <div className="flex justify-between items-center p-3 border rounded">
-                        <span>Severe Menstrual Pain</span>
-                        <Badge variant="destructive">{adolescentHealth.menstrualHealthIssuesPercent}%</Badge>
+                      <div className="text-center p-4 border rounded-lg bg-purple-50 dark:bg-purple-950/20">
+                        <div className="text-2xl font-bold text-purple-700 dark:text-purple-400">{adolescentHealth.motorConcerns || 0}</div>
+                        <div className="text-sm text-muted-foreground">Motor concerns</div>
+                        <div className="text-xs text-muted-foreground">reported cases</div>
+                      </div>
+                      <div className="text-center p-4 border rounded-lg bg-red-50 dark:bg-red-950/20">
+                        <div className="text-2xl font-bold text-red-700 dark:text-red-400">{adolescentHealth.behavioralConcerns || 0}</div>
+                        <div className="text-sm text-muted-foreground">Behavioral concerns</div>
+                        <div className="text-xs text-muted-foreground">reported cases</div>
                       </div>
                     </div>
+                  </CardContent>
+                </Card>
+              </>
+            ) : (
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="text-center py-8">
+                    <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                    <h3 className="text-lg font-semibold mb-2">No Adolescent Data Available</h3>
+                    <p className="text-muted-foreground">
+                      No adolescent health data (age 10+) has been recorded for the selected period.
+                    </p>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Developmental Delays - Section D */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Section D - Developmental Delays</CardTitle>
-                <p className="text-sm text-muted-foreground">Vision, hearing, learning, motor, and behavioral concerns</p>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-                  <div className="text-center p-4 border rounded-lg bg-blue-50 dark:bg-blue-950/20">
-                    <div className="text-2xl font-bold text-blue-700 dark:text-blue-400">{adolescentHealth.visionConcerns || 0}</div>
-                    <div className="text-sm text-muted-foreground">Vision concerns</div>
-                    <div className="text-xs text-muted-foreground">reported cases</div>
-                  </div>
-                  <div className="text-center p-4 border rounded-lg bg-orange-50 dark:bg-orange-950/20">
-                    <div className="text-2xl font-bold text-orange-700 dark:text-orange-400">{adolescentHealth.hearingConcerns || 0}</div>
-                    <div className="text-sm text-muted-foreground">Hearing concerns</div>
-                    <div className="text-xs text-muted-foreground">reported cases</div>
-                  </div>
-                  <div className="text-center p-4 border rounded-lg bg-green-50 dark:bg-green-950/20">
-                    <div className="text-2xl font-bold text-green-700 dark:text-green-400">{adolescentHealth.learningConcerns || 0}</div>
-                    <div className="text-sm text-muted-foreground">Learning concerns</div>
-                    <div className="text-xs text-muted-foreground">reported cases</div>
-                  </div>
-                  <div className="text-center p-4 border rounded-lg bg-purple-50 dark:bg-purple-950/20">
-                    <div className="text-2xl font-bold text-purple-700 dark:text-purple-400">{adolescentHealth.motorConcerns || 0}</div>
-                    <div className="text-sm text-muted-foreground">Motor concerns</div>
-                    <div className="text-xs text-muted-foreground">reported cases</div>
-                  </div>
-                  <div className="text-center p-4 border rounded-lg bg-red-50 dark:bg-red-950/20">
-                    <div className="text-2xl font-bold text-red-700 dark:text-red-400">{adolescentHealth.behavioralConcerns || 0}</div>
-                    <div className="text-sm text-muted-foreground">Behavioral concerns</div>
-                    <div className="text-xs text-muted-foreground">reported cases</div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
 
           <TabsContent value="menstrual" className="space-y-6">
@@ -1446,6 +1908,8 @@ export default function PODashboard() {
                 icon={Users}
                 variant="default"
                 subtitle="Female, age 10+"
+                onClick={() => handleDrillDown("menstrual-eligible")}
+                clickable
               />
               <MetricCard
                 title="Actively Tracked"
@@ -1453,6 +1917,8 @@ export default function PODashboard() {
                 icon={Activity}
                 variant="success"
                 subtitle="With period data"
+                onClick={() => handleDrillDown("menstrual-tracked")}
+                clickable
               />
               <MetricCard
                 title="Late Menstruation"
@@ -1460,6 +1926,8 @@ export default function PODashboard() {
                 icon={AlertCircle}
                 variant="warning"
                 subtitle="Needs attention"
+                onClick={() => handleDrillDown("menstrual-late")}
+                clickable
               />
               <MetricCard
                 title="Referrals"
@@ -1467,6 +1935,8 @@ export default function PODashboard() {
                 icon={Stethoscope}
                 variant="info"
                 subtitle="Menstrual health"
+                onClick={() => handleDrillDown("menstrual-referrals")}
+                clickable
               />
             </div>
 
@@ -1480,17 +1950,22 @@ export default function PODashboard() {
               </CardHeader>
               <CardContent>
                 {dashboardData?.menstrualHealthAnalytics?.monthlyTrend && (
-                  <ChartContainer title="Monthly Menstruation Tracking Trend">
-                    <LineChart
-                      labels={dashboardData.menstrualHealthAnalytics.monthlyTrend.map((item: any) => item.month)}
-                      datasets={[{
-                        label: "Students Tracked Per Month",
-                        data: dashboardData.menstrualHealthAnalytics.monthlyTrend.map((item: any) => item.count),
-                        borderColor: "#8b5cf6",
+                  <div 
+                    onClick={() => handleDrillDown("menstrual-tracked")}
+                    className="cursor-pointer hover:shadow-lg transition-all"
+                  >
+                    <ChartContainer title="Monthly Menstruation Tracking Trend">
+                      <LineChart
+                        labels={dashboardData.menstrualHealthAnalytics.monthlyTrend.map((item: any) => item.month)}
+                        datasets={[{
+                          label: "Students Tracked Per Month",
+                          data: dashboardData.menstrualHealthAnalytics.monthlyTrend.map((item: any) => item.count),
+                          borderColor: "#8b5cf6",
                         backgroundColor: "#8b5cf6",
                       }]}
                     />
                   </ChartContainer>
+                </div>
                 )}
               </CardContent>
             </Card>
@@ -1506,17 +1981,22 @@ export default function PODashboard() {
                 </CardHeader>
                 <CardContent>
                   {dashboardData?.menstrualHealthAnalytics?.cycleRegularity && (
-                    <ChartContainer title="Cycle Regularity Distribution">
-                      <PieChart
-                        labels={['Regular', 'Irregular', 'Unknown']}
-                        data={[
-                          dashboardData.menstrualHealthAnalytics.cycleRegularity.regular || 0,
-                          dashboardData.menstrualHealthAnalytics.cycleRegularity.irregular || 0,
-                          dashboardData.menstrualHealthAnalytics.cycleRegularity.unknown || 0
-                        ]}
-                        backgroundColor={['#10b981', '#f59e0b', '#6b7280']}
-                      />
-                    </ChartContainer>
+                    <div 
+                      onClick={() => handleDrillDown("menstrual-tracked")}
+                      className="cursor-pointer hover:shadow-lg transition-all"
+                    >
+                      <ChartContainer title="Cycle Regularity Distribution">
+                        <PieChart
+                          labels={['Regular', 'Irregular', 'Unknown']}
+                          data={[
+                            dashboardData.menstrualHealthAnalytics.cycleRegularity.regular || 0,
+                            dashboardData.menstrualHealthAnalytics.cycleRegularity.irregular || 0,
+                            dashboardData.menstrualHealthAnalytics.cycleRegularity.unknown || 0
+                          ]}
+                          backgroundColor={['#10b981', '#f59e0b', '#6b7280']}
+                        />
+                      </ChartContainer>
+                    </div>
                   )}
                 </CardContent>
               </Card>
@@ -1531,8 +2011,12 @@ export default function PODashboard() {
                 </CardHeader>
                 <CardContent>
                   {dashboardData?.menstrualHealthAnalytics?.ageWiseAnalysis && (
-                    <ChartContainer title="Age-wise Irregularity Rates">
-                      <BarChart
+                    <div 
+                      onClick={() => handleDrillDown("menstrual-eligible")}
+                      className="cursor-pointer hover:shadow-lg transition-all"
+                    >
+                      <ChartContainer title="Age-wise Irregularity Rates">
+                        <BarChart
                         labels={Object.keys(dashboardData.menstrualHealthAnalytics.ageWiseAnalysis.irregularityRates || {})}
                         datasets={[{
                           label: "Irregularity Rate (%)",
@@ -1541,6 +2025,7 @@ export default function PODashboard() {
                         }]}
                       />
                     </ChartContainer>
+                  </div>
                   )}
                 </CardContent>
               </Card>
@@ -1631,183 +2116,41 @@ export default function PODashboard() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <ChartContainer title="Referrals by Healthcare Facility">
-                    <BarChart
-                      labels={Object.keys(dashboardData.menstrualHealthAnalytics.referralAnalysis.byFacility).map(facility => 
-                        facility.length > 20 ? facility.substring(0, 20) + '...' : facility
-                      )}
-                      datasets={[{
-                        label: "Referrals by Healthcare Facility",
-                        data: Object.values(dashboardData.menstrualHealthAnalytics.referralAnalysis.byFacility) as number[],
-                        backgroundColor: "#3b82f6",
-                      }]}
-                    />
-                  </ChartContainer>
+                  <div 
+                    onClick={() => handleDrillDown("menstrual-referrals")}
+                    className="cursor-pointer hover:shadow-lg transition-all"
+                  >
+                    <ChartContainer title="Referrals by Healthcare Facility">
+                      <BarChart
+                        labels={Object.keys(dashboardData.menstrualHealthAnalytics.referralAnalysis.byFacility).map(facility => 
+                          facility.length > 20 ? facility.substring(0, 20) + '...' : facility
+                        )}
+                        datasets={[{
+                          label: "Referrals by Healthcare Facility",
+                          data: Object.values(dashboardData.menstrualHealthAnalytics.referralAnalysis.byFacility) as number[],
+                          backgroundColor: "#3b82f6",
+                        }]}
+                      />
+                    </ChartContainer>
+                  </div>
                 </CardContent>
               </Card>
             )}
           </TabsContent>
-
-          <TabsContent value="reports" className="space-y-6">
-            {/* Unified Report Generation */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <FileText className="h-5 w-5" />
-                  Unified Report Generation
-                </CardTitle>
-                <p className="text-sm text-muted-foreground">Generate comprehensive reports with menstrual health analytics</p>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <Button 
-                    variant="outline" 
-                    className="h-20 flex flex-col gap-2" 
-                    onClick={() => handleUnifiedReport("menstrual-health", "excel")}
-                  >
-                    <Heart className="h-6 w-6 text-pink-500" />
-                    <span className="text-sm">Menstrual Health Report</span>
-                    <span className="text-xs text-muted-foreground">Analytics & trends</span>
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    className="h-20 flex flex-col gap-2" 
-                    onClick={() => handleUnifiedReport("health-overview", "excel")}
-                  >
-                    <Stethoscope className="h-6 w-6 text-blue-500" />
-                    <span className="text-sm">Health Overview</span>
-                    <span className="text-xs text-muted-foreground">Complete health status</span>
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    className="h-20 flex flex-col gap-2" 
-                    onClick={() => handleUnifiedReport("referrals", "excel")}
-                  >
-                    <ExternalLink className="h-6 w-6 text-orange-500" />
-                    <span className="text-sm">Referrals Report</span>
-                    <span className="text-xs text-muted-foreground">All referral types</span>
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    className="h-20 flex flex-col gap-2" 
-                    onClick={() => handleUnifiedReport("student-demographics", "excel")}
-                  >
-                    <Users className="h-6 w-6 text-green-500" />
-                    <span className="text-sm">Student Demographics</span>
-                    <span className="text-xs text-muted-foreground">Population analysis</span>
-                  </Button>
-                </div>
-
-                <div className="mt-6 flex gap-4">
-                  <Select defaultValue="excel">
-                    <SelectTrigger className="w-32">
-                      <SelectValue placeholder="Format" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="excel">Excel</SelectItem>
-                      <SelectItem value="pdf">PDF</SelectItem>
-                      <SelectItem value="json">JSON</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Button className="flex items-center gap-2" onClick={() => handleUnifiedReport("menstrual-health", "excel")}>
-                    <Download className="h-4 w-4" />
-                    Generate Report
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Legacy Exportable Reports */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <FileText className="h-5 w-5" />
-                  Legacy Reports (District, State & National Level)
-                </CardTitle>
-                <p className="text-sm text-muted-foreground">Traditional PO export functionality</p>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  <Button variant="outline" className="h-20 flex flex-col gap-2" onClick={() => handlePOQuickExport("monthly-health")}>
-                    <Calendar className="h-6 w-6" />
-                    <span className="text-sm">Monthly Health Report</span>
-                    <span className="text-xs text-muted-foreground">District KPIs</span>
-                  </Button>
-                  <Button variant="outline" className="h-20 flex flex-col gap-2" onClick={() => handlePOQuickExport("school-referral-summary")}>
-                    <School className="h-6 w-6" />
-                    <span className="text-sm">School-wise Referral Summary</span>
-                    <span className="text-xs text-muted-foreground">Anonymized data</span>
-                  </Button>
-                  <Button variant="outline" className="h-20 flex flex-col gap-2" onClick={() => handlePOQuickExport("nutritional-status")}>
-                    <Heart className="h-6 w-6" />
-                    <span className="text-sm">Nutritional Status Summary</span>
-                    <span className="text-xs text-muted-foreground">BMI analytics</span>
-                  </Button>
-                  <Button variant="outline" className="h-20 flex flex-col gap-2" onClick={() => handlePOQuickExport("deficiencies-report")}>
-                    <AlertCircle className="h-6 w-6" />
-                    <span className="text-sm">Deficiencies Report</span>
-                    <span className="text-xs text-muted-foreground">Section B analytics</span>
-                  </Button>
-                  <Button variant="outline" className="h-20 flex flex-col gap-2" onClick={() => handlePOQuickExport("tb-leprosy-report")}>
-                    <Flame className="h-6 w-6" />
-                    <span className="text-sm">TB/Leprosy Red-flag Report</span>
-                    <span className="text-xs text-muted-foreground">Critical cases</span>
-                  </Button>
-                  <Button variant="outline" className="h-20 flex flex-col gap-2" onClick={() => handlePOQuickExport("adolescent-health")}>
-                    <Shield className="h-6 w-6" />
-                    <span className="text-sm">Adolescent Health Red-flag</span>
-                    <span className="text-xs text-muted-foreground">Section E concerns</span>
-                  </Button>
-                </div>
-
-                <div className="mt-6 flex gap-4">
-                  <Select defaultValue="pdf">
-                    <SelectTrigger className="w-32">
-                      <SelectValue placeholder="Format" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="pdf">PDF</SelectItem>
-                      <SelectItem value="excel">Excel</SelectItem>
-                      <SelectItem value="json">JSON</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Button className="flex items-center gap-2" onClick={() => handlePOQuickExport("monthly-health")}>
-                    <Download className="h-4 w-4" />
-                    Export Selected Reports
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Compliance & Monitoring */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Compliance & Monitoring Analytics</CardTitle>
-                <p className="text-sm text-muted-foreground">Data quality and system performance metrics</p>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div className="text-center p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
-                    <div className="text-2xl font-bold text-green-700 dark:text-green-400">{complianceAnalytics.dataCompletenessPercent || 0}%</div>
-                    <div className="text-sm text-green-600 dark:text-green-500">Data Completeness</div>
-                  </div>
-                  <div className="text-center p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                    <div className="text-2xl font-bold text-blue-700 dark:text-blue-400">{complianceAnalytics.auditLogs?.invalidBMI || 0}</div>
-                    <div className="text-sm text-blue-600 dark:text-blue-500">Invalid BMI Records</div>
-                  </div>
-                  <div className="text-center p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
-                    <div className="text-2xl font-bold text-purple-700 dark:text-purple-400">{complianceAnalytics.auditLogs?.incompleteC7C8 || 0}</div>
-                    <div className="text-sm text-purple-600 dark:text-purple-500">Incomplete Critical Cases</div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="shared" className="space-y-6">
-            <SharedReports />
-          </TabsContent>
         </Tabs>
+
+        {/* Drill-Down Modal */}
+        {drillDownType && (
+          <DrillDownModal
+            open={!!drillDownType}
+            onClose={closeDrillDown}
+            {...getDrillDownConfig()}
+            data={drillDownData}
+            isLoading={drillDownLoading}
+            searchable
+            exportable={false}
+          />
+        )}
       </div>
     </AppLayout>
   );

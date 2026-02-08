@@ -60,12 +60,6 @@ const modules = [
   },
   {
     moduleNumber: 9,
-    title: "Reports & Data Export",
-    description: "Print-ready reports in government-approved formats.",
-    icon: "📄"
-  },
-  {
-    moduleNumber: 10,
     title: "Role-Based Access System",
     description: "Secure access for Admin, Headmaster, Teacher, PO, and Medical Staff with role-based visibility.",
     icon: "🔐"

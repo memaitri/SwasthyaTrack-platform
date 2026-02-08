@@ -24,8 +24,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { exportToCSV } from "@/lib/csvExport";
-import { generatePdfReport } from "@/lib/pdfReports";
+
 import { Link } from "wouter";
 import {
   Stethoscope,
@@ -91,7 +90,6 @@ function CheckupList() {
   const [page, setPage] = useState(1);
   const [monthFilter, setMonthFilter] = useState(String(getCurrentMonth()));
   const [yearFilter, setYearFilter] = useState(String(getCurrentYear()));
-  const [exportFormat, setExportFormat] = useState("csv");
 
   const { data, isLoading } = useQuery({
     queryKey: ["/api/monthly-checkups", monthFilter, yearFilter, page],
@@ -160,16 +158,6 @@ function CheckupList() {
             ))}
           </SelectContent>
         </Select>
-        <Select value={exportFormat} onValueChange={setExportFormat}>
-          <SelectTrigger className="w-32">
-            <SelectValue placeholder="Export Format" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="csv">CSV</SelectItem>
-            <SelectItem value="pdf">PDF (with charts)</SelectItem>
-            <SelectItem value="excel">Excel (with charts)</SelectItem>
-          </SelectContent>
-        </Select>
       </div>
 
       <DataTable
@@ -233,65 +221,6 @@ function CheckupList() {
         data={checkups}
         getRowKey={(item: any) => item.id}
         isLoading={isLoading}
-        exportable
-        onExport={async () => {
-          if (exportFormat === "csv") {
-            exportToCSV(
-              checkups,
-              [
-                { key: "studentName", header: "Student Name" },
-                { key: "classSection", header: "Class" },
-                { key: "checkupDate", header: "Date" },
-                { key: "bmi", header: "BMI" },
-                { key: "treatmentType", header: "Treatment Type" },
-              ],
-              "monthly_checkups"
-            );
-          } else {
-            // For PDF prefer client-side pretty generator (includes charts)
-            if (exportFormat === 'pdf') {
-              try {
-                const { blob, filename } = await generatePdfReport({ type: 'monthly-checkup', month: monthFilter, year: yearFilter });
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = filename || `monthly-checkups-${yearFilter}-${monthFilter}.pdf`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                window.URL.revokeObjectURL(url);
-                return;
-              } catch (err) {
-                console.warn('Client PDF generation failed, falling back to server blob', err);
-              }
-            }
-
-            // Fallback: use server-rendered report for Excel or if PDF generation failed
-            const params = new URLSearchParams();
-            params.append("format", exportFormat);
-            params.append("month", monthFilter);
-            params.append("year", yearFilter);
-
-            const response = await apiRequest("GET", `/api/reports/monthly-checkup?${params.toString()}`);
-
-            if (!response.ok) {
-              const errorData = await response.json().catch(() => ({ message: "Failed to generate report" }));
-              alert(errorData.message || "Failed to generate report");
-              return;
-            }
-
-            const blob = await response.blob();
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            const extension = exportFormat === "excel" ? "xlsx" : exportFormat;
-            a.download = `monthly-checkups-${yearFilter}-${monthFilter}.${extension}`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            window.URL.revokeObjectURL(url);
-          }
-        }}
         pagination={{
           currentPage: page,
           totalPages,

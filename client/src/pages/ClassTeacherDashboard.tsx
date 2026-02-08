@@ -21,8 +21,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+  DialogTrigger} from "@/components/ui/dialog";
 import {
   Users,
   UtensilsCrossed,
@@ -36,17 +35,13 @@ import {
   TrendingUp,
   Shield,
   FileText,
-  Download,
   Filter,
   Calendar,
   Activity,
   Heart,
   Target,
-  BarChart3,
-} from "lucide-react";
+  BarChart3} from "lucide-react";
 import { Link } from "wouter";
-import { exportToCSV } from "@/lib/csvExport";
-import { exportToPDF, exportToExcel } from "@/lib/exportService";
 import { useAuth } from "@/lib/auth"; // Corrected the import path for useAuth
 import { useToast } from "@/hooks/use-toast";
 import { formatGenderDisplay, formatGenderWithIcon } from "@/lib/genderUtils";
@@ -56,7 +51,6 @@ type TeacherDashboardData = {
   students: any[];
   upcomingCheckups: any[];
   growthTrends: any[];
-  vaccinationAlerts: any[];
   enhancedAlerts: any[];
   mealParticipation: {
     totalMeals: number;
@@ -117,8 +111,6 @@ export default function ClassTeacherDashboard() {
   const [selectedHealthCategory, setSelectedHealthCategory] = useState("all");
   const [activeTab, setActiveTab] = useState("overview");
   const [filterCategory, setFilterCategory] = useState("all");
-  const [exportFormat, setExportFormat] = useState("csv");
-
   const { data: dashboardData, isLoading } = useQuery<TeacherDashboardData>({
     queryKey: ["/api/teacher/dashboard", selectedMonth, selectedYear, { class_id: user?.classSection }],
     queryFn: async () => {
@@ -131,8 +123,7 @@ export default function ClassTeacherDashboard() {
       const res = await apiRequest("GET", `/api/teacher/dashboard?${params}`);
       return await res.json();
     },
-    enabled: !!user,
-  });
+    enabled: !!user});
 
   const { data: growthTrendsData } = useQuery<GrowthTrendsResponse>({
     queryKey: ["/api/growth-trends", selectedMonth, selectedYear],
@@ -142,19 +133,7 @@ export default function ClassTeacherDashboard() {
       params.append("year", selectedYear);
       const res = await apiRequest("GET", `/api/growth-trends?${params}`);
       return await res.json();
-    },
-  });
-
-  const { data: vaccinationData } = useQuery({
-    queryKey: ["/api/vaccination-tracking", selectedMonth, selectedYear],
-    queryFn: async () => {
-      const params = new URLSearchParams();
-      params.append("month", selectedMonth);
-      params.append("year", selectedYear);
-      const res = await apiRequest("GET", `/api/vaccination-tracking?${params}`);
-      return await res.json();
-    },
-  });
+    }});
 
   const { data: alertsData } = useQuery<AlertsData>({
     queryKey: ["/api/alerts", selectedMonth, selectedYear],
@@ -164,8 +143,7 @@ export default function ClassTeacherDashboard() {
       params.append("year", selectedYear);
       const res = await apiRequest("GET", `/api/alerts?${params}`);
       return await res.json();
-    },
-  });
+    }});
 
   const { data: classHealthSummary } = useQuery<ClassHealthSummary>({
     queryKey: ["/api/teacher/class-health-summary", selectedMonth, selectedYear, selectedAgeGroup, selectedHealthCategory, { class_id: user?.classSection ?? undefined }],
@@ -181,8 +159,7 @@ export default function ClassTeacherDashboard() {
       const res = await apiRequest("GET", `/api/teacher/class-health-summary?${params}`);
       return await res.json();
     },
-    enabled: !!user,
-  });
+    enabled: !!user});
 
   const { data: referralData } = useQuery({
     queryKey: ["/api/teacher/referral-tracking", selectedMonth, selectedYear, selectedAgeGroup, selectedHealthCategory, { class_id: user?.classSection ?? undefined }],
@@ -198,7 +175,7 @@ export default function ClassTeacherDashboard() {
       const res = await apiRequest("GET", `/api/teacher/referral-tracking?${params}`);
       return await res.json();
     },
-  });
+    enabled: !!user});
 
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -211,8 +188,7 @@ export default function ClassTeacherDashboard() {
       const res = await apiRequest("PATCH", `/api/referrals/${payload.id}`, {
         status: payload.status,
         completionDate: payload.completionDate,
-        notes: payload.notes,
-      });
+        notes: payload.notes});
       return res.json();
     },
     onMutate: async (variables) => {
@@ -224,8 +200,7 @@ export default function ClassTeacherDashboard() {
         if (!old) return old;
         return {
           ...old,
-          referrals: old.referrals.map((r: any) => (r.id === variables.id ? { ...r, status: variables.status } : r)),
-        };
+          referrals: old.referrals.map((r: any) => (r.id === variables.id ? { ...r, status: variables.status } : r))};
       });
       return { previous };
     },
@@ -246,356 +221,23 @@ export default function ClassTeacherDashboard() {
     },
     onSettled: () => {
       setUpdatingReferralId(null);
-    },
-  });
+    }});
 
   const metrics = dashboardData?.metrics || {
     totalStudents: 0,
     pendingHealthCards: 0,
     monthlyCheckupsDue: 0,
-    completedCheckups: 0,
-  };
+    completedCheckups: 0};
   const pendingHealthCards = metrics.pendingHealthCards ?? metrics.pendingApprovals ?? 0;
 
   const students = dashboardData?.students || [];
   const upcomingCheckups = dashboardData?.upcomingCheckups || [];
   const growthTrends = dashboardData?.growthTrends || [];
-  const vaccinationAlerts = dashboardData?.vaccinationAlerts || [];
   const enhancedAlerts = dashboardData?.enhancedAlerts || [];
   const mealParticipation = dashboardData?.mealParticipation || { totalMeals: 0, expectedMeals: 0 };
   const attendanceSummary = dashboardData?.attendanceSummary || { presentDays: 0, uniqueStudents: 0 };
 
-  // Export functions
-  const exportStudentHealthCards = async () => {
-    if (!students.length) return;
 
-    if (exportFormat === "csv") {
-      const exportData = students.map(student => {
-        const healthCard = student.healthCardStatus !== "Missing" ? { weightKg: student.weight, heightCm: student.height, bmi: student.bmi } : null;
-        return {
-          "Student Name": student.fullName,
-          "Unique ID": student.uniqueId,
-          "Class": student.classSection,
-          "Gender": formatGenderDisplay(student.gender),
-          "Age": student.age || "N/A",
-          "Health Card Status": student.healthCardStatus,
-          "Weight (kg)": healthCard?.weightKg || "N/A",
-          "Height (cm)": healthCard?.heightCm || "N/A",
-          "BMI": healthCard?.bmi || "N/A",
-          "Blood Pressure": student.bloodPressure || "N/A",
-          "Vision": student.vision || "N/A",
-          "Last Checkup": student.lastCheckupDate || "N/A",
-        };
-      });
-
-      exportToCSV(exportData, [
-        { key: "Student Name", header: "Student Name" },
-        { key: "Unique ID", header: "Unique ID" },
-        { key: "Class", header: "Class" },
-        { key: "Gender", header: "Gender" },
-        { key: "Age", header: "Age" },
-        { key: "Health Card Status", header: "Health Card Status" },
-        { key: "Weight (kg)", header: "Weight (kg)" },
-        { key: "Height (cm)", header: "Height (cm)" },
-        { key: "BMI", header: "BMI" },
-        { key: "Blood Pressure", header: "Blood Pressure" },
-        { key: "Vision", header: "Vision" },
-        { key: "Last Checkup", header: "Last Checkup" },
-      ], `class-health-cards-${new Date().toISOString().split('T')[0]}.csv`);
-    } else {
-      // Prefer client-side pretty export for PDF/Excel when possible
-      try {
-        if (exportFormat === 'pdf') {
-          await exportToPDF(students as any, { includeNutrition: true, includeMedical: true }, user?.fullName || user?.email || '');
-          return;
-        } else if (exportFormat === 'xlsx') {
-          await exportToExcel(students as any, { includeNutrition: true, includeMedical: true }, user?.fullName || user?.email || '');
-          return;
-        }
-      } catch (err) {
-        console.warn('Client-side class health cards export failed, falling back to server blob', err);
-      }
-
-      // Fallback: server-rendered annual-health
-      const params = new URLSearchParams();
-      params.append("format", exportFormat);
-      params.append("year", selectedYear);
-
-      const token = localStorage.getItem("accessToken");
-      const response = await fetch(`/api/reports/annual-health?${params.toString()}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: "Failed to generate report" }));
-        throw new Error(errorData.message || "Failed to generate report");
-      }
-
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      const extension = exportFormat === "excel" ? "xlsx" : exportFormat;
-      a.download = `class-health-cards-${selectedYear}.${extension}`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
-    }
-  };
-
-  const handleExport = (type?: "csv" | "pdf" | "xlsx") => {
-    if (!students || students.length === 0) return;
-    try {
-      if (type === "pdf") {
-        exportToPDF(students as any, { includeNutrition: true, includeMedical: true }, user?.fullName || user?.email || '');
-      } else if (type === "xlsx") {
-        exportToExcel(students as any, { includeNutrition: true, includeMedical: true }, user?.fullName || user?.email || '');
-      } else {
-        // default CSV
-        const exportData = students.map((student: any) => ({
-          "Student Name": student.fullName,
-          "Unique ID": student.uniqueId,
-          "Class": student.classSection,
-          "Gender": formatGenderDisplay(student.gender),
-          "Age": student.age || "N/A",
-          "Health Card Status": student.healthCardStatus,
-        }));
-        exportToCSV(exportData, [
-          { key: "Student Name", header: "Student Name" },
-          { key: "Unique ID", header: "Unique ID" },
-          { key: "Class", header: "Class" },
-          { key: "Gender", header: "Gender" },
-          { key: "Age", header: "Age" },
-          { key: "Health Card Status", header: "Health Card Status" },
-        ], `class-students-${new Date().toISOString().split('T')[0]}.csv`);
-      }
-    } catch (err) {
-      console.error('Export failed', err);
-    }
-  };
-
-  // Try client-side pretty export then fallback to existing server flows
-  const handleClassQuickExport = async (type?: string) => {
-    try {
-      if (!type) return;
-      // For annual health / class summary prefer client exporter when possible
-      if (type === 'annual-health' || type === 'class-summary') {
-        try {
-          // attempt to use server JSON if available
-          const token = localStorage.getItem('accessToken');
-          const res = await fetch(`/api/reports/${type}?month=${selectedMonth}&year=${selectedYear}&format=json`, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
-          if (res.ok) {
-            const json = await res.json();
-            if (Array.isArray(json.rows) && json.rows.length > 0) {
-              const columns = Object.keys(json.rows[0]).map(k => ({ key: k, header: k }));
-              await exportToPDF(json.rows as any, { columns }, 'ClassTeacher');
-              return;
-            }
-          }
-        } catch (err) {
-          console.warn('Client-side class export attempt failed, falling back to server blob', err);
-        }
-      }
-
-      // Fallback: call existing handlers which perform server blob fetches
-      if (type === 'student-health-cards') await exportStudentHealthCards();
-      else if (type === 'class-summary') await exportClassSummary();
-      else if (type === 'referral-report') await exportReferralReport();
-    } catch (err) {
-      console.error('Class quick export failed', err);
-    }
-  };
-
-  const exportClassSummary = async () => {
-    if (exportFormat === "csv") {
-      const summaryData = [{
-        "Metric": "Total Students",
-        "Value": metrics.totalStudents,
-      }, {
-        "Metric": "Health Cards Completed",
-        "Value": students.filter(s => s.healthCardStatus === "Approved").length,
-      }, {
-        "Metric": "Pending Health Cards",
-        "Value": pendingHealthCards,
-      }, {
-        "Metric": "Checkups Due",
-        "Value": metrics.monthlyCheckupsDue,
-      }, {
-        "Metric": "Completed Checkups",
-        "Value": metrics.completedCheckups,
-      }, {
-        "Metric": "Meal Compliance",
-        "Value": `${mealParticipation.expectedMeals > 0 ? Math.round((mealParticipation.totalMeals / mealParticipation.expectedMeals) * 100) : 0}%`,
-      }, {
-        "Metric": "Attendance Rate",
-        "Value": `${attendanceSummary.uniqueStudents > 0 ? Math.round((attendanceSummary.presentDays / (attendanceSummary.uniqueStudents * 30)) * 100) : 0}%`,
-      }];
-
-      exportToCSV(summaryData, [
-        { key: "Metric", header: "Metric" },
-        { key: "Value", header: "Value" },
-      ], `class-summary-${new Date().toISOString().split('T')[0]}.csv`);
-    } else {
-      // Prefer client-side pretty PDF/Excel when possible
-      try {
-        if (exportFormat === 'pdf') {
-          const summaryData = [{ Metric: 'Total Students', Value: metrics.totalStudents },
-            { Metric: 'Health Cards Completed', Value: students.filter(s => s.healthCardStatus === 'Approved').length },
-            { Metric: 'Pending Health Cards', Value: pendingHealthCards },
-            { Metric: 'Checkups Due', Value: metrics.monthlyCheckupsDue },
-            { Metric: 'Completed Checkups', Value: metrics.completedCheckups },
-            { Metric: 'Meal Compliance', Value: `${mealParticipation.expectedMeals > 0 ? Math.round((mealParticipation.totalMeals / mealParticipation.expectedMeals) * 100) : 0}%` },
-            { Metric: 'Attendance Rate', Value: `${attendanceSummary.uniqueStudents > 0 ? Math.round((attendanceSummary.presentDays / (attendanceSummary.uniqueStudents * 30)) * 100) : 0}%` }];
-
-          await exportToPDF(summaryData as any, { columns: [{ key: 'Metric', header: 'Metric' }, { key: 'Value', header: 'Value' }] }, user?.fullName || user?.email || '');
-          return;
-        } else if (exportFormat === 'xlsx') {
-          const summaryData = [{ Metric: 'Total Students', Value: metrics.totalStudents },
-            { Metric: 'Health Cards Completed', Value: students.filter(s => s.healthCardStatus === 'Approved').length },
-            { Metric: 'Pending Health Cards', Value: pendingHealthCards },
-            { Metric: 'Checkups Due', Value: metrics.monthlyCheckupsDue },
-            { Metric: 'Completed Checkups', Value: metrics.completedCheckups },
-            { Metric: 'Meal Compliance', Value: `${mealParticipation.expectedMeals > 0 ? Math.round((mealParticipation.totalMeals / mealParticipation.expectedMeals) * 100) : 0}%` },
-            { Metric: 'Attendance Rate', Value: `${attendanceSummary.uniqueStudents > 0 ? Math.round((attendanceSummary.presentDays / (attendanceSummary.uniqueStudents * 30)) * 100) : 0}%` }];
-
-          await exportToExcel(summaryData as any, { columns: [{ key: 'Metric', header: 'Metric' }, { key: 'Value', header: 'Value' }] }, user?.fullName || user?.email || '');
-          return;
-        }
-      } catch (err) {
-        console.warn('Client-side class summary export failed, falling back to server blob', err);
-      }
-
-      // Fallback: use server-rendered report
-      const params = new URLSearchParams();
-      params.append("format", exportFormat);
-      params.append("month", selectedMonth);
-      params.append("year", selectedYear);
-
-      const token = localStorage.getItem("accessToken");
-      const response = await fetch(`/api/reports/monthly-checkup?${params.toString()}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: "Failed to generate report" }));
-        throw new Error(errorData.message || "Failed to generate report");
-      }
-
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      const extension = exportFormat === "excel" ? "xlsx" : exportFormat;
-      a.download = `class-summary-${selectedYear}-${selectedMonth}.${extension}`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
-    }
-  };
-
-  const exportReferralReport = async () => {
-    if (!referralData?.referrals) return;
-
-    if (exportFormat === "csv") {
-      const exportData = referralData.referrals.map((referral: any) => ({
-        "Student Name": referral.studentName,
-        "Class": referral.classSection,
-        "Referral Type": referral.type,
-        "Facility": referral.facility,
-        "Date": referral.date,
-        "Status": referral.status || "Pending",
-        "Follow-up Required": referral.followUpRequired ? "Yes" : "No",
-      }));
-
-      exportToCSV(exportData, [
-        { key: "Student Name", header: "Student Name" },
-        { key: "Class", header: "Class" },
-        { key: "Referral Type", header: "Referral Type" },
-        { key: "Facility", header: "Facility" },
-        { key: "Date", header: "Date" },
-        { key: "Status", header: "Status" },
-        { key: "Follow-up Required", header: "Follow-up Required" },
-      ], `referral-report-${new Date().toISOString().split('T')[0]}.csv`);
-    } else {
-      // Prefer client-side pretty exporters
-      try {
-        const exportData = referralData.referrals.map((referral: any) => ({
-          "Student Name": referral.studentName,
-          "Class": referral.classSection,
-          "Referral Type": referral.type,
-          "Facility": referral.facility,
-          "Date": referral.date,
-          "Status": referral.status || "Pending",
-          "Follow-up Required": referral.followUpRequired ? "Yes" : "No",
-        }));
-
-        if (exportFormat === 'pdf') {
-          await exportToPDF(exportData as any, {
-            columns: [
-              { key: "Student Name", header: "Student Name" },
-              { key: "Class", header: "Class" },
-              { key: "Referral Type", header: "Referral Type" },
-              { key: "Facility", header: "Facility" },
-              { key: "Date", header: "Date" },
-              { key: "Status", header: "Status" },
-              { key: "Follow-up Required", header: "Follow-up Required" },
-            ],
-          }, user?.fullName || user?.email || '');
-          return;
-        } else if (exportFormat === 'xlsx') {
-          await exportToExcel(exportData as any, {
-            columns: [
-              { key: "Student Name", header: "Student Name" },
-              { key: "Class", header: "Class" },
-              { key: "Referral Type", header: "Referral Type" },
-              { key: "Facility", header: "Facility" },
-              { key: "Date", header: "Date" },
-              { key: "Status", header: "Status" },
-              { key: "Follow-up Required", header: "Follow-up Required" },
-            ],
-          }, user?.fullName || user?.email || '');
-          return;
-        }
-      } catch (err) {
-        console.warn('Client-side referral export failed, falling back to server blob', err);
-      }
-
-      // Fallback to server blob
-      const params = new URLSearchParams();
-      params.append("format", exportFormat);
-      params.append("month", selectedMonth);
-      params.append("year", selectedYear);
-
-      const token = localStorage.getItem("accessToken");
-      const response = await fetch(`/api/reports/monthly-checkup?${params.toString()}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: "Failed to generate report" }));
-        throw new Error(errorData.message || "Failed to generate report");
-      }
-
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      const extension = exportFormat === "excel" ? "xlsx" : exportFormat;
-      a.download = `referral-report-${selectedYear}-${selectedMonth}.${extension}`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
-    }
-  };
 
   return (
     <AppLayout title="Class Teacher Dashboard">
@@ -665,11 +307,10 @@ export default function ClassTeacherDashboard() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="health">Health Tracking</TabsTrigger>
             <TabsTrigger value="referrals">Referrals</TabsTrigger>
-            <TabsTrigger value="reports">Reports & Exports</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
@@ -765,8 +406,7 @@ export default function ClassTeacherDashboard() {
                         <p className="text-xs text-muted-foreground">{item.uniqueId}</p>
                       </div>
                     </div>
-                  ),
-                },
+                  )},
                 { 
                   key: "gender", 
                   header: "Gender", 
@@ -788,28 +428,23 @@ export default function ClassTeacherDashboard() {
                   header: "Health Card",
                   render: (item: any) => (
                     <StatusBadge status={item.healthCardStatus || "Pending"} size="sm" />
-                  ),
-                },
+                  )},
                   { key: "weight",
                     header: "Weight (kg)",
                     className: "text-center",
-                    render: (item: any) => <span className="text-sm">{item.weight ?? "N/A"}</span>,
-                  },
+                    render: (item: any) => <span className="text-sm">{item.weight ?? "N/A"}</span>},
                   { key: "height",
                     header: "Height (cm)",
                     className: "text-center",
-                    render: (item: any) => <span className="text-sm">{item.height ?? "N/A"}</span>,
-                  },
+                    render: (item: any) => <span className="text-sm">{item.height ?? "N/A"}</span>},
                   { key: "bmi",
                     header: "BMI",
                     className: "text-center",
-                    render: (item: any) => <span className="text-sm">{item.bmi ?? "N/A"}</span>,
-                  },
+                    render: (item: any) => <span className="text-sm">{item.bmi ?? "N/A"}</span>},
                   { key: "bloodPressure",
                     header: "BP",
                     className: "text-center",
-                    render: (item: any) => <span className="text-sm">{item.bloodPressure ?? "N/A"}</span>,
-                  },
+                    render: (item: any) => <span className="text-sm">{item.bloodPressure ?? "N/A"}</span>},
                 {
                   key: "lastCheckup",
                   header: "Last Checkup",
@@ -817,8 +452,7 @@ export default function ClassTeacherDashboard() {
                     <span className="text-sm text-muted-foreground">
                       {item.lastCheckup || "Not yet"}
                     </span>
-                  ),
-                },
+                  )},
                 {
                   key: "actions",
                   header: "",
@@ -835,14 +469,10 @@ export default function ClassTeacherDashboard() {
                         </Button>
                       </Link>
                     </div>
-                  ),
-                },
-              ]}
+                  )}]}
               data={students}
               getRowKey={(item: any) => item.id}
               isLoading={isLoading}
-              exportable
-              onExport={handleExport}
               searchable
               searchPlaceholder="Search students..."
               emptyMessage="No students in your class"
@@ -932,21 +562,17 @@ export default function ClassTeacherDashboard() {
                    label: "Avg Height (cm)",
                    data: growthTrendsData.growthTrends.map((t: any) => t.avgHeight),
                    borderColor: "hsl(142, 76%, 36%)",
-                   backgroundColor: "hsla(142, 76%, 36%, 0.1)",
-                 },
+                   backgroundColor: "hsla(142, 76%, 36%, 0.1)"},
                  {
                    label: "Avg Weight (kg)",
                    data: growthTrendsData.growthTrends.map((t: any) => t.avgWeight),
                    borderColor: "hsl(280, 65%, 60%)",
-                   backgroundColor: "hsla(280, 65%, 60%, 0.1)",
-                 },
+                   backgroundColor: "hsla(280, 65%, 60%, 0.1)"},
                  {
                    label: "Avg BMI",
                    data: growthTrendsData.growthTrends.map((t: any) => t.avgBMI),
                    borderColor: "hsl(45, 93%, 47%)",
-                   backgroundColor: "hsla(45, 93%, 47%, 0.1)",
-                 },
-               ]}
+                   backgroundColor: "hsla(45, 93%, 47%, 0.1)"}]}
              />
            </ChartContainer>
          )}
@@ -1000,14 +626,12 @@ export default function ClassTeacherDashboard() {
                     growthTrendsData?.healthRiskMetrics?.underweight || 0,
                     growthTrendsData?.healthRiskMetrics?.normal || 0,
                     growthTrendsData?.healthRiskMetrics?.overweight || 0,
-                    growthTrendsData?.healthRiskMetrics?.obese || 0,
-                  ]}
+                    growthTrendsData?.healthRiskMetrics?.obese || 0]}
                   backgroundColor={[
                     "hsl(0, 84%, 60%)",
                     "hsl(142, 76%, 36%)",
                     "hsl(45, 93%, 47%)",
-                    "hsl(280, 65%, 60%)",
-                  ]}
+                    "hsl(280, 65%, 60%)"]}
                   doughnut
                 />
               </ChartContainer>
@@ -1022,11 +646,8 @@ export default function ClassTeacherDashboard() {
                         classHealthSummary?.bloodPressure?.normal || 0,
                         classHealthSummary?.bloodPressure?.prehypertension || 0,
                         classHealthSummary?.bloodPressure?.stage1 || 0,
-                        classHealthSummary?.bloodPressure?.stage2 || 0,
-                      ],
-                      backgroundColor: "hsl(142, 76%, 36%)",
-                    },
-                  ]}
+                        classHealthSummary?.bloodPressure?.stage2 || 0],
+                      backgroundColor: "hsl(142, 76%, 36%)"}]}
                 />
               </ChartContainer>
             </div>
@@ -1040,21 +661,17 @@ export default function ClassTeacherDashboard() {
                       label: "Avg Height (cm)",
                       data: growthTrendsData.growthTrends.map((t: any) => t.avgHeight),
                       borderColor: "hsl(142, 76%, 36%)",
-                      backgroundColor: "hsla(142, 76%, 36%, 0.1)",
-                    },
+                      backgroundColor: "hsla(142, 76%, 36%, 0.1)"},
                     {
                       label: "Avg Weight (kg)",
                       data: growthTrendsData.growthTrends.map((t: any) => t.avgWeight),
                       borderColor: "hsl(280, 65%, 60%)",
-                      backgroundColor: "hsla(280, 65%, 60%, 0.1)",
-                    },
+                      backgroundColor: "hsla(280, 65%, 60%, 0.1)"},
                     {
                       label: "Avg BMI",
                       data: growthTrendsData.growthTrends.map((t: any) => t.avgBMI),
                       borderColor: "hsl(45, 93%, 47%)",
-                      backgroundColor: "hsla(45, 93%, 47%, 0.1)",
-                    },
-                  ]}
+                      backgroundColor: "hsla(45, 93%, 47%, 0.1)"}]}
                 />
               </ChartContainer>
             )}
@@ -1134,214 +751,6 @@ export default function ClassTeacherDashboard() {
                       </div>
                     ))}
                   </div>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="reports" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <FileText className="h-5 w-5" />
-                  Class Reports & Exports
-                </CardTitle>
-                <p className="text-sm text-muted-foreground">Generate and download comprehensive class-level reports</p>
-              </CardHeader>
-              <CardContent>
-                <div className="mb-4">
-                  <label className="text-sm font-medium mb-2 block">Export Format</label>
-                  <Select value={exportFormat} onValueChange={setExportFormat}>
-                    <SelectTrigger className="w-48">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="csv">CSV</SelectItem>
-                      <SelectItem value="pdf">PDF (with charts)</SelectItem>
-                      <SelectItem value="excel">Excel (with charts)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  <Button
-                    variant="outline"
-                    className="h-24 flex flex-col gap-2"
-                    onClick={() => handleClassQuickExport('student-health-cards')}
-                  >
-                    <FileHeart className="h-6 w-6" />
-                    <span className="text-sm">Student Health Cards</span>
-                    <span className="text-xs text-muted-foreground">{exportFormat === "csv" ? "Individual student data" : "With charts & formatting"}</span>
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="h-24 flex flex-col gap-2"
-                    onClick={() => handleClassQuickExport('class-summary')}
-                  >
-                    <BarChart3 className="h-6 w-6" />
-                    <span className="text-sm">Class Summary Report</span>
-                    <span className="text-xs text-muted-foreground">{exportFormat === "csv" ? "Aggregated metrics" : "With charts & formatting"}</span>
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="h-24 flex flex-col gap-2"
-                    onClick={() => handleClassQuickExport('referral-report')}
-                  >
-                    <AlertCircle className="h-6 w-6" />
-                    <span className="text-sm">Referral Report</span>
-                    <span className="text-xs text-muted-foreground">{exportFormat === "csv" ? "Referral tracking" : "With charts & formatting"}</span>
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="h-24 flex flex-col gap-2"
-                    onClick={async () => {
-                      const params = new URLSearchParams();
-                      params.append("format", exportFormat);
-                      params.append("year", selectedYear);
-
-                      const token = localStorage.getItem("accessToken");
-                      const response = await fetch(`/api/reports/annual-health?${params.toString()}`, {
-                        headers: {
-                          Authorization: `Bearer ${token}`,
-                        },
-                      });
-
-                      if (!response.ok) {
-                        const errorData = await response.json().catch(() => ({ message: "Failed to generate report" }));
-                        alert(errorData.message || "Failed to generate report");
-                        return;
-                      }
-
-                      const blob = await response.blob();
-                      const url = window.URL.createObjectURL(blob);
-                      const a = document.createElement("a");
-                      a.href = url;
-                      const extension = exportFormat === "excel" ? "xlsx" : exportFormat;
-                      a.download = `annual-health-report-${selectedYear}.${extension}`;
-                      document.body.appendChild(a);
-                      a.click();
-                      document.body.removeChild(a);
-                      window.URL.revokeObjectURL(url);
-                    }}
-                  >
-                    <Calendar className="h-6 w-6" />
-                    <span className="text-sm">Annual Health Report</span>
-                    <span className="text-xs text-muted-foreground">{exportFormat === "csv" ? "Annual health data" : "With charts & formatting"}</span>
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="h-24 flex flex-col gap-2"
-                    onClick={async () => {
-                        const params = new URLSearchParams();
-                        params.append("format", exportFormat);
-                        params.append("month", selectedMonth);
-                        params.append("year", selectedYear);
-
-                        if (exportFormat === 'pdf') {
-                          try {
-                            const { generatePdfReport } = await import('@/lib/pdfReports');
-                            const result = await generatePdfReport({ type: 'monthly-checkup', month: selectedMonth, year: selectedYear } as any);
-                            const url = window.URL.createObjectURL(result.blob);
-                            const a = document.createElement('a');
-                            a.href = url;
-                            a.download = result.filename || `monthly-checkups-${selectedYear}-${selectedMonth}.pdf`;
-                            document.body.appendChild(a);
-                            a.click();
-                            document.body.removeChild(a);
-                            window.URL.revokeObjectURL(url);
-                            return;
-                          } catch (err) {
-                            console.warn('Client PDF generation failed, falling back to server blob', err);
-                          }
-                        }
-
-                        // Fallback to server-generated report (Excel or if PDF failed)
-                        const token = localStorage.getItem("accessToken");
-                        const response = await fetch(`/api/reports/monthly-checkup?${params.toString()}`, {
-                          headers: {
-                            Authorization: `Bearer ${token}`,
-                          },
-                        });
-
-                        if (!response.ok) {
-                          const errorData = await response.json().catch(() => ({ message: "Failed to generate report" }));
-                          alert(errorData.message || "Failed to generate report");
-                          return;
-                        }
-
-                        const blob = await response.blob();
-                        const url = window.URL.createObjectURL(blob);
-                        const a = document.createElement("a");
-                        a.href = url;
-                        const extension = exportFormat === "excel" ? "xlsx" : exportFormat;
-                        a.download = `monthly-checkups-${selectedYear}-${selectedMonth}.${extension}`;
-                        document.body.appendChild(a);
-                        a.click();
-                        document.body.removeChild(a);
-                        window.URL.revokeObjectURL(url);
-                    }}
-                  >
-                    <Stethoscope className="h-6 w-6" />
-                    <span className="text-sm">Monthly Checkups</span>
-                    <span className="text-xs text-muted-foreground">{exportFormat === "csv" ? "Monthly health data" : "With charts & formatting"}</span>
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="h-24 flex flex-col gap-2"
-                    onClick={async () => {
-                      const params = new URLSearchParams();
-                      params.append("format", exportFormat);
-                      params.append("month", selectedMonth);
-                      params.append("year", selectedYear);
-
-                      const token = localStorage.getItem("accessToken");
-                      // Prefer client-side PDF generation for meal-tracking
-                      if (exportFormat === 'pdf') {
-                        try {
-                          const { generatePdfReport } = await import('@/lib/pdfReports');
-                          const result = await generatePdfReport({ type: 'meal-tracking', month: selectedMonth, year: selectedYear } as any);
-                          const url = window.URL.createObjectURL(result.blob);
-                          const a = document.createElement('a');
-                          a.href = url;
-                          a.download = result.filename || `meal-tracking-${selectedYear}-${selectedMonth}.pdf`;
-                          document.body.appendChild(a);
-                          a.click();
-                          document.body.removeChild(a);
-                          window.URL.revokeObjectURL(url);
-                          return;
-                        } catch (err) {
-                          console.warn('Client PDF generation failed for meal-tracking, falling back to server blob', err);
-                        }
-                      }
-
-                      // Fallback: server-generated report (Excel or if PDF failed)
-                      const response = await fetch(`/api/reports/meal-tracking?${params.toString()}`, {
-                        headers: {
-                          Authorization: `Bearer ${token}`,
-                        },
-                      });
-
-                      if (!response.ok) {
-                        const errorData = await response.json().catch(() => ({ message: "Failed to generate report" }));
-                        alert(errorData.message || "Failed to generate report");
-                        return;
-                      }
-
-                      const blob = await response.blob();
-                      const url = window.URL.createObjectURL(blob);
-                      const a = document.createElement("a");
-                      a.href = url;
-                      const extension = exportFormat === "excel" ? "xlsx" : exportFormat;
-                      a.download = `meal-tracking-${selectedYear}-${selectedMonth}.${extension}`;
-                      document.body.appendChild(a);
-                      a.click();
-                      document.body.removeChild(a);
-                      window.URL.revokeObjectURL(url);
-                    }}
-                  >
-                    <UtensilsCrossed className="h-6 w-6" />
-                    <span className="text-sm">Meal Tracking Report</span>
-                    <span className="text-xs text-muted-foreground">{exportFormat === "csv" ? "Nutrition compliance" : "With charts & formatting"}</span>
-                  </Button>
                 </div>
               </CardContent>
             </Card>

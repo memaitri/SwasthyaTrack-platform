@@ -13,8 +13,7 @@ import {
   Share2,
   Clock,
   User,
-  Eye,
-  Download
+  Eye
 } from "lucide-react";
 
 interface Notification {
@@ -65,7 +64,7 @@ export function NotificationBell() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/notifications/by-role"] });
       queryClient.invalidateQueries({ queryKey: ["/api/notifications/unread-count"] });
-    },
+    }
   });
 
   const handleNotificationClick = async (notification: Notification) => {
@@ -75,16 +74,7 @@ export function NotificationBell() {
     }
 
     // Handle shared report notifications
-    if (notification.metadata?.reportId) {
-      try {
-        const res = await apiRequest("GET", `/api/reports/shared/${notification.metadata.reportId}`);
-        const reportData = await res.json();
-        console.log("Shared report data:", reportData);
-        // In production, open the report in a modal or new tab
-      } catch (error) {
-        console.error("Failed to access shared report:", error);
-      }
-    }
+    // Note: Shared report functionality has been removed
   };
 
   const notificationsList = notifications?.notifications || [];

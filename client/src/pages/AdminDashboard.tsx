@@ -16,7 +16,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Progress } from "@/components/ui/progress";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
-import { exportToPDF, exportToExcel } from "@/lib/exportService";
 import {
   Users,
   School,
@@ -36,9 +35,7 @@ import {
   PieChart as PieChartIcon,
   Calendar,
   MapPin,
-  Award,
-  Download,
-} from "lucide-react";
+  Award} from "lucide-react";
 import { Link } from "wouter";
 
 interface SystemActivityItem {
@@ -52,8 +49,7 @@ const roleBadgeColors: Record<string, string> = {
   PO: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
   Headmaster: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300",
   ClassTeacher: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
-  MedicalTeam: "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300",
-};
+  MedicalTeam: "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300"};
 
 export default function AdminDashboard() {
   const [selectedSchoolId, setSelectedSchoolId] = useState<string>("all");
@@ -65,8 +61,7 @@ export default function AdminDashboard() {
     queryFn: async () => {
       const res = await apiRequest("GET", "/api/schools");
       return res.json();
-    },
-  });
+    }});
 
   const { data: dashboardData, isLoading } = useQuery({
     queryKey: ["/api/admin/dashboard", selectedSchoolId],
@@ -74,8 +69,7 @@ export default function AdminDashboard() {
       const url = selectedSchoolId !== "all" ? `/api/admin/dashboard?schoolId=${selectedSchoolId}` : "/api/admin/dashboard";
       const res = await apiRequest("GET", url);
       return res.json();
-    },
-  });
+    }});
 
   const metrics = dashboardData?.metrics || {
     totalUsers: 0,
@@ -85,11 +79,10 @@ export default function AdminDashboard() {
     totalHealthCards: 0,
     approvedHealthCards: 0,
     pendingHealthCards: 0,
-    vaccinationCoverage: 0,
+    healthCardCoverage: 0,
     healthScreeningRate: 0,
     dataCompleteness: 0,
-    systemUptime: 0,
-  };
+    systemUptime: 0};
 
   const recentUsers = dashboardData?.recentUsers || [];
   const usersByRole = dashboardData?.usersByRole || [];
@@ -99,12 +92,11 @@ export default function AdminDashboard() {
   // Enhanced metrics for ABDM-style dashboard
   const enhancedMetrics = {
     healthCardCompletion: metrics.totalHealthCards > 0 ? Math.round((metrics.approvedHealthCards / metrics.totalHealthCards) * 100) : 0,
-    vaccinationRate: metrics.vaccinationCoverage ?? 0,
+    healthCardRate: metrics.healthCardCoverage ?? 0,
     screeningRate: metrics.healthScreeningRate ?? 0,
     dataQuality: metrics.dataCompleteness ?? 0,
     activeUsersToday: systemActivity.reduce((sum: number, day: SystemActivityItem) => sum + day.logins, 0),
-    totalActionsToday: systemActivity.reduce((sum: number, day: SystemActivityItem) => sum + day.actions, 0),
-  };
+    totalActionsToday: systemActivity.reduce((sum: number, day: SystemActivityItem) => sum + day.actions, 0)};
 
   // Geographic distribution data - dynamically generated from schoolsData
   const geographicData = schoolsData?.schools?.reduce((acc: any[], school: any) => {
@@ -119,8 +111,7 @@ export default function AdminDashboard() {
         region: district,
         schools: 1,
         students: school.totalStudents || 0,
-        coverage: school.healthCardCompletion || 0,
-      });
+        coverage: school.healthCardCompletion || 0});
     }
     return acc;
   }, []) || [];
@@ -128,43 +119,7 @@ export default function AdminDashboard() {
   // Monthly trends data - should come from API
   const monthlyTrends = dashboardData?.monthlyTrends ?? [];
 
-  // Quick export helper for Admin: try client-side pretty PDF using JSON, fallback to server PDF
-  const handleAdminQuickExport = async () => {
-    try {
-      const token = localStorage.getItem('accessToken');
-      const res = await fetch('/api/admin/recent-users?format=json', { headers: { Accept: 'application/json', Authorization: `Bearer ${token}` } });
-      if (res.ok) {
-        const json = await res.json();
-        if (Array.isArray(json.users) && json.users.length > 0) {
-          const cols = Object.keys(json.users[0]).map((k) => ({ key: k, header: k }));
-          await exportToPDF(json.users as any, { columns: cols }, 'Admin');
-          return;
-        }
-      }
-    } catch (err) {
-      console.warn('Admin client-side export failed, will fallback to server PDF', err);
-    }
 
-    // Fallback to server-generated PDF
-    try {
-      const token = localStorage.getItem('accessToken');
-      const r = await fetch('/api/reports/recent-users?format=pdf', { headers: { Authorization: `Bearer ${token}` } });
-      if (r.ok) {
-        const blob = await r.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `recent-users.pdf`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        window.URL.revokeObjectURL(url);
-      }
-    } catch (err) {
-      console.error('Admin fallback export failed', err);
-      alert('Failed to export recent users');
-    }
-  };
 
   return (
     <AppLayout title="Admin Dashboard">
@@ -205,10 +160,6 @@ export default function AdminDashboard() {
                 Pending Schools
               </Button>
             </Link>
-            <Button variant="outline" onClick={handleAdminQuickExport}>
-              <Download className="h-4 w-4 mr-2" />
-              Export Recent Users
-            </Button>
           </div>
         </div>
 
@@ -257,8 +208,7 @@ export default function AdminDashboard() {
                   "hsl(142, 76%, 36%)",
                   "hsl(43, 74%, 49%)",
                   "hsl(350, 70%, 50%)",
-                  "hsl(120, 60%, 50%)",
-                ]}
+                  "hsl(120, 60%, 50%)"]}
                 doughnut
               />
             </ChartContainer>
@@ -278,16 +228,13 @@ export default function AdminDashboard() {
                   data: systemActivity.map((a: any) => a.logins),
                   borderColor: "hsl(210, 70%, 50%)",
                   backgroundColor: "hsla(210, 70%, 50%, 0.1)",
-                  fill: true,
-                },
+                  fill: true},
                 {
                   label: "System Actions",
                   data: systemActivity.map((a: any) => a.actions),
                   borderColor: "hsl(45, 93%, 47%)",
                   backgroundColor: "hsla(45, 93%, 47%, 0.1)",
-                  fill: true,
-                },
-              ]}
+                  fill: true}]}
             />
           </ChartContainer>
         </div>
@@ -342,8 +289,7 @@ export default function AdminDashboard() {
                         <p className="text-xs text-muted-foreground">{item.email}</p>
                       </div>
                     </div>
-                  ),
-                },
+                  )},
                 { key: "username", header: "Username" },
                 {
                   key: "role",
@@ -355,15 +301,13 @@ export default function AdminDashboard() {
                     >
                       {item.role}
                     </Badge>
-                  ),
-                },
+                  )},
                 {
                   key: "isActive",
                   header: "Status",
                   render: (item: any) => (
                     <StatusBadge status={item.isActive ? "Active" : "Inactive"} size="sm" />
-                  ),
-                },
+                  )},
                 {
                   key: "createdAt",
                   header: "Created",
@@ -371,35 +315,10 @@ export default function AdminDashboard() {
                     <span className="text-sm text-muted-foreground">
                       {new Date(item.createdAt).toLocaleDateString()}
                     </span>
-                  ),
-                },
-              ]}
+                  )}]}
               data={recentUsers}
               getRowKey={(item: any) => item.id}
               isLoading={isLoading}
-              exportable
-              onExport={(type) => {
-                if (!recentUsers || recentUsers.length === 0) return;
-                if (type === 'pdf') return exportToPDF(recentUsers as any, { includeNutrition: false, includeMedical: false }, 'Admin');
-                if (type === 'xlsx') return exportToExcel(recentUsers as any, { includeNutrition: false, includeMedical: false }, 'Admin');
-                // csv fallback
-                const exportData = recentUsers.map((u: any) => ({
-                  'Name': u.fullName,
-                  'Email': u.email,
-                  'Username': u.username,
-                  'Role': u.role,
-                  'Status': u.isActive ? 'Active' : 'Inactive',
-                }));
-                import('@/lib/csvExport').then(({ exportToCSV }) => {
-                  exportToCSV(exportData, [
-                    { key: 'Name', header: 'Name' },
-                    { key: 'Email', header: 'Email' },
-                    { key: 'Username', header: 'Username' },
-                    { key: 'Role', header: 'Role' },
-                    { key: 'Status', header: 'Status' },
-                  ], `recent-users-${new Date().toISOString().split('T')[0]}.csv`);
-                });
-              }}
               emptyMessage="No users found"
             />
           </div>

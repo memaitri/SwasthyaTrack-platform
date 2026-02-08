@@ -30,7 +30,6 @@ import MealOptionsPage from "@/pages/MealOptionsPage";
 import HostelAttendancePage from "@/pages/HostelAttendancePage";
 
 import PeriodTrackerPage from "@/pages/PeriodTrackerPage";
-import ReportsPage from "@/pages/ReportsPage";
 import UsersPage from "@/pages/UsersPage";
 import SchoolsPage from "@/pages/SchoolsPage";
 import ProfilePage from "@/pages/ProfilePage";
@@ -278,12 +277,6 @@ function Router() {
       <Route path="/hostel/check-in">
         <ProtectedRoute allowedRoles={["HostelWarden", "Admin", "ClassTeacher", "Headmaster", "Lady Superintendent", "MealSuperintendent"]}>
           <HostelAttendancePage />
-        </ProtectedRoute>
-      </Route>
-
-      <Route path="/reports">
-        <ProtectedRoute>
-          <ReportsPage />
         </ProtectedRoute>
       </Route>
 

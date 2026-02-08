@@ -15,8 +15,6 @@ import { UserPlus, Filter, FileHeart, Stethoscope, CheckCircle, Edit, Graduation
 import { Link, useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { exportToCSV } from "@/lib/csvExport";
-import { exportToPDF, exportToExcel } from "@/lib/exportService";
 import { AcademicStatusBadge } from "@/components/academic-actions/AcademicStatusBadge";
 import type { Student } from "@shared/schema";
 
@@ -34,7 +32,6 @@ export default function StudentsPage() {
   const [search, setSearch] = useState("");
   const [classFilter, setClassFilter] = useState("all");
   const [page, setPage] = useState(1);
-  const [exportFormat, setExportFormat] = useState("csv");
 
   // Class Teachers should not use classFilter - backend already filters by their assigned class
   const { data, isLoading } = useQuery({
@@ -129,16 +126,6 @@ export default function StudentsPage() {
               </SelectContent>
             </Select>
           )}
-          <Select value={exportFormat} onValueChange={setExportFormat}>
-            <SelectTrigger className="w-32">
-              <SelectValue placeholder="Export Format" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="csv">CSV</SelectItem>
-              <SelectItem value="pdf">PDF (with charts)</SelectItem>
-              <SelectItem value="excel">Excel (with charts)</SelectItem>
-            </SelectContent>
-          </Select>
         </div>
 
         <DataTable
@@ -282,31 +269,6 @@ export default function StudentsPage() {
           data={students}
           getRowKey={(item: any) => item.id}
           isLoading={isLoading}
-          exportable
-          onExport={async (type) => {
-            const fmt = type || exportFormat;
-            if (fmt === "csv") {
-              const studentsWithFormattedGender = students.map((student: any) => ({
-                ...student,
-                gender: formatGenderDisplay(student.gender)
-              }));
-              exportToCSV(
-                studentsWithFormattedGender,
-                [
-                  { key: "fullName", header: "Full Name" },
-                  { key: "uniqueId", header: "Unique ID" },
-                  { key: "classSection", header: "Class" },
-                  { key: "gender", header: "Gender" },
-                  { key: "dateOfBirth", header: "Date of Birth" },
-                ],
-                "students"
-              );
-            } else if (fmt === "pdf") {
-              exportToPDF(students as any, { includeNutrition: false, includeMedical: false }, user?.fullName || user?.email || '');
-            } else if (fmt === "xlsx") {
-              exportToExcel(students as any, { includeNutrition: false, includeMedical: false }, user?.fullName || user?.email || '');
-            }
-          }}
           pagination={{
             currentPage: page,
             totalPages,

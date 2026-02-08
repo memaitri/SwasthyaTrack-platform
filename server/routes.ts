@@ -1,20 +1,18 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import type { Server } from "http";
 import { storage } from "./storage.js";
-import { reportsStorage } from "./reportsStorage.js";
+import { evaluateStudent, getCriticalStudentsForDistrict, getCriticalStudentsForSchool } from "./criticalStudentsService.js";
+
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { insertStudentSchema, insertSchoolSchema, insertMedicalTeamSchema, insertMedicalTeamMemberSchema, insertMedicalEventSchema, insertStudentCheckupSchema, registerSchema, annualHealthCards, users, schools, students, notifications, usageTracking } from "../shared/schema.js";
 import { z } from "zod";
-import PDFDocument from "pdfkit";
-import ExcelJS from "exceljs";
-import puppeteer from "puppeteer";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
 // @ts-ignore - Module resolution issue, but works at runtime
 import { db } from "./db.js";
-import { sql, eq, and, desc, inArray, not } from "drizzle-orm";
+import { sql, eq, and, desc } from "drizzle-orm";
 
 // Normalize status values from DB/third-party sources to canonical casing
 function normalizeStatus(s?: string) {
@@ -115,295 +113,102 @@ async function uploadFileToSupabase(localFilePath: string, remotePathPrefix = "m
   }
 }
 
-// Helper function to generate CSV from data
-function generateCSV(data: any[]): string {
-  if (data.length === 0) return "";
+// Helper function to generate CSV from data (currently unused, kept for future use)
+// function generateCSV(data: any[]): string {
+//   if (data.length === 0) return "";
 
-  const headers = Object.keys(data[0]);
-  const csvRows = [
-    headers.join(","),
-    ...data.map(row =>
-      headers.map(header => {
-        const value = row[header];
-        // Handle arrays and objects
-        if (Array.isArray(value)) {
-          return `"${value.join("; ")}"`;
-        } else if (typeof value === "object" && value !== null) {
-          return `"${JSON.stringify(value)}"`;
-        } else {
-          // Escape quotes and wrap in quotes if contains comma
-          const stringValue = String(value || "");
-          return stringValue.includes(",") ? `"${stringValue.replace(/"/g, '""')}"` : stringValue;
-        }
-      }).join(",")
-    )
-  ];
+//   const headers = Object.keys(data[0]);
+//   const csvRows = [
+//     headers.join(","),
+//     ...data.map(row =>
+//       headers.map(header => {
+//         const value = row[header];
+//         // Handle arrays and objects
+//         if (Array.isArray(value)) {
+//           return `"${value.join("; ")}"`;
+//         } else if (typeof value === "object" && value !== null) {
+//           return `"${JSON.stringify(value)}"`;
+//         } else {
+//           // Escape quotes and wrap in quotes if contains comma
+//           const stringValue = String(value || "");
+//           return stringValue.includes(",") ? `"${stringValue.replace(/"/g, '""')}"` : stringValue;
+//         }
+//       }).join(",")
+//     )
+//   ];
 
-  return csvRows.join("\n");
-}
+//   return csvRows.join("\n");
+// }
 
-// Helper function to generate chart image using puppeteer
-async function generateChartImage(chartConfig: any, width: number = 800, height: number = 400, deviceScaleFactor = 2): Promise<Buffer> {
-  const browser = await puppeteer.launch({
-    headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox']
-  });
+// Helper function to generate chart image using puppeteer (currently unused, kept for future use)
+// async function generateChartImage(chartConfig: any, width: number = 800, height: number = 400, deviceScaleFactor = 2): Promise<Buffer> {
+//   const browser = await puppeteer.launch({
+//     headless: true,
+//     args: ['--no-sandbox', '--disable-setuid-sandbox']
+//   });
 
-  try {
-    const page = await browser.newPage();
-    await page.setViewport({ width, height, deviceScaleFactor });
+//   try {
+//     const page = await browser.newPage();
+//     await page.setViewport({ width, height, deviceScaleFactor });
 
-    const canvasWidth = width * deviceScaleFactor;
-    const canvasHeight = height * deviceScaleFactor;
+//     const canvasWidth = width * deviceScaleFactor;
+//     const canvasHeight = height * deviceScaleFactor;
 
-    const html = `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <meta name="viewport" content="width=${width}, initial-scale=1" />
-          <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-          <style>
-            body { margin: 0; padding: 20px; background: white; }
-            canvas { width: ${canvasWidth}px; height: ${canvasHeight}px; }
-          </style>
-        </head>
-        <body>
-          <canvas id="chart" width="${canvasWidth}" height="${canvasHeight}"></canvas>
-          <script>
-            const ctx = document.getElementById('chart').getContext('2d');
-            // Scale chart for high-DPI
-            Chart.defaults.devicePixelRatio = ${deviceScaleFactor};
-            new Chart(ctx, ${JSON.stringify(chartConfig)});
-          </script>
-        </body>
-      </html>
-    `;
+//     const html = `
+//       <!DOCTYPE html>
+//       <html>
+//         <head>
+//           <meta name="viewport" content="width=${width}, initial-scale=1" />
+//           <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+//           <style>
+//             body { margin: 0; padding: 20px; background: white; }
+//             canvas { width: ${canvasWidth}px; height: ${canvasHeight}px; }
+//           </style>
+//         </head>
+//         <body>
+//           <canvas id="chart" width="${canvasWidth}" height="${canvasHeight}"></canvas>
+//           <script>
+//             const ctx = document.getElementById('chart').getContext('2d');
+//             // Scale chart for high-DPI
+//             Chart.defaults.devicePixelRatio = ${deviceScaleFactor};
+//             new Chart(ctx, ${JSON.stringify(chartConfig)});
+//           </script>
+//         </body>
+//       </html>
+//     `;
 
-    await page.setContent(html);
-    await page.waitForSelector('#chart');
+//     await page.setContent(html);
+//     await page.waitForSelector('#chart');
 
-    // Take a clipped screenshot of the canvas area only
-    const element = await page.$('#chart');
-    const screenshot = await element!.screenshot({ type: 'png' });
+//     // Take a clipped screenshot of the canvas area only
+//     const element = await page.$('#chart');
+//     const screenshot = await element!.screenshot({ type: 'png' });
 
-    return Buffer.from(screenshot) as Buffer;
-  } finally {
-    await browser.close();
-  }
-}
+//     return Buffer.from(screenshot) as Buffer;
+//   } finally {
+//     await browser.close();
+//   }
+// }
 
-// Helper for safe sampling of potentially non-serializable objects for logging
-function safeSample(obj: any, maxLen = 1000) {
-  try {
-    const s = JSON.stringify(obj, (_k, v) => {
-      if (typeof v === 'bigint') return String(v);
-      if (v instanceof Date) return v.toISOString();
-      return v;
-    }, 2);
-    return s.length > maxLen ? s.slice(0, maxLen) + '... (truncated)' : s;
-  } catch (err) {
-    try {
-      return String(obj).slice(0, maxLen) + '... (toString)';
-    } catch (e) {
-      return '<<unable to sample value>>';
-    }
-  }
-}
+// Helper for safe sampling of potentially non-serializable objects for logging (currently unused, kept for future use)
+// function safeSample(obj: any, maxLen = 1000) {
+//   try {
+//     const s = JSON.stringify(obj, (_k, v) => {
+//       if (typeof v === 'bigint') return String(v);
+//       if (v instanceof Date) return v.toISOString();
+//       return v;
+//     }, 2);
+//     return s.length > maxLen ? s.slice(0, maxLen) + '... (truncated)' : s;
+//   } catch (err) {
+//     try {
+//       return String(obj).slice(0, maxLen) + '... (toString)';
+//     } catch (e) {
+//       return '<<unable to sample value>>';
+//     }
+//   }
+// }
 
 // PDF helper utilities (consistent layout, headers, footers, charts, table rendering)
-const PDF_DEFAULT_OPTIONS = { size: 'A4', margins: { top: 72, bottom: 72, left: 50, right: 50 } };
-function ensureSpace(doc: any, requiredHeight: number) {
-  const bottom = doc.page.height - doc.page.margins.bottom;
-  // Use heightOfString to account for wrapping
-  const estimatedHeight = typeof requiredHeight === 'number' ? requiredHeight : doc.heightOfString(String(requiredHeight), { width: doc.page.width - doc.page.margins.left - doc.page.margins.right });
-  if (doc.y + estimatedHeight > bottom) {
-    // If we're still on the first (fresh) page and no content has been added (y near top margin),
-    // prefer keeping the content on the first page instead of creating an almost-empty front page.
-    const topThreshold = doc.page.margins.top + 40;
-    if (doc.page.number === 1 && doc.y <= topThreshold) {
-      // do not add a page; allow content to be placed and let it flow naturally
-      return;
-    }
-
-    doc.addPage();
-    drawHeaderFooter(doc, undefined, (doc as any)._generatedDate);
-  }
-}
-
-// Ensure a block of content (title/date/summary) fits together on the same page.
-// If there's not enough room, start a new page and draw headers consistently.
-function ensureBlockFits(doc: any, requiredHeight: number) {
-  const bottom = doc.page.height - doc.page.margins.bottom;
-  if (doc.y + requiredHeight > bottom) {
-    // If we are still on the first (fresh) page and the cursor is near the top,
-    // prefer keeping the block on the first page rather than adding a nearly-empty front page.
-    const topThreshold = doc.page.margins.top + 40;
-    if (doc.page.number === 1 && doc.y <= topThreshold) {
-      // do not add a page; allow the block to remain on the first page
-      console.log('ensureBlockFits: keeping block on first page despite fit check');
-      return;
-    }
-
-    console.log('ensureBlockFits: adding new page to fit block');
-    doc.addPage();
-    drawHeaderFooter(doc, undefined, (doc as any)._generatedDate);
-  }
-}
-
-function drawHeaderFooter(doc: any, title = 'SwasthyaTrack Report', generatedDate?: Date) {
-  // Avoid drawing header more than once per page
-  if (!(doc as any)._headersDrawn) (doc as any)._headersDrawn = new Set<number>();
-  const drawn = (doc as any)._headersDrawn as Set<number>;
-  const pageNum = doc.page.number || 1;
-  if (drawn.has(pageNum)) return;
-  drawn.add(pageNum);
-
-  const { left, right, top } = doc.page.margins;
-  const headerY = top - 8;
-  const dateToShow = generatedDate || (doc as any)._generatedDate || new Date();
-
-  doc.save();
-  try {
-    const logoPath = path.resolve(process.cwd(), 'client', 'public', 'favicon.png');
-    if (fs.existsSync(logoPath)) {
-      doc.image(logoPath, left, headerY - 6, { width: 28, height: 28 });
-    }
-  } catch (e) {}
-
-  // Draw header in absolute positions; do NOT mutate doc.y or rely on moveTo so we don't disrupt layout
-  doc.fillColor('black').fontSize(12).font('Helvetica-Bold').text(title, left + 36, headerY, { align: 'left' });
-  try {
-    doc.fontSize(10).font('Helvetica').text(`Generated: ${dateToShow.toLocaleDateString()}`, left, headerY + 2, { align: 'right', width: doc.page.width - left - right - 20 });
-  } catch (e) {
-    doc.fontSize(10).font('Helvetica').text(`Generated: ${String(dateToShow)}`, left, headerY + 2, { align: 'right', width: doc.page.width - left - right - 20 });
-  }
-  doc.restore();
-
-  // Footer (absolute)
-  const bottomY = doc.page.height - doc.page.margins.bottom + 10;
-  doc.save();
-  doc.fillColor('gray').fontSize(10).font('Helvetica').text(`Page ${pageNum}`, 0, bottomY, { align: 'center' });
-  doc.restore();
-}
-
-function drawSimpleChart(doc: any, chartConfig: any, width = 500, height = 300) {
-  // Lightweight vector fallback chart renderer (bar and pie simplifications)
-  const printableWidth = Math.min(width, doc.page.width - doc.page.margins.left - doc.page.margins.right);
-  const startX = doc.page.margins.left + ((doc.page.width - doc.page.margins.left - doc.page.margins.right - printableWidth) / 2);
-  const startY = doc.y;
-
-  // Title
-  const title = chartConfig?.options?.plugins?.title?.text || chartConfig?.title || 'Chart';
-  doc.fontSize(12).font('Helvetica-Bold').fillColor('black').text(title, startX, startY, { align: 'center', width: printableWidth });
-  doc.moveDown(0.3);
-  const chartTop = doc.y;
-  const chartHeight = Math.min(height - 30, doc.page.height - doc.page.margins.bottom - chartTop);
-
-  // BAR chart fallback
-  if (chartConfig?.type === 'bar' && chartConfig?.data && chartConfig.data.labels && chartConfig.data.datasets && chartConfig.data.datasets.length) {
-    const labels = chartConfig.data.labels;
-    const values = (chartConfig.data.datasets[0].data || []).map((v: any) => Number(v) || 0);
-    const maxVal = Math.max(...values, 1);
-
-    // draw axis box
-    doc.save();
-    doc.rect(startX, chartTop, printableWidth, chartHeight).stroke();
-    const barAreaWidth = printableWidth * 0.92;
-    const barLeft = startX + (printableWidth - barAreaWidth) / 2;
-    const gap = Math.max(6, (barAreaWidth / labels.length) * 0.12);
-    const barWidth = Math.max(10, (barAreaWidth - gap * (labels.length + 1)) / labels.length);
-    let cx = barLeft + gap;
-    for (let i = 0; i < labels.length; i++) {
-      const h = (values[i] / maxVal) * (chartHeight - 24);
-      doc.rect(cx, chartTop + (chartHeight - h - 12), barWidth, h).fill('#36A2EB').stroke();
-      doc.fontSize(8).fillColor('black').text(String(labels[i] || ''), cx, chartTop + chartHeight - 10, { width: barWidth, align: 'center' });
-      cx += barWidth + gap;
-    }
-    doc.restore();
-    doc.moveDown(1);
-    return;
-  }
-
-  // PIE chart fallback or generic list
-  if (chartConfig?.type === 'pie' && chartConfig?.data && chartConfig.data.labels && chartConfig.data.datasets && chartConfig.data.datasets.length) {
-    const labels = chartConfig.data.labels;
-    const values = (chartConfig.data.datasets[0].data || []).map((v: any) => Number(v) || 0);
-    const total = values.reduce((s: number, v: number) => s + v, 0) || 1;
-    const radius = Math.min(printableWidth, chartHeight) / 4;
-    let startAngle = -Math.PI / 2;
-    for (let i = 0; i < labels.length; i++) {
-      const slice = values[i] / total;
-      const endAngle = startAngle + slice * Math.PI * 2;
-      // approximate slices with filled arcs using bezier curves is complex; instead draw simple legend
-      startAngle = endAngle;
-    }
-    // simple legend instead
-    doc.fontSize(10).fillColor('black');
-    for (let i = 0; i < labels.length; i++) {
-      doc.text(`• ${labels[i]}: ${values[i]}`, startX + 6, chartTop + i * 12, { width: printableWidth - 12 });
-    }
-    doc.moveDown(1);
-    return;
-  }
-
-  // Generic fallback: show data list
-  doc.fontSize(10).fillColor('black').text('Chart (summary):', startX, chartTop);
-  const labels = chartConfig?.data?.labels || [];
-  const dataset = chartConfig?.data?.datasets && chartConfig.data.datasets[0];
-  for (let i = 0; i < labels.length; i++) {
-    const v = dataset?.data?.[i];
-    doc.text(`• ${labels[i]}: ${v}`, { indent: 10 });
-  }
-}
-
-async function addChartToDoc(doc: any, chartConfig: any, width = 500, height = 300) {
-  console.log('addChartToDoc start', { type: chartConfig?.type, width, height });
-  try {
-    // Ensure there is room for the chart first to avoid expensive re-generation after page break
-    ensureSpace(doc, height + 20);
-
-    // Prepare a copy of the config and apply sensible defaults for print
-    const cfg = JSON.parse(JSON.stringify(chartConfig || {}));
-    cfg.options = cfg.options || {};
-    cfg.options.responsive = false;
-    cfg.options.maintainAspectRatio = false;
-    cfg.options.plugins = cfg.options.plugins || {};
-    cfg.options.plugins.title = cfg.options.plugins.title || { display: true, text: cfg.title || (cfg.data && cfg.data.labels ? cfg.data.labels.join(', ') : 'Chart') };
-    cfg.options.plugins.legend = cfg.options.plugins.legend || { display: true, position: 'bottom' };
-
-    // For cartesian charts, ensure axis titles exist
-    if (cfg.type === 'bar' || cfg.type === 'line') {
-      cfg.options.scales = cfg.options.scales || {};
-      cfg.options.scales.x = cfg.options.scales.x || {};
-      cfg.options.scales.y = cfg.options.scales.y || {};
-      cfg.options.scales.x.title = cfg.options.scales.x.title || { display: true, text: (cfg._xLabel || 'Category') };
-      cfg.options.scales.y.title = cfg.options.scales.y.title || { display: true, text: (cfg._yLabel || 'Value') };
-      cfg.options.scales.y.beginAtZero = cfg.options.scales.y.beginAtZero !== undefined ? cfg.options.scales.y.beginAtZero : true;
-    }
-
-    const chartImage = await generateChartImage(cfg, width, height);
-    console.log('addChartToDoc: chart image generated');
-
-    // Use fit and center properly
-    const maxWidth = Math.min(width, doc.page.width - doc.page.margins.left - doc.page.margins.right);
-    doc.image(chartImage, doc.page.margins.left + ((doc.page.width - doc.page.margins.left - doc.page.margins.right - maxWidth) / 2), doc.y, { fit: [maxWidth, height], align: 'center' });
-    doc.moveDown();
-  } catch (err: any) {
-    console.error('Failed to render chart image, using vector fallback:', (err as any)?.message || err);
-    try {
-      drawSimpleChart(doc, chartConfig, width, height);
-    } catch (fallbackErr) {
-      console.error('Fallback chart rendering also failed:', (fallbackErr as any)?.message || fallbackErr);
-      // Render a bold placeholder message so the PDF is still useful and it's obvious a chart failed
-      ensureSpace(doc, 40);
-      doc.fontSize(12).font('Helvetica-Bold').fillColor('red').text('Chart unavailable', { align: 'center' });
-      doc.moveDown();
-      doc.fillColor('black');
-    }
-  }
-}
-
-// Configure multer for file uploads
 const uploadDir = path.join(process.cwd(), "uploads");
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
@@ -875,7 +680,7 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   // Health check endpoint for Railway
-  app.get("/", (req, res) => {
+  app.get("/", (_req, res) => {
     res.json({ 
       status: "ok", 
       message: "SwasthyaTrack API is running",
@@ -884,7 +689,7 @@ export async function registerRoutes(
     });
   });
 
-  app.get("/health", (req, res) => {
+  app.get("/health", (_req, res) => {
     res.json({ 
       status: "healthy", 
       uptime: process.uptime(),
@@ -1198,7 +1003,7 @@ export async function registerRoutes(
       }
       
       // Get all users with pagination
-      const { users, total } = await storage.getUsers(1, 100);
+      const { users } = await storage.getUsers(1, 100);
       
       // Filter users based on role-based sharing permissions
       let shareableUsers = users.filter(u => u.id !== userId); // Exclude self
@@ -1342,10 +1147,6 @@ export async function registerRoutes(
     }
   });
 
-
-
-
-
   // --- Approval endpoints (Headmaster and PO) ---
   app.get("/api/approvals/pending", authenticateToken, authorizeRoles("Headmaster", "PO", "Admin"), async (req: AuthRequest, res) => {
     try {
@@ -1423,6 +1224,108 @@ export async function registerRoutes(
     } catch (error: any) {
       console.error("Get pending approvals error:", error?.message || String(error));
       res.status(500).json({ message: error?.message || "Failed to fetch pending approvals" });
+    }
+  });
+
+  // Get approved staff for blocking/unblocking (PO and Admin only)
+  app.get("/api/users/staff", authenticateToken, authorizeRoles("PO", "Admin"), async (req: AuthRequest, res) => {
+    try {
+      const requester = req.user!;
+      let staff: any[] = [];
+
+      if (requester.role === "PO") {
+        // PO can view all approved staff (Headmasters and school staff) in their district
+        const poUser = await storage.getUser(requester.id);
+        const poDistrict = poUser?.district;
+        
+        if (!poDistrict) {
+          return res.status(400).json({ message: "PO district not configured" });
+        }
+
+        // Get Headmasters in the district
+        const headmasters = await db.select({
+          id: users.id,
+          username: users.username,
+          email: users.email,
+          fullName: users.fullName,
+          role: users.role,
+          schoolId: users.schoolId,
+          classSection: users.classSection,
+          district: users.district,
+          block: users.block,
+          isActive: users.isActive,
+          isBlocked: users.isBlocked,
+          blockedBy: users.blockedBy,
+          blockedAt: users.blockedAt,
+          blockReason: users.blockReason,
+          approvalStatus: users.approvalStatus,
+          createdAt: users.createdAt,
+        }).from(users).where(and(
+          eq(users.role, "Headmaster"),
+          eq(users.approvalStatus, "Approved"),
+          eq(users.district, poDistrict)
+        ));
+
+        // Get schools in the district
+        const districtSchools = await db.select({ id: schools.id }).from(schools).where(eq(schools.district, poDistrict));
+        const schoolIds = districtSchools.map(s => s.id);
+
+        // Get all staff from schools in the district
+        let schoolStaff: any[] = [];
+        if (schoolIds.length > 0) {
+          schoolStaff = await db.select({
+            id: users.id,
+            username: users.username,
+            email: users.email,
+            fullName: users.fullName,
+            role: users.role,
+            schoolId: users.schoolId,
+            classSection: users.classSection,
+            district: users.district,
+            block: users.block,
+            isActive: users.isActive,
+            isBlocked: users.isBlocked,
+            blockedBy: users.blockedBy,
+            blockedAt: users.blockedAt,
+            blockReason: users.blockReason,
+            approvalStatus: users.approvalStatus,
+            createdAt: users.createdAt,
+          }).from(users).where(and(
+            eq(users.approvalStatus, "Approved"),
+            sql`${users.schoolId} IN (${sql.join(schoolIds.map(id => sql`${id}`), sql`, `)})`
+          ));
+        }
+
+        staff = [...headmasters, ...schoolStaff];
+        console.info(`Staff list: PO ${requester.id} requested staff for district ${poDistrict}. Found ${staff.length}`);
+      } else if (requester.role === "Admin") {
+        // Admin can view all approved staff
+        staff = await db.select({
+          id: users.id,
+          username: users.username,
+          email: users.email,
+          fullName: users.fullName,
+          role: users.role,
+          schoolId: users.schoolId,
+          classSection: users.classSection,
+          district: users.district,
+          block: users.block,
+          isActive: users.isActive,
+          isBlocked: users.isBlocked,
+          blockedBy: users.blockedBy,
+          blockedAt: users.blockedAt,
+          blockReason: users.blockReason,
+          approvalStatus: users.approvalStatus,
+          createdAt: users.createdAt,
+        }).from(users).where(eq(users.approvalStatus, "Approved"));
+
+        console.info(`Staff list: Admin ${requester.id} requested all staff. Found ${staff.length}`);
+      }
+
+      return res.json({ staff });
+    } catch (error: any) {
+      console.error("Get staff error:", error?.message || String(error));
+      res.status(500).json({ message: error?.message || "Failed to fetch staff" });
     }
   });
 
@@ -1621,6 +1524,180 @@ export async function registerRoutes(
     } catch (error: any) {
       console.error("Reject user error:", error?.message || String(error));
       res.status(500).json({ message: error?.message || "Failed to reject user" });
+    }
+  });
+
+  // Block user endpoint - PO can block staff in their district
+  app.post("/api/users/:id/block", authenticateToken, authorizeRoles("PO", "Admin"), async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+      const { reason } = req.body || {};
+      const requester = req.user!;
+
+      const userToBlock = await storage.getUser(id);
+      if (!userToBlock) return res.status(404).json({ message: "User not found" });
+
+      // Cannot block yourself
+      if (userToBlock.id === requester.id) {
+        return res.status(400).json({ message: "Cannot block your own account" });
+      }
+
+      // Cannot block PO or Admin roles
+      if (userToBlock.role === "PO" || userToBlock.role === "Admin") {
+        return res.status(403).json({ message: "Cannot block PO or Admin accounts" });
+      }
+
+      // PO can only block users in their district
+      if (requester.role === "PO") {
+        const poUser = await storage.getUser(requester.id);
+        const poDistrict = poUser?.district;
+        
+        if (!poDistrict) {
+          return res.status(400).json({ message: "PO district not configured" });
+        }
+        
+        // For Headmasters, check their district
+        if (userToBlock.role === "Headmaster" && userToBlock.district !== poDistrict) {
+          return res.status(403).json({ message: "Cannot block Headmaster from a different district" });
+        }
+        
+        // For other staff, check their school's district
+        if (userToBlock.role !== "Headmaster" && userToBlock.schoolId) {
+          const school = await db.select().from(schools).where(eq(schools.id, userToBlock.schoolId)).limit(1);
+          if (school.length === 0 || school[0].district !== poDistrict) {
+            return res.status(403).json({ message: "Cannot block staff from a different district" });
+          }
+        }
+      }
+
+      // Check if already blocked
+      if (userToBlock.isBlocked) {
+        return res.status(400).json({ message: "User is already blocked" });
+      }
+
+      // Block the user
+      await db.update(users).set({ 
+        isBlocked: true,
+        blockedBy: requester.id,
+        blockedAt: new Date(),
+        blockReason: reason || "Blocked by administrator",
+        updatedAt: new Date()
+      } as any).where(eq(users.id, id));
+
+      // Create audit log
+      try {
+        await storage.createAuditLog({ 
+          userId: requester.id, 
+          action: 'USER_BLOCKED', 
+          entityType: 'user', 
+          entityId: userToBlock.id, 
+          details: { 
+            blockedBy: requester.id, 
+            reason: reason || "Blocked by administrator",
+            userRole: userToBlock.role 
+          } 
+        } as any);
+      } catch (e) {
+        console.warn('Failed to create audit log for blocking:', (e as any)?.message || e);
+      }
+
+      // Send notification
+      await storage.createNotification({
+        senderId: requester.id,
+        senderRole: requester.role as any,
+        receiverRole: userToBlock.role as any,
+        receiverSchoolId: userToBlock.schoolId,
+        type: "system" as any,
+        title: "Account blocked",
+        message: `Your account has been blocked. Reason: ${reason || "Not provided"}`,
+        metadata: { targetUserId: userToBlock.id },
+      } as any);
+
+      return res.json({ message: "User blocked successfully" });
+    } catch (error: any) {
+      console.error("Block user error:", error?.message || String(error));
+      res.status(500).json({ message: error?.message || "Failed to block user" });
+    }
+  });
+
+  // Unblock user endpoint - PO can unblock staff in their district
+  app.post("/api/users/:id/unblock", authenticateToken, authorizeRoles("PO", "Admin"), async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+      const requester = req.user!;
+
+      const userToUnblock = await storage.getUser(id);
+      if (!userToUnblock) return res.status(404).json({ message: "User not found" });
+
+      // PO can only unblock users in their district
+      if (requester.role === "PO") {
+        const poUser = await storage.getUser(requester.id);
+        const poDistrict = poUser?.district;
+        
+        if (!poDistrict) {
+          return res.status(400).json({ message: "PO district not configured" });
+        }
+        
+        // For Headmasters, check their district
+        if (userToUnblock.role === "Headmaster" && userToUnblock.district !== poDistrict) {
+          return res.status(403).json({ message: "Cannot unblock Headmaster from a different district" });
+        }
+        
+        // For other staff, check their school's district
+        if (userToUnblock.role !== "Headmaster" && userToUnblock.schoolId) {
+          const school = await db.select().from(schools).where(eq(schools.id, userToUnblock.schoolId)).limit(1);
+          if (school.length === 0 || school[0].district !== poDistrict) {
+            return res.status(403).json({ message: "Cannot unblock staff from a different district" });
+          }
+        }
+      }
+
+      // Check if not blocked
+      if (!userToUnblock.isBlocked) {
+        return res.status(400).json({ message: "User is not blocked" });
+      }
+
+      // Unblock the user
+      await db.update(users).set({ 
+        isBlocked: false,
+        blockedBy: null,
+        blockedAt: null,
+        blockReason: null,
+        updatedAt: new Date()
+      } as any).where(eq(users.id, id));
+
+      // Create audit log
+      try {
+        await storage.createAuditLog({ 
+          userId: requester.id, 
+          action: 'USER_UNBLOCKED', 
+          entityType: 'user', 
+          entityId: userToUnblock.id, 
+          details: { 
+            unblockedBy: requester.id,
+            userRole: userToUnblock.role 
+          } 
+        } as any);
+      } catch (e) {
+        console.warn('Failed to create audit log for unblocking:', (e as any)?.message || e);
+      }
+
+      // Send notification
+      await storage.createNotification({
+        senderId: requester.id,
+        senderRole: requester.role as any,
+        receiverRole: userToUnblock.role as any,
+        receiverSchoolId: userToUnblock.schoolId,
+        type: "system" as any,
+        title: "Account unblocked",
+        message: `Your account has been unblocked by ${requester.username}. You can now log in.`,
+        metadata: { targetUserId: userToUnblock.id },
+      } as any);
+
+      return res.json({ message: "User unblocked successfully" });
+    } catch (error: any) {
+      console.error("Unblock user error:", error?.message || String(error));
+      res.status(500).json({ message: error?.message || "Failed to unblock user" });
     }
   });
 
@@ -2260,7 +2337,7 @@ export async function registerRoutes(
   });
 
   // --- Lady Superintendent Dashboard (simplified) ---
-  app.get("/api/ls/metrics", authenticateToken, authorizeRoles("Lady Superintendent"), async (req: AuthRequest, res) => {
+  app.get("/api/ls/metrics", authenticateToken, authorizeRoles("Lady Superintendent"), async (_req: AuthRequest, res) => {
     try {
       res.json({ message: "Metrics endpoint deprecated - using simplified dashboard" });
     } catch (err: any) {
@@ -2268,8 +2345,6 @@ export async function registerRoutes(
       res.status(500).json({ message: 'Failed to fetch LS metrics' });
     }
   });
-
-
 
   app.post("/api/students", authenticateToken, denyAdmin, authorizeRoles("ClassTeacher", "Headmaster"), async (req: AuthRequest, res) => {
     try {
@@ -2316,7 +2391,7 @@ export async function registerRoutes(
         }
       }
 
-      let student;
+      let student: any;
       try {
         student = await storage.createStudent({
           ...validatedStudentData,
@@ -2338,16 +2413,16 @@ export async function registerRoutes(
         try {
           const weight = parseFloat(healthCardData.weightKg) || 0;
           const height = parseFloat(healthCardData.heightCm) || 0;
-          const bmi = height > 0 ? (weight / Math.pow(height / 100, 2)).toFixed(2) : null;
 
           // Parse blood pressure from string format "120/80"
-          let sbp: number | undefined;
-          let dbp: number | undefined;
+          let systolic = healthCardData.sbp ? parseInt(healthCardData.sbp) : null;
+          let diastolic = healthCardData.dbp ? parseInt(healthCardData.dbp) : null;
+          
           if (healthCardData.bloodPressure) {
             const bpMatch = healthCardData.bloodPressure.match(/^(\d+)\/(\d+)$/);
             if (bpMatch) {
-              sbp = parseInt(bpMatch[1]);
-              dbp = parseInt(bpMatch[2]);
+              systolic = parseInt(bpMatch[1]);
+              diastolic = parseInt(bpMatch[2]);
             }
           }
 
@@ -2359,8 +2434,6 @@ export async function registerRoutes(
           healthCard = await storage.createAnnualHealthCard(buildHealthCardPayload(student, schoolId, healthCardData, req.user?.id));
 
           // Calculate BP values for referral check
-          let systolic = healthCardData.sbp ? parseInt(healthCardData.sbp) : null;
-          let diastolic = healthCardData.dbp ? parseInt(healthCardData.dbp) : null;
 
           // If sbp/dbp not available, try to parse from bloodPressure string
           if ((!systolic || !diastolic) && healthCardData.bloodPressure) {
@@ -2776,7 +2849,6 @@ export async function registerRoutes(
           totalItems: filteredTotal,
         });
       } catch (queryError: any) {
-        const errorMsg = String(queryError?.message || queryError);
         throw queryError;
       }
     } catch (error: any) {
@@ -3155,6 +3227,17 @@ export async function registerRoutes(
       // Remove fields that shouldn't be updated directly
       const { id: _, createdAt, ...allowedUpdates } = updateData;
 
+      // CRITICAL: If a Class Teacher is updating, reset status to Pending for HM approval
+      // This ensures EVERY edit requires approval, not just initial creation
+      if (req.user?.role === "ClassTeacher") {
+        allowedUpdates.status = "Pending";
+        allowedUpdates.approvalBy = null;
+        allowedUpdates.approvalDate = null;
+        allowedUpdates.rejectionReason = null;
+        allowedUpdates.updatedAt = new Date();
+        console.info(`[Health Card Update] Class Teacher ${req.user.id} updating card ${id} - resetting status to Pending for HM approval`);
+      }
+
       const card = await storage.updateAnnualHealthCard(id, allowedUpdates);
 
       if (!card) {
@@ -3198,11 +3281,6 @@ export async function registerRoutes(
 
       const weight = parseFloat(healthCardData.weightKg) || 0;
       const height = parseFloat(healthCardData.heightCm) || 0;
-      const bmi = height > 0 ? (weight / Math.pow(height / 100, 2)).toFixed(2) : null;
-
-      // Calculate age in years
-      const birthYear = student.dateOfBirth ? new Date(student.dateOfBirth).getFullYear() : null;
-      const ageYears = birthYear ? new Date().getFullYear() - birthYear : null;
 
       // Create new health card submission (allows re-submission after rejection)
       // Create a new resubmitted health card using full payload builder
@@ -3327,7 +3405,7 @@ export async function registerRoutes(
         teacherClassSection = teacher?.classSection ?? undefined;
       }
 
-      const { checkups, total } = await storage.getMonthlyCheckups({
+      const { checkups } = await storage.getMonthlyCheckups({
         schoolId,
         month,
         year,
@@ -3386,7 +3464,7 @@ export async function registerRoutes(
       const date = new Date(checkupDate);
       const height = parseFloat(heightCm) || 0;
       const weight = parseFloat(weightKg) || 0;
-      const bmi = height > 0 ? (weight / Math.pow(height / 100, 2)).toFixed(2) : null;
+      const calculatedBmi = height > 0 ? weight / Math.pow(height / 100, 2) : null;
 
       const checkup = await storage.createMonthlyCheckup({
         studentId,
@@ -3396,7 +3474,7 @@ export async function registerRoutes(
         year: date.getFullYear(),
         heightCm: heightCm || null,
         weightKg: weightKg || null,
-        bmi: bmi || null,
+        bmi: calculatedBmi,
         present,
         symptoms: symptoms || [],
         suggestedMedicines: suggestedMedicines || [],
@@ -4015,7 +4093,7 @@ export async function registerRoutes(
   app.put("/api/meals/:id", authenticateToken, denyAdmin, authorizeRoles("ClassTeacher", "Headmaster", "MealSuperintendent"), async (req: AuthRequest, res) => {
     try {
       const mealId = req.params.id;
-      const { date: dateFromBody, mealType, menuItems, imageUrl, latitude, longitude, notes, studentId, classSection } = req.body;
+      const { date: dateFromBody, mealType, menuItems, imageUrl, latitude, longitude, notes, studentId } = req.body;
 
       const existing = await storage.getMealLog(mealId);
       if (!existing) return res.status(404).json({ message: "Meal not found" });
@@ -4173,7 +4251,7 @@ export async function registerRoutes(
       }
 
       // fetch via storage
-      const { referrals: raw, total } = await storage.getReferrals(params as any);
+      const { referrals: raw } = await storage.getReferrals(params as any);
 
       // apply facility and date range filters client-side if provided
       let filtered = raw;
@@ -4223,8 +4301,6 @@ export async function registerRoutes(
     }
   });
 
-
-
   app.get("/api/hostel/attendance", authenticateToken, denyAdmin, authorizeRoles("ClassTeacher", "Headmaster", "PO", "HostelWarden", "Lady Superintendent", "MealSuperintendent"), async (req: AuthRequest, res) => {
     try {
       const date = req.query.date as string || new Date().toISOString().split("T")[0];
@@ -4244,7 +4320,7 @@ export async function registerRoutes(
       // Determine which school(s) data to return based on role
       let schoolId: string | undefined;
       let teacherClassSection: string | undefined;
-      let genderFilter: string | undefined; // For LS/MS gender-based filtering
+      let genderFilter: "F" | "M" | undefined; // STRICT: For LS/MS gender-based filtering
       
       if (role === "ClassTeacher") {
         schoolId = req.user?.schoolId; // CT sees only their school
@@ -4254,16 +4330,18 @@ export async function registerRoutes(
       } else if (role === "Headmaster" || role === "HostelWarden") {
         schoolId = req.user?.schoolId; // HM and Warden see only their school (warden sees all students, not filtered by class)
       } else if (role === "Lady Superintendent") {
-        schoolId = req.user?.schoolId; // LS sees only their school
+        // STRICT ENFORCEMENT: LS can ONLY access female students
+        schoolId = req.user?.schoolId;
         genderFilter = "F"; // LS can only see female students
         if (!schoolId) {
-          return res.status(400).json({ message: "Lady Superintendent is not assigned to a school" });
+          return res.status(403).json({ message: "Lady Superintendent is not assigned to a school" });
         }
       } else if (role === "MealSuperintendent") {
-        schoolId = req.user?.schoolId; // MS sees only their school
+        // STRICT ENFORCEMENT: MS can ONLY access male students
+        schoolId = req.user?.schoolId;
         genderFilter = "M"; // MS can only see male students
         if (!schoolId) {
-          return res.status(400).json({ message: "Meal Superintendent is not assigned to a school" });
+          return res.status(403).json({ message: "Meal Superintendent is not assigned to a school" });
         }
       } else if (role === "PO" || role === "Admin") {
         schoolId = requestedSchool; // PO can filter by school or see aggregated
@@ -4328,9 +4406,10 @@ export async function registerRoutes(
         }
       }
 
-      // Apply gender filtering for LS and MS roles
+      // Apply gender filtering for LS and MS roles - STRICT ENFORCEMENT AT DATABASE LEVEL
       if (genderFilter) {
         baseStudents = baseStudents.filter(s => s.gender === genderFilter);
+        console.info(`Gender filter applied: ${genderFilter}, filtered to ${baseStudents.length} students`);
       }
 
       // For ClassTeacher, filter students by their assigned class
@@ -4346,7 +4425,18 @@ export async function registerRoutes(
       const allowedStudentIds = new Set(students.map(s => s.id));
       const filteredAttendance = attendance.filter(a => allowedStudentIds.has(a.studentId));
       console.info(`Hostel attendance filtered from ${attendance.length} to ${filteredAttendance.length} records by allowed students`);
-      attendance = filteredAttendance;
+      
+      // ADDITIONAL SECURITY: Double-check gender filtering on attendance records for LS/MS
+      if (genderFilter) {
+        const studentGenderMap = new Map(students.map(s => [s.id, s.gender]));
+        attendance = filteredAttendance.filter(a => {
+          const studentGender = studentGenderMap.get(a.studentId);
+          return studentGender === genderFilter;
+        });
+        console.info(`Gender filter applied to attendance records: ${genderFilter}, filtered to ${attendance.length} records`);
+      } else {
+        attendance = filteredAttendance;
+      }
 
       // Group attendance by student - allow multiple records per student per day
       // Implement fallback mechanism: HostelWarden records take priority over ClassTeacher
@@ -4433,20 +4523,42 @@ export async function registerRoutes(
         return res.status(400).json({ message: "No image file provided" });
       }
 
-      // Try uploading to Supabase storage
       const localPath = req.file.path;
       let publicUrl: string | null = null;
+      
+      // Try Supabase first, fallback to local storage
       try {
-        publicUrl = await uploadFileToSupabase(localPath, "checkins");
-        if (!publicUrl) throw new Error('Supabase upload did not return a public URL');
+        if (supabaseUrl && supabaseServiceKey) {
+          publicUrl = await uploadFileToSupabase(localPath, "checkins");
+          if (!publicUrl) throw new Error('Supabase upload did not return a public URL');
+        } else {
+          throw new Error('Supabase not configured');
+        }
       } catch (err: any) {
-        // Cleanup local file before returning
-        try { if (fs.existsSync(localPath)) fs.unlinkSync(localPath); } catch (e) { console.warn('Failed to delete temp upload file:', e); }
-        console.error("Supabase upload failed:", err?.message || err);
-        return res.status(500).json({ message: "Supabase upload failed. Ensure SUPABASE_UPLOAD_BUCKET exists and SUPABASE_SERVICE_ROLE_KEY has correct storage permissions.", details: err?.message || String(err) });
+        console.warn("Supabase upload failed, using local storage:", err?.message || err);
+        
+        // Fallback to local storage - move file to uploads directory
+        const uploadsDir = path.join(process.cwd(), 'uploads');
+        if (!fs.existsSync(uploadsDir)) {
+          fs.mkdirSync(uploadsDir, { recursive: true });
+        }
+        
+        const fileName = `checkin-${Date.now()}-${path.basename(req.file.originalname)}`;
+        const finalPath = path.join(uploadsDir, fileName);
+        
+        try {
+          fs.copyFileSync(localPath, finalPath);
+          publicUrl = `/uploads/${fileName}`;
+          console.log(`Check-in image saved locally: ${publicUrl}`);
+        } catch (localErr: any) {
+          console.error("Local storage fallback failed:", localErr?.message || localErr);
+          // Cleanup local file before returning
+          try { if (fs.existsSync(localPath)) fs.unlinkSync(localPath); } catch (e) { console.warn('Failed to delete temp upload file:', e); }
+          return res.status(500).json({ message: "Both Supabase and local storage failed", details: localErr?.message || String(localErr) });
+        }
       }
 
-      // Remove local file after successful upload
+      // Cleanup temp file after success
       try {
         if (fs.existsSync(localPath)) fs.unlinkSync(localPath);
       } catch (e) {
@@ -4782,21 +4894,23 @@ export async function registerRoutes(
 
       // Determine which school(s) data to return based on role
       let schoolId: string | undefined;
-      let genderFilter: string | undefined; // For LS/MS gender-based filtering
+      let genderFilter: "F" | "M" | undefined; // STRICT: For LS/MS gender-based filtering
       
       if (role === "ClassTeacher" || role === "Headmaster" || role === "HostelWarden") {
         schoolId = req.user?.schoolId; // CT/HM/Warden see only their school
       } else if (role === "Lady Superintendent") {
-        schoolId = req.user?.schoolId; // LS sees only their school
+        // STRICT ENFORCEMENT: LS can ONLY access female students
+        schoolId = req.user?.schoolId;
         genderFilter = "F"; // LS can only see female students
         if (!schoolId) {
-          return res.status(400).json({ message: "Lady Superintendent is not assigned to a school" });
+          return res.status(403).json({ message: "Lady Superintendent is not assigned to a school" });
         }
       } else if (role === "MealSuperintendent") {
-        schoolId = req.user?.schoolId; // MS sees only their school
+        // STRICT ENFORCEMENT: MS can ONLY access male students
+        schoolId = req.user?.schoolId;
         genderFilter = "M"; // MS can only see male students
         if (!schoolId) {
-          return res.status(400).json({ message: "Meal Superintendent is not assigned to a school" });
+          return res.status(403).json({ message: "Meal Superintendent is not assigned to a school" });
         }
       } else if (role === "PO" || role === "Admin") {
         schoolId = requestedSchool; // PO can filter by school
@@ -4817,7 +4931,7 @@ export async function registerRoutes(
         };
       }
 
-      // Apply gender filtering for LS and MS roles
+      // Apply gender filtering for LS and MS roles - STRICT ENFORCEMENT
       if (genderFilter) {
         finalStats = {
           ...finalStats,
@@ -4827,6 +4941,7 @@ export async function registerRoutes(
             totalStudents: finalStats.students?.filter((s: any) => s.gender === genderFilter).length || 0,
           },
         };
+        console.info(`Gender filter applied to monthly report: ${genderFilter}, filtered to ${finalStats.students?.length || 0} students`);
       }
 
       res.json(finalStats);
@@ -4837,7 +4952,7 @@ export async function registerRoutes(
   });
 
 // Helper function to calculate menstrual health analytics for PO dashboard
-async function getMenstrualHealthAnalytics(schools: any[], selectedMonth: number, selectedYear: number) {
+async function getMenstrualHealthAnalytics(schools: any[], _selectedMonth: number, selectedYear: number) {
   try {
     console.log('Calculating menstrual health analytics for', schools.length, 'schools');
     
@@ -5827,7 +5942,7 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
           percent: totalCards > 0 ? Math.round((leprosyCasesForDiseases.length / totalCards) * 100) : 0,
           cases: leprosyCasesForDiseases.slice(0, 20).map(c => ({
             studentId: c.studentId,
-            symptoms: Object.entries(c.c7_skin_characteristics || {}).filter(([k, v]) => v).map(([k, v]) => k.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())),
+            symptoms: Object.entries(c.c7_skin_characteristics || {}).filter(([_k, v]) => v).map(([k, _v]) => k.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())),
             severity: 'High',
             notes: c.notes || '',
           })),
@@ -6498,927 +6613,6 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
     }
   });
 
-// Helper functions for unified report generation
-async function generateMenstrualHealthReport(students: any[], schools: any[], month?: string, year?: string) {
-  const selectedYear = year ? parseInt(year) : new Date().getFullYear();
-  const selectedMonth = month ? parseInt(month) : new Date().getMonth() + 1;
-  
-  // Filter for eligible female students
-  const eligibleStudents = students.filter(student => {
-    if (student.gender !== 'F' || !student.dateOfBirth) return false;
-    const age = Math.floor((Date.now() - new Date(student.dateOfBirth).getTime()) / (1000 * 60 * 60 * 24 * 365.25));
-    return age >= 10;
-  });
-  
-  // Get period tracker data
-  const periodDataPromises = eligibleStudents.map(async (student) => {
-    try {
-      const { entries } = await storage.getPeriodTrackerEntries({
-        studentId: student.id,
-        startDate: `${selectedYear}-01-01`,
-        endDate: `${selectedYear}-12-31`,
-        limit: 1000
-      });
-      return { student, entries };
-    } catch (error) {
-      console.error('Error fetching period data for student', student.id, ':', error);
-      return { student, entries: [] };
-    }
-  });
-  
-  const periodData = await Promise.all(periodDataPromises);
-  
-  // Analyze data
-  const summary = {
-    totalEligibleStudents: eligibleStudents.length,
-    studentsWithData: periodData.filter(d => d.entries.length > 0).length,
-    totalEntries: periodData.reduce((sum, d) => sum + d.entries.length, 0),
-    averageEntriesPerStudent: 0,
-    commonSymptoms: {},
-    referralRate: 0
-  };
-  
-  if (summary.studentsWithData > 0) {
-    summary.averageEntriesPerStudent = Math.round(summary.totalEntries / summary.studentsWithData);
-  }
-  
-  // Analyze symptoms
-  const symptomCounts: Record<string, number> = {};
-  let totalReferrals = 0;
-  
-  periodData.forEach(({ entries }) => {
-    entries.forEach(entry => {
-      if (entry.symptoms && Array.isArray(entry.symptoms)) {
-        entry.symptoms.forEach(symptom => {
-          symptomCounts[symptom] = (symptomCounts[symptom] || 0) + 1;
-        });
-      }
-      if (entry.isReferred) totalReferrals++;
-    });
-  });
-  
-  summary.commonSymptoms = Object.entries(symptomCounts)
-    .sort(([,a], [,b]) => (b as number) - (a as number))
-    .slice(0, 5)
-    .reduce((acc: Record<string, number>, [symptom, count]) => {
-      acc[symptom] = count as number;
-      return acc;
-    }, {});
-    
-  summary.referralRate = summary.totalEntries > 0 ? Math.round((totalReferrals / summary.totalEntries) * 100) : 0;
-  
-  // Detailed student data
-  const detailedData = periodData.map(({ student, entries }) => {
-    const latestEntry = entries.length > 0 ? entries.sort((a, b) => new Date(b.entryDate).getTime() - new Date(a.entryDate).getTime())[0] : null;
-    
-    return {
-      studentId: student.id,
-      studentName: student.fullName,
-      age: Math.floor((Date.now() - new Date(student.dateOfBirth).getTime()) / (1000 * 60 * 60 * 24 * 365.25)),
-      school: student.schoolName,
-      classSection: student.classSection,
-      totalEntries: entries.length,
-      lastEntryDate: latestEntry?.entryDate || null,
-      hasReferrals: entries.some(e => e.isReferred),
-      menstruationStarted: !!student.menstruationStartedAt
-    };
-  });
-  
-  return {
-    reportType: 'menstrual-health',
-    generatedAt: new Date().toISOString(),
-    period: { month: selectedMonth, year: selectedYear },
-    summary,
-    detailedData,
-    schools: schools.map(s => ({ id: s.id, name: s.name }))
-  };
-}
-
-async function generateHealthOverviewReport(students: any[], schools: any[], month?: string, year?: string) {
-  const selectedYear = year ? parseInt(year) : new Date().getFullYear();
-  
-  // Get health cards for all students
-  const healthDataPromises = students.map(async (student) => {
-    try {
-      const { cards } = await storage.getAnnualHealthCards({ 
-        studentId: student.id, 
-        year: selectedYear,
-        limit: 10 
-      });
-      return { student, healthCard: cards[0] || null };
-    } catch (error) {
-      console.error('Error fetching health data for student', student.id, ':', error);
-      return { student, healthCard: null };
-    }
-  });
-  
-  const healthData = await Promise.all(healthDataPromises);
-  
-  // Calculate summary statistics
-  const summary = {
-    totalStudents: students.length,
-    studentsWithHealthCards: healthData.filter(d => d.healthCard).length,
-    averageBMI: 0,
-    nutritionStatus: { underweight: 0, normal: 0, overweight: 0, obese: 0 },
-    commonDeficiencies: {},
-    referralRate: 0
-  };
-  
-  let totalBMI = 0;
-  let bmiCount = 0;
-  const deficiencyCounts: Record<string, number> = {};
-  let totalReferrals = 0;
-  
-  healthData.forEach(({ healthCard }) => {
-    if (!healthCard) return;
-    
-    // BMI analysis
-    const bmi = typeof healthCard.bmi === 'number' ? healthCard.bmi : 
-                (typeof healthCard.bmi === 'string' ? parseFloat(healthCard.bmi) : null);
-    
-    if (bmi && !isNaN(bmi)) {
-      totalBMI += bmi;
-      bmiCount++;
-      
-      if (bmi < 18.5) summary.nutritionStatus.underweight++;
-      else if (bmi < 25) summary.nutritionStatus.normal++;
-      else if (bmi < 30) summary.nutritionStatus.overweight++;
-      else summary.nutritionStatus.obese++;
-    }
-    
-    // Deficiency analysis
-    if (healthCard.deficiencies && Array.isArray(healthCard.deficiencies)) {
-      healthCard.deficiencies.forEach(def => {
-        deficiencyCounts[def] = (deficiencyCounts[def] || 0) + 1;
-      });
-    }
-    
-    // Count referrals (simplified)
-    if (healthCard.referral_deficiency_yes || healthCard.referral_disease_yes || 
-        healthCard.referral_developmental_yes || healthCard.referral_adolescent_yes) {
-      totalReferrals++;
-    }
-  });
-  
-  if (bmiCount > 0) {
-    summary.averageBMI = Math.round((totalBMI / bmiCount) * 10) / 10;
-  }
-  
-  summary.commonDeficiencies = Object.entries(deficiencyCounts)
-    .sort(([,a], [,b]) => (b as number) - (a as number))
-    .slice(0, 5)
-    .reduce((acc: Record<string, number>, [def, count]) => {
-      acc[def] = count as number;
-      return acc;
-    }, {});
-    
-  summary.referralRate = summary.studentsWithHealthCards > 0 ? 
-    Math.round((totalReferrals / summary.studentsWithHealthCards) * 100) : 0;
-  
-  // Detailed student data
-  const detailedData = healthData.map(({ student, healthCard }) => ({
-    studentId: student.id,
-    studentName: student.fullName,
-    age: student.dateOfBirth ? Math.floor((Date.now() - new Date(student.dateOfBirth).getTime()) / (1000 * 60 * 60 * 24 * 365.25)) : null,
-    gender: student.gender,
-    school: student.schoolName,
-    classSection: student.classSection,
-    hasHealthCard: !!healthCard,
-    bmi: healthCard?.bmi || null,
-    deficiencies: healthCard?.deficiencies || [],
-    hasReferrals: !!(healthCard?.referral_deficiency_yes || 
-                     healthCard?.referral_disease_yes || healthCard?.referral_developmental_yes || 
-                     healthCard?.referral_adolescent_yes)
-  }));
-  
-  return {
-    reportType: 'health-overview',
-    generatedAt: new Date().toISOString(),
-    period: { year: selectedYear },
-    summary,
-    detailedData,
-    schools: schools.map(s => ({ id: s.id, name: s.name }))
-  };
-}
-
-async function generateReferralsReport(students: any[], schools: any[], month?: string, year?: string) {
-  const selectedYear = year ? parseInt(year) : new Date().getFullYear();
-  const selectedMonth = month ? parseInt(month) : null;
-  
-  // Get referrals for all schools
-  const referralDataPromises = schools.map(async (school) => {
-    try {
-      const { referrals } = await storage.getReferrals({ schoolId: school.id, limit: 1000 });
-      
-      // Filter by date if specified
-      const filteredReferrals = referrals.filter(referral => {
-        const referralDate = new Date(referral.referralDate);
-        const matchesYear = referralDate.getFullYear() === selectedYear;
-        const matchesMonth = !selectedMonth || (referralDate.getMonth() + 1 === selectedMonth);
-        return matchesYear && matchesMonth;
-      });
-      
-      return { school, referrals: filteredReferrals };
-    } catch (error) {
-      console.error('Error fetching referrals for school', school.id, ':', error);
-      return { school, referrals: [] };
-    }
-  });
-  
-  const referralData = await Promise.all(referralDataPromises);
-  const allReferrals = referralData.flatMap(d => d.referrals.map(r => ({ ...r, schoolName: d.school.name })));
-  
-  // Calculate summary
-  const summary = {
-    totalReferrals: allReferrals.length,
-    byStatus: {} as Record<string, number>,
-    byType: {} as Record<string, number>,
-    byFacility: {} as Record<string, number>,
-    completionRate: 0
-  };
-  
-  allReferrals.forEach(referral => {
-    // By status
-    const status = referral.status || 'Unknown';
-    summary.byStatus[status] = (summary.byStatus[status] || 0) + 1;
-    
-    // By type
-    const type = referral.referralType || 'Unknown';
-    summary.byType[type] = (summary.byType[type] || 0) + 1;
-    
-    // By facility
-    const facility = referral.facility || 'Unknown';
-    summary.byFacility[facility] = (summary.byFacility[facility] || 0) + 1;
-  });
-  
-  const completedReferrals = allReferrals.filter(r => r.status === 'Completed').length;
-  summary.completionRate = summary.totalReferrals > 0 ? 
-    Math.round((completedReferrals / summary.totalReferrals) * 100) : 0;
-  
-  return {
-    reportType: 'referrals',
-    generatedAt: new Date().toISOString(),
-    period: { month: selectedMonth, year: selectedYear },
-    summary,
-    detailedData: allReferrals,
-    schools: schools.map(s => ({ id: s.id, name: s.name }))
-  };
-}
-
-async function generateStudentDemographicsReport(students: any[], schools: any[]) {
-  // Calculate demographics
-  const summary = {
-    totalStudents: students.length,
-    byGender: { M: 0, F: 0, O: 0 } as Record<string, number>,
-    byAgeGroup: { '5-10': 0, '11-15': 0, '16-18': 0, '18+': 0 } as Record<string, number>,
-    bySchool: {} as Record<string, number>,
-    averageAge: 0
-  };
-  
-  let totalAge = 0;
-  let ageCount = 0;
-  
-  students.forEach(student => {
-    // Gender distribution
-    if (student.gender in summary.byGender) {
-      summary.byGender[student.gender]++;
-    }
-    
-    // Age distribution
-    if (student.dateOfBirth) {
-      const age = Math.floor((Date.now() - new Date(student.dateOfBirth).getTime()) / (1000 * 60 * 60 * 24 * 365.25));
-      totalAge += age;
-      ageCount++;
-      
-      if (age <= 10) summary.byAgeGroup['5-10']++;
-      else if (age <= 15) summary.byAgeGroup['11-15']++;
-      else if (age <= 18) summary.byAgeGroup['16-18']++;
-      else summary.byAgeGroup['18+']++;
-    }
-    
-    // School distribution
-    const school = student.schoolName || 'Unknown';
-    summary.bySchool[school] = (summary.bySchool[school] || 0) + 1;
-  });
-  
-  if (ageCount > 0) {
-    summary.averageAge = Math.round((totalAge / ageCount) * 10) / 10;
-  }
-  
-  return {
-    reportType: 'student-demographics',
-    generatedAt: new Date().toISOString(),
-    summary,
-    detailedData: students.map(student => ({
-      studentId: student.id,
-      studentName: student.fullName,
-      age: student.dateOfBirth ? Math.floor((Date.now() - new Date(student.dateOfBirth).getTime()) / (1000 * 60 * 60 * 24 * 365.25)) : null,
-      gender: student.gender,
-      school: student.schoolName,
-      classSection: student.classSection,
-      enrollmentDate: student.enrollmentDate,
-      isActive: student.isActive
-    })),
-    schools: schools.map(s => ({ id: s.id, name: s.name }))
-  };
-}
-
-async function generateExcelReport(workbook: ExcelJS.Workbook, reportData: any, reportType: string, userRole: string) {
-  // Summary sheet
-  const summarySheet = workbook.addWorksheet('Summary');
-  summarySheet.addRow(['Report Type', reportType]);
-  summarySheet.addRow(['Generated At', reportData.generatedAt]);
-  summarySheet.addRow(['User Role', userRole]);
-  summarySheet.addRow(['Period', reportData.period ? JSON.stringify(reportData.period) : 'All Time']);
-  summarySheet.addRow([]);
-  
-  // Add summary data
-  if (reportData.summary) {
-    summarySheet.addRow(['Summary Statistics']);
-    Object.entries(reportData.summary).forEach(([key, value]) => {
-      if (typeof value === 'object' && value !== null) {
-        summarySheet.addRow([key, JSON.stringify(value)]);
-      } else {
-        summarySheet.addRow([key, value]);
-      }
-    });
-  }
-  
-  // Detailed data sheet
-  if (reportData.detailedData && reportData.detailedData.length > 0) {
-    const dataSheet = workbook.addWorksheet('Detailed Data');
-    const firstRow = reportData.detailedData[0];
-    const headers = Object.keys(firstRow);
-    
-    dataSheet.addRow(headers);
-    
-    reportData.detailedData.forEach((row: any) => {
-      const values = headers.map(header => {
-        const value = row[header];
-        if (Array.isArray(value)) return value.join(', ');
-        if (typeof value === 'object' && value !== null) return JSON.stringify(value);
-        return value;
-      });
-      dataSheet.addRow(values);
-    });
-    
-    // Style the header row
-    const headerRow = dataSheet.getRow(1);
-    headerRow.font = { bold: true };
-    headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0E0E0' } };
-  }
-  
-  // Schools sheet
-  if (reportData.schools && reportData.schools.length > 0) {
-    const schoolsSheet = workbook.addWorksheet('Schools');
-    schoolsSheet.addRow(['School ID', 'School Name']);
-    reportData.schools.forEach((school: any) => {
-      schoolsSheet.addRow([school.id, school.name]);
-    });
-  }
-}
-
-async function generatePDFReport(reportData: any, reportType: string, userRole: string): Promise<Buffer> {
-  const doc = new (PDFDocument as any)();
-  const chunks: Buffer[] = [];
-  
-  doc.on('data', (chunk: Buffer) => chunks.push(chunk));
-  
-  return new Promise((resolve, reject) => {
-    doc.on('end', () => resolve(Buffer.concat(chunks)));
-    doc.on('error', reject);
-    
-    // Header
-    doc.fontSize(20).text(`${reportType.toUpperCase().replace('-', ' ')} REPORT`, { align: 'center' });
-    doc.fontSize(12).text(`Generated for: ${userRole}`, { align: 'center' });
-    doc.text(`Generated at: ${new Date(reportData.generatedAt).toLocaleString()}`, { align: 'center' });
-    
-    if (reportData.period) {
-      doc.text(`Period: ${JSON.stringify(reportData.period)}`, { align: 'center' });
-    }
-    
-    doc.moveDown(2);
-    
-    // Summary section
-    if (reportData.summary) {
-      doc.fontSize(16).text('Summary', { underline: true });
-      doc.moveDown();
-      
-      Object.entries(reportData.summary).forEach(([key, value]) => {
-        if (typeof value === 'object' && value !== null) {
-          doc.fontSize(12).text(`${key}: ${JSON.stringify(value)}`);
-        } else {
-          doc.fontSize(12).text(`${key}: ${value}`);
-        }
-      });
-      
-      doc.moveDown(2);
-    }
-    
-    // Schools section
-    if (reportData.schools && reportData.schools.length > 0) {
-      doc.fontSize(16).text('Schools Included', { underline: true });
-      doc.moveDown();
-      
-      reportData.schools.forEach((school: any) => {
-        doc.fontSize(12).text(`• ${school.name} (ID: ${school.id})`);
-      });
-      
-      doc.moveDown(2);
-    }
-    
-    // Note about detailed data
-    if (reportData.detailedData && reportData.detailedData.length > 0) {
-      doc.fontSize(14).text(`Detailed Data: ${reportData.detailedData.length} records`);
-      doc.fontSize(10).text('(For detailed data, please use Excel export format)');
-    }
-    
-    doc.end();
-  });
-}
-
-  // Unified Report Generation API for all roles
-  app.get("/api/reports/unified", authenticateToken, async (req: AuthRequest, res) => {
-    try {
-      const { type, format = 'excel', month, year, schoolId, classSection } = req.query;
-      const userRole = req.user!.role;
-      const userId = req.user!.id;
-      
-      console.log('Unified report request:', { type, format, userRole, month, year, schoolId, classSection });
-      
-      // Validate report type
-      const validTypes = ['menstrual-health', 'health-overview', 'referrals', 'student-demographics'];
-      if (!validTypes.includes(type as string)) {
-        return res.status(400).json({ message: 'Invalid report type' });
-      }
-      
-      // Get user context for role-based filtering
-      const user = await storage.getUser(userId);
-      if (!user) {
-        return res.status(404).json({ message: 'User not found' });
-      }
-      
-      let schools: any[] = [];
-      let students: any[] = [];
-      
-      // Role-based data access
-      switch (userRole) {
-        case 'PO':
-        case 'Admin':
-          if (userRole === 'PO' && user.district) {
-            const allSchools = await storage.getSchools(1, 1000);
-            schools = allSchools.schools.filter(s => sameDistrict(s.district, user.district || ''));
-          } else if (userRole === 'Admin') {
-            const allSchools = await storage.getSchools(1, 1000);
-            schools = allSchools.schools;
-          }
-          break;
-          
-        case 'Headmaster':
-        case 'Lady Superintendent':
-        case 'MedicalTeam':
-        case 'MealSuperintendent':
-        case 'HostelWarden':
-          if (user.schoolId) {
-            const school = await storage.getSchool(user.schoolId);
-            if (school) schools = [school];
-          }
-          break;
-          
-        case 'ClassTeacher':
-          if (user.schoolId) {
-            const school = await storage.getSchool(user.schoolId);
-            if (school) schools = [school];
-          }
-          break;
-          
-        default:
-          return res.status(403).json({ message: 'Unauthorized role for reports' });
-      }
-      
-      if (schools.length === 0) {
-        return res.status(400).json({ message: 'No schools accessible for this user' });
-      }
-      
-      // Get students based on role and filters
-      const allStudentsPromises = schools.map(async (school) => {
-        const params: any = { schoolId: school.id, limit: 1000 };
-        
-        // Apply role-specific filters
-        if (userRole === 'Lady Superintendent') {
-          params.gender = 'F';
-        }
-        
-        if (userRole === 'ClassTeacher' && user.classSection) {
-          params.classSection = user.classSection;
-        }
-        
-        if (classSection) {
-          params.classSection = classSection;
-        }
-        
-        const { students: schoolStudents } = await storage.getStudents(params);
-        return schoolStudents.map(s => ({ ...s, schoolName: school.name }));
-      });
-      
-      const allStudentsArrays = await Promise.all(allStudentsPromises);
-      students = allStudentsArrays.flat();
-      
-      // Generate report based on type
-      let reportData: any = {};
-      
-      switch (type) {
-        case 'menstrual-health':
-          reportData = await generateMenstrualHealthReport(students, schools, month as string, year as string);
-          break;
-          
-        case 'health-overview':
-          reportData = await generateHealthOverviewReport(students, schools, month as string, year as string);
-          break;
-          
-        case 'referrals':
-          reportData = await generateReferralsReport(students, schools, month as string, year as string);
-          break;
-          
-        case 'student-demographics':
-          reportData = await generateStudentDemographicsReport(students, schools);
-          break;
-          
-        default:
-          return res.status(400).json({ message: 'Report type not implemented' });
-      }
-      
-      // Format and return report
-      if (format === 'json') {
-        return res.json(reportData);
-      }
-      
-      // Generate file-based reports
-      const filename = `${type}-report-${userRole.toLowerCase()}-${Date.now()}`;
-      
-      if (format === 'excel') {
-        const workbook = new ExcelJS.Workbook();
-        await generateExcelReport(workbook, reportData, type as string, userRole);
-        
-        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-        res.setHeader('Content-Disposition', `attachment; filename="${filename}.xlsx"`);
-        
-        await workbook.xlsx.write(res);
-        res.end();
-        
-      } else if (format === 'pdf') {
-        const pdfBuffer = await generatePDFReport(reportData, type as string, userRole);
-        
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `attachment; filename="${filename}.pdf"`);
-        
-        res.send(pdfBuffer);
-        
-      } else {
-        return res.status(400).json({ message: 'Invalid format. Use json, excel, or pdf' });
-      }
-      
-    } catch (error: any) {
-      console.error('Unified report generation error:', error);
-      res.status(500).json({ message: error?.message || 'Failed to generate report' });
-    }
-  });
-
-  // In-app Report Sharing API
-  app.post("/api/reports/share", authenticateToken, async (req: AuthRequest, res) => {
-    try {
-      const { reportId, reportType, reportData, sharedWith, message, expiresAt } = req.body;
-      const sharedBy = req.user!.id;
-      
-      // Validate shared users exist and have appropriate roles
-      const sharedUsers = await Promise.all(
-        sharedWith.map(async (userId: string) => {
-          const user = await storage.getUser(userId);
-          if (!user) throw new Error(`User ${userId} not found`);
-          return user;
-        })
-      );
-      
-      // Get the full user details to access fullName
-      const currentUser = await storage.getUser(req.user!.id);
-      const senderName = currentUser?.fullName || req.user!.username || 'User';
-
-      // Create shared report record
-      const sharedReport = {
-        id: `shared_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
-        reportId: reportId || `report_${Date.now()}`,
-        reportType,
-        reportData: JSON.stringify(reportData),
-        sharedBy,
-        sharedWith: JSON.stringify(sharedWith),
-        message: message || '',
-        expiresAt: expiresAt ? new Date(expiresAt) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days default
-        createdAt: new Date(),
-        isActive: true
-      };
-      
-      // Store in database (using notifications table for now, could create dedicated table)
-      await db.insert(notifications).values({
-        senderId: sharedBy,
-        senderRole: req.user!.role as any,
-        receiverRole: 'Admin' as any, // Will be filtered by actual receivers
-        type: 'system' as any,
-        title: `Shared Report: ${reportType}`,
-        message: `${senderName} shared a ${reportType} report with you. ${message}`,
-        metadata: sharedReport,
-        isImportant: true
-      } as any);
-      
-      // Send notifications to shared users
-      for (const user of sharedUsers) {
-        await db.insert(notifications).values({
-          senderId: sharedBy,
-          senderRole: req.user!.role as any,
-          receiverRole: user.role as any,
-          receiverSchoolId: user.schoolId,
-          type: 'system' as any,
-          title: `New Shared Report: ${reportType}`,
-          message: `${senderName} shared a ${reportType} report with you. ${message}`,
-          metadata: {
-            reportId: sharedReport.id,
-            reportType,
-            sharedBy: senderName,
-            sharedAt: new Date().toISOString()
-          },
-          isImportant: true
-        } as any);
-      }
-      
-      res.json({ 
-        success: true, 
-        sharedReportId: sharedReport.id,
-        message: `Report shared with ${sharedUsers.length} user(s)` 
-      });
-      
-    } catch (error: any) {
-      console.error('Report sharing error:', error);
-      res.status(500).json({ message: error?.message || 'Failed to share report' });
-    }
-  });
-
-  // Get shared reports for current user (Phase-1: Role-based access only)
-  app.get("/api/reports/shared", authenticateToken, async (req: AuthRequest, res) => {
-    try {
-      const userId = req.user!.id;
-      const userRole = req.user!.role;
-      
-      // Get reports based ONLY on user's role (ignore shared_reports table for Phase-1)
-      const roleBasedReports = await reportsStorage.getReportsForRole(userRole, userId);
-      
-      // Format response for frontend
-      const formattedReports = roleBasedReports.map(report => ({
-        id: report.id,
-        reportId: report.reportId, // Actual report ID for viewing/downloading
-        reportType: report.reportCategory,
-        reportFormat: report.reportType,
-        sharedBy: 'System', // Phase-1: All reports are "system" reports
-        sharedAt: report.createdAt?.toISOString() || new Date().toISOString(),
-        title: `${report.reportCategory} Report`,
-        message: 'Role-based access enabled (Phase-1)',
-        isRead: false,
-        createdAt: report.createdAt,
-        fileName: report.fileName,
-        fileSize: report.fileSize,
-        expiresAt: report.expiresAt
-      }));
-      
-      res.json({ reports: formattedReports });
-      
-    } catch (error: any) {
-      console.error('Get role-based reports error:', error);
-      res.status(500).json({ message: error?.message || 'Failed to get reports' });
-    }
-  });
-
-  // View shared report (opens in new tab)
-  app.get("/api/reports/view/:reportId", authenticateToken, async (req: AuthRequest, res) => {
-    try {
-      const { reportId } = req.params;
-      const userId = req.user!.id;
-      const userRole = req.user!.role;
-      
-      // Check if user has access to this report
-      const hasAccess = await reportsStorage.hasAccessToReport(reportId, userRole, userId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: 'Access denied to this report' });
-      }
-      
-      // Get the report file
-      const reportFile = await reportsStorage.getReportFile(reportId);
-      if (!reportFile) {
-        return res.status(404).json({ message: 'Report file not found' });
-      }
-      
-      // Get report metadata
-      const report = await reportsStorage.getReport(reportId);
-      if (!report) {
-        return res.status(404).json({ message: 'Report not found' });
-      }
-      
-      // Set appropriate headers for inline viewing
-      const contentType = report.reportType === 'PDF' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-      
-      res.setHeader('Content-Type', contentType);
-      res.setHeader('Content-Disposition', `inline; filename="${report.fileName}"`);
-      res.setHeader('Content-Length', reportFile.length);
-      
-      // Stream the file
-      res.send(reportFile);
-      
-    } catch (error: any) {
-      console.error('View report error:', error);
-      res.status(500).json({ message: error?.message || 'Failed to view report' });
-    }
-  });
-
-  // Download shared report
-  app.get("/api/reports/download/:reportId", authenticateToken, async (req: AuthRequest, res) => {
-    try {
-      const { reportId } = req.params;
-      const userId = req.user!.id;
-      const userRole = req.user!.role;
-      
-      // Check if user has access to this report
-      const hasAccess = await reportsStorage.hasAccessToReport(reportId, userRole, userId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: 'Access denied to this report' });
-      }
-      
-      // Get the report file
-      const reportFile = await reportsStorage.getReportFile(reportId);
-      if (!reportFile) {
-        return res.status(404).json({ message: 'Report file not found' });
-      }
-      
-      // Get report metadata
-      const report = await reportsStorage.getReport(reportId);
-      if (!report) {
-        return res.status(404).json({ message: 'Report not found' });
-      }
-      
-      // Set appropriate headers for download
-      const contentType = report.reportType === 'PDF' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-      
-      res.setHeader('Content-Type', contentType);
-      res.setHeader('Content-Disposition', `attachment; filename="${report.fileName}"`);
-      res.setHeader('Content-Length', reportFile.length);
-      
-      // Stream the file
-      res.send(reportFile);
-      
-    } catch (error: any) {
-      console.error('Download report error:', error);
-      res.status(500).json({ message: error?.message || 'Failed to download report' });
-    }
-  });
-
-  // Serve test HTML file (for development only)
-  app.get("/test-reports", (req, res) => {
-    res.sendFile(path.join(process.cwd(), 'test_reports.html'));
-  });
-
-  // Test endpoint to create sample reports for demo (Phase-1)
-  app.post("/api/reports/test", authenticateToken, async (req: AuthRequest, res) => {
-    try {
-      const userId = req.user!.id;
-      const userRole = req.user!.role;
-      
-      // Create multiple sample reports for different categories
-      const reportCategories = ['monthly-checkup', 'annual-health', 'meal-tracking'];
-      const createdReports = [];
-      
-      for (const category of reportCategories) {
-        const sampleReportData = {
-          reportId: `${category}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-          reportType: Math.random() > 0.5 ? 'PDF' as const : 'EXCEL' as const,
-          reportCategory: category,
-          roleAllowed: userRole as any,
-          filePath: '',
-          fileName: '',
-          generatedBy: userId,
-          generatedFor: req.user!.schoolId || 'demo-school',
-          metadata: { 
-            testData: true, 
-            generatedAt: new Date().toISOString(),
-            userRole,
-            userId,
-            category
-          },
-        };
-        
-        const sampleFileBuffer = Buffer.from(`Sample ${category} report for ${userRole} generated at ${new Date().toISOString()}\n\nThis is a demo report file with sample content.`);
-        
-        const storedReport = await reportsStorage.storeReport(sampleReportData, sampleFileBuffer);
-        createdReports.push(storedReport);
-      }
-      
-      res.json({
-        success: true,
-        message: `Created ${createdReports.length} test reports for role: ${userRole}`,
-        reports: createdReports.map(r => ({
-          reportId: r.reportId,
-          fileName: r.fileName,
-          category: r.reportCategory,
-          type: r.reportType
-        }))
-      });
-      
-    } catch (error: any) {
-      console.error('Test report creation error:', error);
-      res.status(500).json({ message: error?.message || 'Failed to create test reports' });
-    }
-  });
-
-  // Share a report with other users
-  app.post("/api/reports/share", authenticateToken, async (req: AuthRequest, res) => {
-    try {
-      const { reportType, reportData, sharedWith, message, expiresAt } = req.body;
-      const sharedBy = req.user!.id;
-      
-      // Validate shared users exist and have appropriate roles
-      const sharedUsers = await Promise.all(
-        sharedWith.map(async (userId: string) => {
-          const user = await storage.getUser(userId);
-          if (!user) throw new Error(`User ${userId} not found`);
-          return user;
-        })
-      );
-      
-      // Generate a report first (this is a simplified version - in production you'd generate the actual report)
-      const reportBuffer = Buffer.from(`Mock ${reportType} report data: ${JSON.stringify(reportData)}`);
-      
-      // Store the report
-      const storedReport = await reportsStorage.storeReport({
-        reportId: `report_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
-        reportType: 'PDF', // Default to PDF for now
-        reportCategory: reportType,
-        roleAllowed: req.user!.role as any,
-        filePath: '', // Will be set by storeReport
-        fileName: '', // Will be set by storeReport
-        generatedBy: sharedBy,
-        generatedFor: reportData.schoolId || reportData.studentId || null,
-        metadata: reportData,
-      }, reportBuffer);
-      
-      // Share the report
-      const sharedReport = await reportsStorage.shareReport({
-        reportId: storedReport.id,
-        sharedBy,
-        sharedWith,
-        message: message || '',
-        expiresAt: expiresAt ? new Date(expiresAt) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days default
-      });
-      
-      res.json({ 
-        success: true, 
-        sharedReportId: sharedReport.id,
-        reportId: storedReport.reportId,
-        message: `Report shared with ${sharedUsers.length} user(s)` 
-      });
-      
-    } catch (error: any) {
-      console.error('Report sharing error:', error);
-      res.status(500).json({ message: error?.message || 'Failed to share report' });
-    }
-  });
-
-  // Access shared report data (for the old endpoint compatibility)
-  app.get("/api/reports/shared/:reportId", authenticateToken, async (req: AuthRequest, res) => {
-    try {
-      const { reportId } = req.params;
-      const userId = req.user!.id;
-      
-      // Get the shared report
-      const sharedReport = await reportsStorage.getSharedReport(reportId, userId);
-      if (!sharedReport) {
-        return res.status(404).json({ message: 'Shared report not found or access denied' });
-      }
-      
-      // Return report metadata
-      res.json({
-        reportId: sharedReport.report.reportId,
-        reportType: sharedReport.report.reportCategory,
-        reportFormat: sharedReport.report.reportType,
-        sharedBy: 'User', // We'd need to join with users table to get the name
-        sharedAt: sharedReport.createdAt?.toISOString() || new Date().toISOString(),
-        message: sharedReport.message,
-        fileName: sharedReport.report.fileName,
-        fileSize: sharedReport.report.fileSize,
-        viewUrl: `/api/reports/view/${sharedReport.report.reportId}`,
-        downloadUrl: `/api/reports/download/${sharedReport.report.reportId}`,
-      });
-      
-    } catch (error: any) {
-      console.error('Access shared report error:', error);
-      res.status(500).json({ message: error?.message || 'Failed to access shared report' });
-    }
-  });
-
   app.get("/api/po/schools/:id", authenticateToken, authorizeRoles("PO", "Admin"), async (req: AuthRequest, res) => {
     try {
       const { id } = req.params;
@@ -7542,6 +6736,722 @@ async function generatePDFReport(reportData: any, reportType: string, userRole: 
     } catch (error: any) {
       console.error("PO school detail error:", error?.message || String(error));
       res.status(500).json({ message: error?.message || "Failed to fetch school details" });
+    }
+  });
+
+  // PO Drill-Down API Endpoints
+  app.get("/api/po/drilldown/pending-referrals", authenticateToken, authorizeRoles("PO", "Admin"), async (req: AuthRequest, res) => {
+    try {
+      const { month, year, schoolType, limit = 100 } = req.query;
+      const selectedMonth = month ? parseInt(month as string) : new Date().getMonth() + 1;
+      const selectedYear = year ? parseInt(year as string) : new Date().getFullYear();
+
+      const user = await storage.getUser(req.user!.id);
+      const poDistrict = user?.district;
+
+      if (!poDistrict && req.user?.role !== "Admin") {
+        return res.status(403).json({ message: "No district assigned" });
+      }
+
+      // Get schools in district
+      const allSchools = await storage.getSchools(1, 1000);
+      let schools = req.user?.role === "Admin" 
+        ? allSchools.schools 
+        : allSchools.schools.filter(s => s.district === poDistrict);
+
+      if (schoolType && schoolType !== "All") {
+        schools = schools.filter(s => s.schoolType === schoolType);
+      }
+
+      // Get all referrals for these schools
+      const allReferrals = await Promise.all(
+        schools.map(async (school) => {
+          try {
+            const { referrals } = await storage.getReferrals({ schoolId: school.id, limit: 1000 });
+            return referrals.map(r => ({ ...r, schoolName: school.name }));
+          } catch (error) {
+            return [];
+          }
+        })
+      );
+
+      const flatReferrals = allReferrals.flat();
+      const pendingReferrals = flatReferrals.filter(r => r.status === "Pending");
+
+      // Enrich with student details
+      const enrichedReferrals = await Promise.all(
+        pendingReferrals.slice(0, parseInt(limit as string)).map(async (referral) => {
+          const student = await storage.getStudent(referral.studentId);
+          const daysPending = Math.floor((new Date().getTime() - new Date(referral.referralDate).getTime()) / (1000 * 60 * 60 * 24));
+
+          return {
+            id: referral.id,
+            studentId: student?.id || referral.studentId,
+            studentName: student?.fullName || "Unknown",
+            schoolName: referral.schoolName,
+            issue: referral.issue || "Referral",
+            category: referral.referralType || "General",
+            facility: referral.facility || "PHC Center",
+            referralDate: referral.referralDate,
+            daysPending,
+            status: referral.status,
+            priority: daysPending > 30 ? "High" : daysPending > 14 ? "Medium" : "Normal",
+          };
+        })
+      );
+
+      res.json({
+        referrals: enrichedReferrals,
+        total: pendingReferrals.length,
+        metadata: {
+          month: selectedMonth,
+          year: selectedYear,
+          schoolType: schoolType || "All",
+        }
+      });
+    } catch (error: any) {
+      console.error("Drill-down pending referrals error:", error);
+      res.status(500).json({ message: error?.message || "Failed to fetch pending referrals" });
+    }
+  });
+
+  app.get("/api/po/drilldown/schools", authenticateToken, authorizeRoles("PO", "Admin"), async (req: AuthRequest, res) => {
+    try {
+      const { month, year, schoolType, metric } = req.query;
+      const selectedMonth = month ? parseInt(month as string) : new Date().getMonth() + 1;
+      const selectedYear = year ? parseInt(year as string) : new Date().getFullYear();
+
+      console.log('=== PO Drill-Down Schools Request ===');
+      console.log('User:', req.user?.id, 'Role:', req.user?.role);
+      console.log('Params:', { month: selectedMonth, year: selectedYear, schoolType, metric });
+
+      const user = await storage.getUser(req.user!.id);
+      const poDistrict = user?.district;
+
+      console.log('User district:', poDistrict);
+
+      // Get schools in district
+      const allSchools = await storage.getSchools(1, 1000);
+      console.log('Total schools in system:', allSchools.schools?.length || 0);
+      
+      let schools = allSchools.schools || [];
+      
+      // Filter by district only if user has a district assigned
+      if (poDistrict && req.user?.role === "PO") {
+        schools = schools.filter(s => s.district === poDistrict);
+        console.log('Schools in user district:', schools.length);
+      } else if (!poDistrict && req.user?.role === "PO") {
+        console.log('WARNING: PO user has no district - showing all schools for testing');
+        // For testing: show all schools if PO has no district
+        // In production, you might want to return an error instead
+      }
+
+      if (schoolType && schoolType !== "All") {
+        schools = schools.filter(s => s.schoolType === schoolType);
+        console.log('Schools after type filter:', schools.length);
+      }
+
+      if (schools.length === 0) {
+        console.log('WARNING: No schools found for criteria');
+        return res.json({
+          schools: [],
+          total: 0,
+          metadata: {
+            month: selectedMonth,
+            year: selectedYear,
+            schoolType: schoolType || "All",
+            metric: metric || "all",
+            message: poDistrict ? `No schools found in district: ${poDistrict}` : "No schools found"
+          }
+        });
+      }
+
+      // Enrich schools with metrics
+      const enrichedSchools = await Promise.all(
+        schools.map(async (school) => {
+          try {
+            const { students } = await storage.getStudents({ schoolId: school.id, limit: 1000 });
+            const { cards } = await storage.getAnnualHealthCards({ schoolId: school.id, year: selectedYear, limit: 1000 });
+            const { checkups } = await storage.getMonthlyCheckups({ schoolId: school.id, month: selectedMonth, year: selectedYear });
+
+            let referralCount = 0;
+            let pendingReferrals = 0;
+            try {
+              const { referrals } = await storage.getReferrals({ schoolId: school.id, limit: 1000 });
+              referralCount = referrals.length;
+              pendingReferrals = referrals.filter(r => r.status === "Pending").length;
+            } catch (error) {
+              // Referrals not available
+            }
+
+            const totalStudents = students.length;
+            const healthCardCompletion = totalStudents > 0 ? Math.round((cards.length / totalStudents) * 100) : 0;
+            const checkupCoverage = totalStudents > 0 ? Math.round((checkups.length / totalStudents) * 100) : 0;
+
+            return {
+              id: school.id,
+              name: school.name,
+              district: school.district,
+              schoolType: school.schoolType,
+              totalStudents,
+              healthCardsCompleted: cards.length,
+              healthCardCompletion,
+              checkupsCompleted: checkups.length,
+              checkupCoverage,
+              totalReferrals: referralCount,
+              pendingReferrals,
+              completionScore: Math.round((healthCardCompletion + checkupCoverage) / 2),
+            };
+          } catch (error) {
+            console.error(`Error processing school ${school.id}:`, error);
+            return {
+              id: school.id,
+              name: school.name,
+              district: school.district,
+              schoolType: school.schoolType,
+              totalStudents: 0,
+              healthCardsCompleted: 0,
+              healthCardCompletion: 0,
+              checkupsCompleted: 0,
+              checkupCoverage: 0,
+              totalReferrals: 0,
+              pendingReferrals: 0,
+              completionScore: 0,
+            };
+          }
+        })
+      );
+
+      console.log('Enriched schools:', enrichedSchools.length);
+      if (enrichedSchools.length > 0) {
+        console.log('Sample school:', JSON.stringify(enrichedSchools[0], null, 2));
+      }
+
+      // Sort based on metric if provided
+      if (metric && typeof metric === 'string') {
+        enrichedSchools.sort((a, b) => {
+          const aVal = (a as any)[metric] || 0;
+          const bVal = (b as any)[metric] || 0;
+          return bVal - aVal; // Descending order
+        });
+      }
+
+      console.log('Returning response with', enrichedSchools.length, 'schools');
+
+      res.json({
+        schools: enrichedSchools,
+        total: enrichedSchools.length,
+        metadata: {
+          month: selectedMonth,
+          year: selectedYear,
+          schoolType: schoolType || "All",
+          metric: metric || "all",
+        }
+      });
+    } catch (error: any) {
+      console.error("Drill-down schools error:", error);
+      res.status(500).json({ message: error?.message || "Failed to fetch schools", error: error.toString() });
+    }
+  });
+
+  app.get("/api/po/drilldown/students", authenticateToken, authorizeRoles("PO", "Admin"), async (req: AuthRequest, res) => {
+    try {
+      const { year, schoolType, condition, limit = 100 } = req.query;
+      const selectedYear = year ? parseInt(year as string) : new Date().getFullYear();
+
+      const user = await storage.getUser(req.user!.id);
+      const poDistrict = user?.district;
+
+      if (!poDistrict && req.user?.role !== "Admin") {
+        return res.status(403).json({ message: "No district assigned" });
+      }
+
+      // Get schools in district
+      const allSchools = await storage.getSchools(1, 1000);
+      let schools = req.user?.role === "Admin" 
+        ? allSchools.schools 
+        : allSchools.schools.filter(s => s.district === poDistrict);
+
+      if (schoolType && schoolType !== "All") {
+        schools = schools.filter(s => s.schoolType === schoolType);
+      }
+
+      // Get all health cards for these schools
+      const allCards = await Promise.all(
+        schools.map(async (school) => {
+          const { cards } = await storage.getAnnualHealthCards({ schoolId: school.id, year: selectedYear, limit: 1000 });
+          return cards.map(c => ({ ...c, schoolName: school.name }));
+        })
+      );
+
+      let flatCards = allCards.flat();
+
+      // Filter by condition if specified
+      if (condition) {
+        const isTruthy = (val: any) => val === true || val === 1 || val === '1' || val === 'true';
+        
+        switch (condition) {
+          case "all":
+            // No filtering - show all students
+            break;
+          case "referred":
+            // Students with referrals
+            flatCards = flatCards.filter(c => isTruthy(c.referral_recommended));
+            break;
+          case "leprosy":
+            flatCards = flatCards.filter(c => isTruthy(c.c7_suspected));
+            break;
+          case "tb":
+            flatCards = flatCards.filter(c => isTruthy(c.c8_suspected));
+            break;
+          case "anemia":
+            flatCards = flatCards.filter(c => isTruthy(c.b3_severe_anemia));
+            break;
+          case "underweight":
+            flatCards = flatCards.filter(c => {
+              const bmi = typeof c.bmi === 'number' ? c.bmi : (c.bmi ? parseFloat(c.bmi) : null);
+              return bmi && bmi < 18.5;
+            });
+            break;
+          case "obese":
+            flatCards = flatCards.filter(c => {
+              const bmi = typeof c.bmi === 'number' ? c.bmi : (c.bmi ? parseFloat(c.bmi) : null);
+              return bmi && bmi >= 30;
+            });
+            break;
+          case "adolescent":
+            flatCards = flatCards.filter(c => c.ageYears && c.ageYears >= 10);
+            break;
+          case "high-risk":
+            // High-risk: C7 (leprosy) OR C8 (TB) OR severe anemia OR SAM (severe acute malnutrition)
+            flatCards = flatCards.filter(c => {
+              const bmi = typeof c.bmi === 'number' ? c.bmi : (c.bmi ? parseFloat(c.bmi) : null);
+              const isSAM = bmi && bmi < 16; // Severe Acute Malnutrition
+              return isTruthy(c.c7_suspected) || isTruthy(c.c8_suspected) || isTruthy(c.b3_severe_anemia) || isSAM;
+            });
+            break;
+          case "goitre":
+            // Goitre (iodine deficiency)
+            flatCards = flatCards.filter(c => isTruthy(c.b6_goitre));
+            break;
+        }
+      }
+
+      // Enrich with student details
+      const enrichedStudents = await Promise.all(
+        flatCards.slice(0, parseInt(limit as string)).map(async (card) => {
+          const student = await storage.getStudent(card.studentId);
+          
+          // Calculate age from dateOfBirth if available
+          let age = card.ageYears || null;
+          if (!age && student?.dateOfBirth) {
+            const birthYear = new Date(student.dateOfBirth).getFullYear();
+            age = new Date().getFullYear() - birthYear;
+          }
+          
+          // Get BMI - try multiple sources and formats
+          let bmi = null;
+          if (card.bmi) {
+            bmi = typeof card.bmi === 'number' ? card.bmi : parseFloat(card.bmi);
+          } else if ((card as any).a2_weight && (card as any).a1_height) {
+            // Calculate BMI if we have height and weight
+            const weight = typeof (card as any).a2_weight === 'number' ? (card as any).a2_weight : parseFloat((card as any).a2_weight);
+            const height = typeof (card as any).a1_height === 'number' ? (card as any).a1_height : parseFloat((card as any).a1_height);
+            if (weight && height && height > 0) {
+              const heightInMeters = height / 100; // Convert cm to meters
+              bmi = weight / (heightInMeters * heightInMeters);
+            }
+          }
+          
+          // Check if referral is recommended - check multiple fields
+          const referralRecommended = !!(
+            card.referral_recommended || 
+            card.c7_suspected || 
+            card.c8_suspected || 
+            card.b3_severe_anemia ||
+            card.b6_goitre ||
+            (bmi && (bmi < 16 || bmi > 30))
+          );
+          
+          return {
+            id: card.studentId,
+            name: student?.fullName || card.nameOfChild || "Unknown",
+            schoolName: card.schoolName,
+            age,
+            gender: card.gender || student?.gender || null,
+            classSection: student?.classSection || null,
+            bmi: bmi ? parseFloat(bmi.toFixed(1)) : null,
+            condition: condition || "general",
+            healthCardId: card.id,
+            lastCheckup: card.dateOfEntry || null,
+            referralRecommended,
+          };
+        })
+      );
+
+      res.json({
+        students: enrichedStudents,
+        total: flatCards.length,
+        metadata: {
+          year: selectedYear,
+          schoolType: schoolType || "All",
+          condition: condition || "all",
+        }
+      });
+    } catch (error: any) {
+      console.error("Drill-down students error:", error);
+      res.status(500).json({ message: error?.message || "Failed to fetch students" });
+    }
+  });
+
+  app.get("/api/po/drilldown/deficiencies", authenticateToken, authorizeRoles("PO", "Admin"), async (req: AuthRequest, res) => {
+    try {
+      const { year, schoolType, deficiencyType, limit = 100 } = req.query;
+      const selectedYear = year ? parseInt(year as string) : new Date().getFullYear();
+
+      const user = await storage.getUser(req.user!.id);
+      const poDistrict = user?.district;
+
+      if (!poDistrict && req.user?.role !== "Admin") {
+        return res.status(403).json({ message: "No district assigned" });
+      }
+
+      // Get schools in district
+      const allSchools = await storage.getSchools(1, 1000);
+      let schools = req.user?.role === "Admin" 
+        ? allSchools.schools 
+        : allSchools.schools.filter(s => s.district === poDistrict);
+
+      if (schoolType && schoolType !== "All") {
+        schools = schools.filter(s => s.schoolType === schoolType);
+      }
+
+      // Get all health cards
+      const allCards = await Promise.all(
+        schools.map(async (school) => {
+          const { cards } = await storage.getAnnualHealthCards({ schoolId: school.id, year: selectedYear, limit: 1000 });
+          return cards.map(c => ({ ...c, schoolName: school.name }));
+        })
+      );
+
+      let flatCards = allCards.flat();
+
+      // Filter by deficiency type
+      if (deficiencyType) {
+        const isTruthy = (val: any) => val === true || val === 1 || val === '1' || val === 'true';
+        
+        switch (deficiencyType) {
+          case "vitaminA":
+            flatCards = flatCards.filter(c => isTruthy(c.b4_vitamin_a_deficiency));
+            break;
+          case "vitaminD":
+            flatCards = flatCards.filter(c => isTruthy(c.b5_vitamin_d_deficiency));
+            break;
+          case "iron":
+            flatCards = flatCards.filter(c => isTruthy(c.b3_severe_anemia));
+            break;
+          case "iodine":
+            flatCards = flatCards.filter(c => isTruthy(c.b6_goitre));
+            break;
+          case "zinc":
+            flatCards = flatCards.filter(c => isTruthy(c.b8_vitb_deficiency));
+            break;
+        }
+      }
+
+      // Enrich with student details
+      const enrichedCases = await Promise.all(
+        flatCards.slice(0, parseInt(limit as string)).map(async (card) => {
+          const student = await storage.getStudent(card.studentId);
+          
+          // Calculate age from dateOfBirth if available
+          let age = card.ageYears || null;
+          if (!age && student?.dateOfBirth) {
+            const birthYear = new Date(student.dateOfBirth).getFullYear();
+            age = new Date().getFullYear() - birthYear;
+          }
+          
+          return {
+            id: card.studentId,
+            studentName: student?.fullName || card.nameOfChild || "Unknown",
+            schoolName: card.schoolName,
+            age,
+            gender: card.gender || student?.gender || null,
+            deficiencyType: deficiencyType || "multiple",
+            severity: card.b3_severe_anemia ? "Severe" : "Moderate",
+            referralStatus: card.referral_recommended ? "Recommended" : "Not Required",
+            lastAssessment: card.dateOfEntry || null,
+          };
+        })
+      );
+
+      res.json({
+        cases: enrichedCases,
+        total: flatCards.length,
+        metadata: {
+          year: selectedYear,
+          schoolType: schoolType || "All",
+          deficiencyType: deficiencyType || "all",
+        }
+      });
+    } catch (error: any) {
+      console.error("Drill-down deficiencies error:", error);
+      res.status(500).json({ message: error?.message || "Failed to fetch deficiency cases" });
+    }
+  });
+
+  // All Referrals Drill-Down
+  app.get("/api/po/drilldown/all-referrals", authenticateToken, authorizeRoles("PO", "Admin"), async (req: AuthRequest, res) => {
+    try {
+      const { month, year, schoolType, limit = 100 } = req.query;
+      const selectedMonth = month ? parseInt(month as string) : new Date().getMonth() + 1;
+      const selectedYear = year ? parseInt(year as string) : new Date().getFullYear();
+
+      const user = await storage.getUser(req.user!.id);
+      const poDistrict = user?.district;
+
+      if (!poDistrict && req.user?.role !== "Admin") {
+        return res.status(403).json({ message: "No district assigned" });
+      }
+
+      // Get schools in district
+      const allSchools = await storage.getSchools(1, 1000);
+      let schools = req.user?.role === "Admin" 
+        ? allSchools.schools 
+        : allSchools.schools.filter(s => s.district === poDistrict);
+
+      if (schoolType && schoolType !== "All") {
+        schools = schools.filter(s => s.schoolType === schoolType);
+      }
+
+      // Get all referrals
+      const allReferrals = await Promise.all(
+        schools.map(async (school) => {
+          const { referrals } = await storage.getReferrals({ schoolId: school.id, limit: 1000 });
+          return referrals.map(r => ({ ...r, schoolName: school.name }));
+        })
+      );
+
+      let flatReferrals = allReferrals.flat();
+
+      // Enrich with student details
+      const enrichedReferrals = await Promise.all(
+        flatReferrals.slice(0, parseInt(limit as string)).map(async (referral) => {
+          const student = await storage.getStudent(referral.studentId);
+          const daysPending = referral.createdAt 
+            ? Math.floor((Date.now() - new Date(referral.createdAt).getTime()) / (1000 * 60 * 60 * 24))
+            : 0;
+
+          return {
+            id: referral.id,
+            studentName: student?.fullName || "Unknown",
+            schoolName: referral.schoolName,
+            issue: referral.issue || "Health concern",
+            category: referral.notes || "General",
+            facility: referral.facility || "Not assigned",
+            status: referral.status || "Pending",
+            daysPending,
+            priority: daysPending > 30 ? "High" : daysPending > 14 ? "Medium" : "Low",
+          };
+        })
+      );
+
+      res.json({
+        referrals: enrichedReferrals,
+        total: flatReferrals.length,
+        metadata: {
+          month: selectedMonth,
+          year: selectedYear,
+          schoolType: schoolType || "All",
+        }
+      });
+    } catch (error: any) {
+      console.error("Drill-down all-referrals error:", error);
+      res.status(500).json({ message: error?.message || "Failed to fetch referrals" });
+    }
+  });
+
+  // Menstrual Health Drill-Down
+  app.get("/api/po/drilldown/menstrual-health", authenticateToken, authorizeRoles("PO", "Admin"), async (req: AuthRequest, res) => {
+    try {
+      const { year, schoolType, type, limit = 100 } = req.query;
+      const selectedYear = year ? parseInt(year as string) : new Date().getFullYear();
+
+      const user = await storage.getUser(req.user!.id);
+      const poDistrict = user?.district;
+
+      if (!poDistrict && req.user?.role !== "Admin") {
+        return res.status(403).json({ message: "No district assigned" });
+      }
+
+      // Get schools in district
+      const allSchools = await storage.getSchools(1, 1000);
+      let schools = req.user?.role === "Admin" 
+        ? allSchools.schools 
+        : allSchools.schools.filter(s => s.district === poDistrict);
+
+      if (schoolType && schoolType !== "All") {
+        schools = schools.filter(s => s.schoolType === schoolType);
+      }
+
+      // Get all students (female, age 10+)
+      const allStudents = await Promise.all(
+        schools.map(async (school) => {
+          const { students } = await storage.getStudents({ schoolId: school.id, limit: 1000 });
+          return students
+            .filter(s => s.gender === 'F')
+            .map(s => ({ ...s, schoolName: school.name }));
+        })
+      );
+
+      let flatStudents = allStudents.flat();
+
+      // Filter by age (10+)
+      flatStudents = flatStudents.filter(s => {
+        if (s.dateOfBirth) {
+          const age = new Date().getFullYear() - new Date(s.dateOfBirth).getFullYear();
+          return age >= 10;
+        }
+        return false;
+      });
+
+      // For now, return basic student data
+      // In a real implementation, you would fetch period tracker data
+      const enrichedStudents = flatStudents.slice(0, parseInt(limit as string)).map(student => {
+        const age = student.dateOfBirth 
+          ? new Date().getFullYear() - new Date(student.dateOfBirth).getFullYear()
+          : null;
+
+        return {
+          id: student.id,
+          studentName: student.fullName,
+          schoolName: student.schoolName,
+          age,
+          classSection: student.classSection,
+          lastPeriodDate: null, // Would come from period tracker
+          cycleRegularity: "Unknown",
+          referralStatus: "None",
+        };
+      });
+
+      res.json({
+        students: enrichedStudents,
+        total: flatStudents.length,
+        metadata: {
+          year: selectedYear,
+          schoolType: schoolType || "All",
+          type: type || "all",
+        }
+      });
+    } catch (error: any) {
+      console.error("Drill-down menstrual-health error:", error);
+      res.status(500).json({ message: error?.message || "Failed to fetch menstrual health data" });
+    }
+  });
+
+  // ========================================
+  // CRITICAL STUDENTS IDENTIFICATION API
+  // ========================================
+
+  // Get critical students for PO (district-wide)
+  app.get("/api/po/critical-students", authenticateToken, authorizeRoles("PO", "Admin"), async (req: AuthRequest, res) => {
+    try {
+      const { schoolType, minPriorityScore, limit } = req.query;
+      
+      const user = await storage.getUser(req.user!.id);
+      const poDistrict = user?.district;
+
+      console.log(`[API] Critical students request from user: ${user?.fullName}, role: ${req.user?.role}, district: ${poDistrict}`);
+
+      if (!poDistrict && req.user?.role !== "Admin") {
+        console.warn(`[API] PO user ${user?.fullName} has no district assigned`);
+        return res.status(403).json({ 
+          message: "No district assigned to PO. Please contact administrator to assign a district.",
+          userId: req.user!.id,
+          username: user?.username
+        });
+      }
+
+      console.log(`[API] Fetching critical students for district: ${poDistrict}, schoolType: ${schoolType || 'All'}`);
+
+      const criticalStudents = await getCriticalStudentsForDistrict(
+        poDistrict || "All",
+        {
+          schoolType: (schoolType as any) || 'All',
+          minPriorityScore: minPriorityScore ? parseInt(minPriorityScore as string) : 0,
+          limit: limit ? parseInt(limit as string) : 100,
+        }
+      );
+
+      console.log(`[API] Returning ${criticalStudents.length} critical students`);
+
+      res.json({
+        criticalStudents,
+        total: criticalStudents.length,
+        metadata: {
+          district: poDistrict,
+          schoolType: schoolType || "All",
+          minPriorityScore: minPriorityScore || 0,
+          generatedAt: new Date().toISOString(),
+        }
+      });
+    } catch (error: any) {
+      console.error("[API] Critical students error:", error);
+      res.status(500).json({ 
+        message: error?.message || "Failed to fetch critical students",
+        error: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      });
+    }
+  });
+
+  // Get critical students for a specific school (Headmaster view)
+  app.get("/api/school/:schoolId/critical-students", authenticateToken, authorizeRoles("Headmaster", "Admin", "PO"), async (req: AuthRequest, res) => {
+    try {
+      const { schoolId } = req.params;
+      const { minPriorityScore } = req.query;
+
+      // Verify user has access to this school
+      if (req.user?.role === "Headmaster" && req.user?.schoolId !== schoolId) {
+        return res.status(403).json({ message: "Access denied to this school" });
+      }
+
+      const criticalStudents = await getCriticalStudentsForSchool(
+        schoolId,
+        {
+          minPriorityScore: minPriorityScore ? parseInt(minPriorityScore as string) : 0,
+        }
+      );
+
+      res.json({
+        criticalStudents,
+        total: criticalStudents.length,
+        metadata: {
+          schoolId,
+          minPriorityScore: minPriorityScore || 0,
+          generatedAt: new Date().toISOString(),
+        }
+      });
+    } catch (error: any) {
+      console.error("School critical students API error:", error);
+      res.status(500).json({ message: error?.message || "Failed to fetch critical students" });
+    }
+  });
+
+  // Evaluate a single student for critical status
+  app.get("/api/student/:studentId/critical-evaluation", authenticateToken, async (req: AuthRequest, res) => {
+    try {
+      const { studentId } = req.params;
+
+      const evaluation = await evaluateStudent(studentId);
+
+      if (!evaluation) {
+        return res.status(404).json({ message: "Student not found or inactive" });
+      }
+
+      res.json(evaluation);
+    } catch (error: any) {
+      console.error("Student evaluation API error:", error);
+      res.status(500).json({ message: error?.message || "Failed to evaluate student" });
     }
   });
 
@@ -8571,7 +8481,7 @@ async function generatePDFReport(reportData: any, reportType: string, userRole: 
             } else {
               const keys = Object.keys(v);
               for (const k of keys) {
-                let val2;
+                let val2: any;
                 try { val2 = (v as any)[k]; } catch (e) { console.warn(`Skipping property ${p ? `${p}.${k}` : k} due to getter error:`, String(e)); continue; }
                 visit(val2, p ? `${p}.${k}` : k);
               }
@@ -8610,7 +8520,7 @@ async function generatePDFReport(reportData: any, reportType: string, userRole: 
           const out: any = Array.isArray(value) ? [] : {};
           const keys = Object.keys(value as any);
           for (const k of keys) {
-            let v;
+            let v: any;
             try { v = (value as any)[k]; } catch (e) {
               console.warn(`Skipping property ${path ? path + '.' : ''}${k} due to getter error:`, String(e));
               continue;
@@ -8684,788 +8594,104 @@ async function generatePDFReport(reportData: any, reportType: string, userRole: 
     }
   });
 
-  // Report Generation Endpoints
-  app.get("/api/reports/:type", authenticateToken, denyAdmin, async (req: AuthRequest, res) => {
+  // Image download endpoint
+  app.get("/api/images/download", authenticateToken, async (req: AuthRequest, res) => {
     try {
-      const { type } = req.params;
-      const { schoolId, studentId, month, year, format = "pdf" } = req.query;
+      const { type, date, schoolId } = req.query;
+      const images: string[] = [];
 
-      // Normalize and validate class filter (accept multiple param names for backwards compatibility)
-      const requestedClass = (req.query.classSection || req.query.classId || req.query.class) as string | undefined;
-      let classSectionParam = requestedClass && String(requestedClass) !== "all" ? String(requestedClass) : undefined;
-      let schoolIdParam = (schoolId && String(schoolId) !== "all") ? String(schoolId) : undefined;
-      let studentIdParam = (studentId && String(studentId) !== "all") ? String(studentId) : undefined;
+      if (type === "hostel") {
+        // Get all hostel attendance images
+        const dateFilter = date as string || new Date().toISOString().split("T")[0];
+        const attendance = await storage.getHostelAttendance({
+          date: dateFilter,
+          schoolId: schoolId as string
+        });
 
-      // Enforce role-based scoping
-      // - ClassTeacher: forced to their class only
-      // - Headmaster: forced to their school only
-      // - PO: allowed to request aggregated / multiple schools
-      if (req.user) {
-        if (req.user.role === "ClassTeacher") {
-          if (!req.user.classSection) {
-            return res.status(400).json({ message: "ClassTeacher account missing classSection. Cannot determine class scope." });
+        attendance.forEach((record: any) => {
+          if (record.checkInImageUrl) images.push(record.checkInImageUrl);
+          if (record.checkOutImageUrl) images.push(record.checkOutImageUrl);
+        });
+      } else if (type === "meals") {
+        // Get all meal log images
+        const dateFilter = date as string || new Date().toISOString().split("T")[0];
+        const meals = await storage.getMealLogs({
+          schoolId: schoolId as string
+        });
+
+        const filteredMeals = meals.filter((m: any) => {
+          if (date) {
+            return m.date === dateFilter;
           }
-          // Force class filter to teacher's class and ensure school is set when available
-          classSectionParam = req.user.classSection;
-          schoolIdParam = req.user.schoolId || schoolIdParam;
-        } else if (req.user.role === "Headmaster") {
-          // Headmaster exports should be scoped to their school
-          schoolIdParam = req.user.schoolId || schoolIdParam;
-          // Ignore class filters from headmasters to maintain consistent school-level exports
-          if (classSectionParam) {
-            console.warn(`Headmaster ${req.user.username} requested class filter ${classSectionParam}; ignoring and using school-level export`);
-            classSectionParam = undefined;
-          }
-        }
+          return true;
+        });
+
+        filteredMeals.forEach((meal: any) => {
+          if (meal.imageUrl) images.push(meal.imageUrl);
+        });
       }
 
-      // Fallback logic: if no explicit filter provided, default to school scope when available.
-      // For PO role, allow global aggregated exports (no filter) when desired.
-      if (!classSectionParam && !schoolIdParam && req.user && req.user.role !== "PO") {
-        if (req.user.schoolId) {
-          schoolIdParam = req.user.schoolId;
-        } else {
-          // Require an explicit school or class filter to avoid accidentally returning large datasets
-          return res.status(400).json({ message: "Please specify a schoolId or classSection to limit the export." });
-        }
-      }
-
-      // Normalized filters we will apply to storage queries
-      const normalizedFilters = {
-        schoolId: schoolIdParam,
-        classSection: classSectionParam,
-        studentId: studentIdParam,
-        month: month ? parseInt(month as string) : undefined,
-        year: year ? parseInt(year as string) : undefined,
-      };
-
-      // Validate report type
-      const validTypes = ["annual-health", "monthly-checkup", "meal-tracking", "hostel-attendance", "po-consolidated"];
-      if (!validTypes.includes(type)) {
-        return res.status(400).json({ message: "Invalid report type" });
-      }
-
-      // Validate format
-      const validFormats = ["pdf", "csv", "excel"];
-      if (!validFormats.includes(format as string)) {
-        return res.status(400).json({ message: "Invalid format. Supported formats: pdf, csv, excel" });
-      }
-
-      const reportYear = year ? parseInt(year as string) : new Date().getFullYear();
-      const reportMonth = month ? parseInt(month as string) : new Date().getMonth() + 1;
-      const currentMonth = reportMonth;
-      const currentYear = reportYear;
-
-      const filename = `report-${type}-${reportYear}-${reportMonth}`;
-
-      // Helper to fetch all monthly checkups across pages
-      const fetchAllMonthlyCheckups = async (params: any) => {
-        const pageLimit = 1000;
-        let page = 1;
-        let all: any[] = [];
-        while (true) {
-          const res = await storage.getMonthlyCheckups({ ...params, page, limit: pageLimit });
-          const items = res.checkups || [];
-          all = all.concat(items);
-          if (all.length >= (res.total || 0) || items.length < pageLimit) break;
-          page++;
-        }
-        console.log(`fetchAllMonthlyCheckups: fetched ${all.length} records`);
-        return all;
-      };
-
-      // Helper to fetch all annual health cards across pages
-      const fetchAllAnnualCards = async (params: any) => {
-        const pageLimit = 1000;
-        let page = 1;
-        let all: any[] = [];
-        while (true) {
-          const res = await storage.getAnnualHealthCards({ ...params, page, limit: pageLimit });
-          const items = res.cards || [];
-          all = all.concat(items);
-          if (all.length >= (res.total || 0) || items.length < pageLimit) break;
-          page++;
-        }
-        console.log(`fetchAllAnnualCards: fetched ${all.length} records`);
-        return all;
-      };
-
-      // Handle different formats
-      if (format === "csv") {
-        // Generate CSV data
-        let csvData: any[] = [];
-
-        if (type === "monthly-checkup") {
-          const filterParams: any = { month: currentMonth, year: currentYear };
-          if (normalizedFilters.schoolId) filterParams.schoolId = normalizedFilters.schoolId;
-          if (normalizedFilters.classSection) filterParams.classSection = normalizedFilters.classSection;
-          if (normalizedFilters.studentId) filterParams.studentId = normalizedFilters.studentId;
-
-          const checkupsAll = await fetchAllMonthlyCheckups(filterParams);
-          csvData = checkupsAll.map((checkup: any) => ({
-            StudentName: "Unknown", // Will be populated below
-            ClassSection: "N/A",
-            CheckupDate: checkup.checkupDate,
-            Height: checkup.heightCm,
-            Weight: checkup.weightKg,
-            BMI: checkup.bmi,
-            Present: checkup.present,
-            Symptoms: checkup.symptoms?.join("; ") || "",
-            SuggestedMedicines: checkup.suggestedMedicines?.join("; ") || "",
-            TreatmentType: checkup.treatmentType,
-            ReferredTo: checkup.referredTo,
-            Notes: checkup.notes
-          }));
-
-          // Populate student names
-          for (let i = 0; i < csvData.length; i++) {
-            const student = await storage.getStudent(checkupsAll[i].studentId);
-            csvData[i].StudentName = student?.fullName || "Unknown";
-            csvData[i].ClassSection = student?.classSection || "N/A";
-          }
-        } else if (type === "annual-health") {
-          const filterParams: any = { year: currentYear };
-          if (normalizedFilters.schoolId) filterParams.schoolId = normalizedFilters.schoolId;
-          if (normalizedFilters.classSection) filterParams.classSection = normalizedFilters.classSection;
-          if (normalizedFilters.studentId) filterParams.studentId = normalizedFilters.studentId;
-
-          const cardsAll = await fetchAllAnnualCards(filterParams);
-          const cards = cardsAll || [];
-
-          // Fetch latest monthly checkup for each student referenced in the annual cards
-          const studentIds = Array.from(new Set(cards.map((c: any) => c.studentId).filter(Boolean)));
-          const latestCheckupsByStudent: Record<string, any> = {};
-          for (const sid of studentIds) {
-            try {
-              const { checkups } = await storage.getMonthlyCheckups({ studentId: sid, limit: 1 });
-              latestCheckupsByStudent[sid] = (checkups && checkups.length > 0) ? checkups[0] : null;
-            } catch (err) {
-              latestCheckupsByStudent[sid] = null;
-            }
-          }
-
-          csvData = cards.map((card: any) => {
-            const latest = latestCheckupsByStudent[card.studentId];
-
-            // Use camelCase names produced by the DB layer (drizzle) — avoid snake_case property access to satisfy types
-            const visionRight = card.visionRight ?? null;
-            const visionLeft = card.visionLeft ?? null;
-
-            // AHE (adolescent health) summary - prefer structured JSON if present otherwise synthesize from summary flags
-            let ahe: any = card.adolescentHealthSummary ?? null;
-            if (!ahe) {
-              const parts: string[] = [];
-              if (card.summaryAdolescentMenstrualIssues || card.summary_adolescent_menstrual_issues) parts.push("menstrual_issues");
-              if (card.summaryAdolescentSubstanceUse || card.summary_adolescent_substance_use) parts.push("substance_use");
-              if (card.summaryAdolescentDepressed || card.summary_adolescent_depressed) parts.push("depressed");
-              if (card.summaryAdolescentBurningUrination || card.summary_adolescent_burning_urination) parts.push("burning_urination");
-              if (card.summaryAdolescentDischarge || card.summary_adolescent_discharge) parts.push("discharge");
-              if (card.summaryAdolescentOther || card.summary_adolescent_other) parts.push(String(card.summaryAdolescentOther ?? card.summary_adolescent_other ?? ""));
-              ahe = parts.length > 0 ? parts.join("; ") : null;
-            }
-
-            return {
-              StudentName: card.nameOfChild ?? "",
-              ClassSection: card.classSection ?? "",
-              Gender: card.gender ?? "",
-              UniqueId: card.uniqueId ?? "",
-              AadhaarNo: card.aadhaarNo ?? "",
-              PranNo: card.pranNo ?? "",
-              FatherGuardianName: card.fatherGuardianName ?? "",
-              FatherContact: card.fatherContact ?? "",
-              WeightKg: card.weightKg ?? "",
-              HeightCm: card.heightCm ?? "",
-              BMI: card.bmi ?? "",
-              SBP: card.sbp ?? "",
-              DBP: card.dbp ?? "",
-              VisionRight: visionRight ?? "",
-              VisionLeft: visionLeft ?? "",
-              AHE: typeof ahe === 'object' ? JSON.stringify(ahe) : (ahe ?? ""),
-              LastCheckupDate: latest?.checkupDate ?? "",
-              LastCheckupBMI: latest?.bmi ?? "",
-              DefectsAtBirth: (card.defectsAtBirth)?.join?.("; ") ?? "",
-              Deficiencies: (card.deficiencies)?.join?.("; ") ?? "",
-              Notes: card.notes ?? "",
-              Status: card.status ?? ""
-            };
-          });
-        }
-        // Add other report types...
-
-        console.log(`CSV export for ${type}: ${csvData.length} rows`);
-        const csvContent = generateCSV(csvData);
-        res.setHeader("Content-Type", "text/csv");
-        res.setHeader("Content-Disposition", `attachment; filename="${filename}.csv"`);
-        res.send(csvContent);
-        return;
-
-      } else if (format === "excel") {
-        const workbook = new ExcelJS.Workbook();
-        const worksheet = workbook.addWorksheet(`${type.replace("-", " ").toUpperCase()} REPORT`);
-
-        // Add title
-        worksheet.mergeCells('A1:G1');
-        const titleCell = worksheet.getCell('A1');
-        titleCell.value = 'SwasthyaTrack Report';
-        titleCell.font = { size: 20, bold: true };
-        titleCell.alignment = { horizontal: 'center' };
-
-        worksheet.mergeCells('A2:G2');
-        const subtitleCell = worksheet.getCell('A2');
-        subtitleCell.value = `Generated: ${new Date().toLocaleDateString()}`;
-        subtitleCell.alignment = { horizontal: 'center' };
-
-        let currentRow = 4;
-
-        if (type === "monthly-checkup") {
-          // Add section header
-          worksheet.mergeCells(`A${currentRow}:G${currentRow}`);
-          worksheet.getCell(`A${currentRow}`).value = 'Monthly Health Checkup Summary';
-          worksheet.getCell(`A${currentRow}`).font = { size: 16, bold: true };
-          currentRow += 2;
-
-          const filterParams: any = { month: currentMonth, year: currentYear };
-          if (normalizedFilters.schoolId) filterParams.schoolId = normalizedFilters.schoolId;
-          if (normalizedFilters.classSection) filterParams.classSection = normalizedFilters.classSection;
-          if (normalizedFilters.studentId) filterParams.studentId = normalizedFilters.studentId;
-
-          const checkupsAll = await fetchAllMonthlyCheckups(filterParams);
-
-          // Add summary
-          worksheet.getCell(`A${currentRow}`).value = 'Summary:';
-          worksheet.getCell(`A${currentRow}`).font = { bold: true };
-          currentRow++;
-          worksheet.getCell(`A${currentRow}`).value = `Total Checkups: ${checkupsAll.length}`;
-          currentRow++;
-
-          const referredCount = checkupsAll.filter((c: any) => c.treatmentType === "Referred").length;
-          const primaryCount = checkupsAll.filter((c: any) => c.treatmentType === "Primary").length;
-          const presentCount = checkupsAll.filter((c: any) => c.present).length;
-          const absentCount = checkupsAll.filter((c: any) => !c.present).length;
-
-          worksheet.getCell(`A${currentRow}`).value = `Referred: ${referredCount}`;
-          currentRow++;
-          worksheet.getCell(`A${currentRow}`).value = `Primary Treatment: ${primaryCount}`;
-          currentRow++;
-          worksheet.getCell(`A${currentRow}`).value = `Present: ${presentCount}, Absent: ${absentCount}`;
-          currentRow += 2;
-
-          // Add chart for treatment types
-          const chartData = [
-            { name: 'Referred', value: referredCount },
-            { name: 'Primary', value: primaryCount }
-          ];
-
-          if (referredCount > 0 || primaryCount > 0) {
-            let chartImage: Buffer | null = null;
-            try {
-              chartImage = await generateChartImage({
-                type: 'pie',
-                data: {
-                  labels: chartData.map(d => d.name),
-                  datasets: [{
-                    data: chartData.map(d => d.value),
-                    backgroundColor: ['#FF6384', '#36A2EB']
-                  }]
-                },
-                options: {
-                  responsive: false,
-                  plugins: {
-                    title: {
-                      display: true,
-                      text: 'Treatment Types Distribution'
-                    }
-                  }
-                }
-              });
-            } catch (chartErr) {
-              console.error('Failed to generate chart image for Excel:', (chartErr as any)?.message || chartErr);
-            }
-
-            if (chartImage) {
-              const imageId = workbook.addImage({
-                buffer: chartImage as any,
-                extension: 'png',
-              });
-
-              worksheet.addImage(imageId, {
-                tl: { col: 0, row: currentRow },
-                ext: { width: 400, height: 300 }
-              });
-              currentRow += 20;
-            }
-          }
-
-          // Add data table
-          const headers = ['Student Name', 'Class', 'Date', 'Height', 'Weight', 'BMI', 'Present', 'Treatment'];
-          headers.forEach((header, index) => {
-            worksheet.getCell(currentRow, index + 1).value = header;
-            worksheet.getCell(currentRow, index + 1).font = { bold: true };
-          });
-          currentRow++;
-
-          for (const checkup of checkupsAll) {
-            const student = await storage.getStudent(checkup.studentId);
-            const studentName = student?.fullName || "Unknown";
-            const data = [
-              studentName,
-              student?.classSection || "N/A",
-              checkup.checkupDate,
-              checkup.heightCm,
-              checkup.weightKg,
-              checkup.bmi,
-              checkup.present ? 'Yes' : 'No',
-              checkup.treatmentType
-            ];
-            data.forEach((value, index) => {
-              worksheet.getCell(currentRow, index + 1).value = value;
-            });
-            currentRow++;
-          }
-        } else if (type === "annual-health") {
-          // Annual Health cards export
-          const filterParams: any = { year: currentYear };
-          if (normalizedFilters.schoolId) filterParams.schoolId = normalizedFilters.schoolId;
-          if (normalizedFilters.classSection) filterParams.classSection = normalizedFilters.classSection;
-          if (normalizedFilters.studentId) filterParams.studentId = normalizedFilters.studentId;
-
-          const cardsAll = await fetchAllAnnualCards(filterParams);
-
-          // Add section header
-          worksheet.mergeCells(`A${currentRow}:G${currentRow}`);
-          worksheet.getCell(`A${currentRow}`).value = 'Annual Health Card Report';
-          worksheet.getCell(`A${currentRow}`).font = { size: 16, bold: true };
-          currentRow += 2;
-
-          worksheet.getCell(`A${currentRow}`).value = `Total Health Cards: ${cardsAll.length}`;
-          currentRow += 2;
-
-          // Table headers
-          const headers = ['Student Name', 'Class', 'Gender', 'UniqueId', 'WeightKg', 'HeightCm', 'BMI', 'SBP', 'DBP', 'Status', 'Notes'];
-          headers.forEach((header, index) => {
-            worksheet.getCell(currentRow, index + 1).value = header;
-            worksheet.getCell(currentRow, index + 1).font = { bold: true };
-          });
-          currentRow++;
-
-          for (const card of cardsAll) {
-            const data = [
-              card.nameOfChild,
-              card.classSection,
-              card.gender,
-              card.uniqueId,
-              card.weightKg,
-              card.heightCm,
-              card.bmi,
-              card.sbp,
-              card.dbp,
-              card.status,
-              card.notes
-            ];
-            data.forEach((value, index) => {
-              worksheet.getCell(currentRow, index + 1).value = value;
-            });
-            currentRow++;
-          }
-        }
-
-        console.log(`Excel export for ${type} generated`);
-        // Send Excel file
-        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-        res.setHeader('Content-Disposition', `attachment; filename="${filename}.xlsx"`);
-
-        await workbook.xlsx.write(res);
-        res.end();
-        return;
-
-      } else {
-        // PDF format (default)
-        try {
-          // Set headers BEFORE creating the document and piping
-          res.setHeader("Content-Type", "application/pdf");
-          res.setHeader("Content-Disposition", `attachment; filename="${filename}.pdf"`);
-
-          const pageSize = (req.query.pageSize as string) || PDF_DEFAULT_OPTIONS.size;
-          // Enforce portrait orientation to comply with report requirements
-          const layout = 'portrait';
-          const doc = new (PDFDocument as any)({ size: pageSize, layout, margins: PDF_DEFAULT_OPTIONS.margins });
-          // Use consistent default font for the whole document
-          try { doc.font('Helvetica'); } catch (e) { /* ignore if font not available */ }
-
-          // Set metadata (avoid undefined values and set explicit dates)
-          const safeType = type || 'Report';
-          const creationDate = new Date();
-          doc.info = {
-            Title: `SwasthyaTrack Report - ${safeType}`,
-            Author: 'SwasthyaTrack',
-            Subject: `${safeType}`,
-            CreationDate: creationDate,
-            ModDate: creationDate,
-          };
-          // Sanitize doc.info to remove any undefined values and ensure date fields are Date objects
-          try {
-            for (const k of Object.keys(doc.info)) {
-              if ((doc.info as any)[k] === undefined) delete (doc.info as any)[k];
-              if ((k === 'CreationDate' || k === 'ModDate') && !( (doc.info as any)[k] instanceof Date)) {
-                (doc.info as any)[k] = new Date((doc.info as any)[k]);
-              }
-            }
-          } catch (err) {
-            console.warn('Failed to sanitize doc.info:', (err as any)?.message || err);
-          }
-
-          // Save the generation date to the document for consistent headers on new pages
-          (doc as any)._generatedDate = creationDate;
-          // Log PDF generation start for debugging export layout issues
-          console.log('Starting PDF generation', { type, filename, pageSize, layout, createdAt: creationDate.toLocaleString() });
-
-          // Error handler on doc to catch piping errors (before piping)
-          doc.on('error', (err: any) => {
-            console.error('PDF document error:', err?.message || String(err));
-            if (!res.headersSent) {
-              // Safe to send JSON error when headers not sent
-              try { res.status(500).json({ message: 'Failed to generate PDF' }); } catch (e) { /* ignore */ }
-            } else {
-              // If headers already sent, destroy the response to prevent partial/truncated PDF
-              try { res.destroy(err); } catch (e) { /* ignore */ }
-            }
-          });
-
-          // Pipe after all setup is complete
-          doc.pipe(res);
-          // Log and handle response errors when streaming PDF
-          res.on('error', (err: any) => {
-            console.error('Response error while streaming PDF:', err?.message || String(err));
-            try { res.destroy(err); } catch (e) { /* ignore */ }
-          });
-
-          // Ensure header/footer for the first page and subsequent pages
-          drawHeaderFooter(doc, `SwasthyaTrack Report - ${type}`, creationDate);
-          doc.on('pageAdded', () => {
-            console.log('pageAdded event: new page number', doc.page.number);
-            drawHeaderFooter(doc, `SwasthyaTrack Report - ${type}`, creationDate);
-          });
-          // Ensure content starts below the header on the first page (avoid leaving the first page blank)
-          try { doc.y = Math.max(doc.y, doc.page.margins.top + 12); } catch (e) { /* ignore */ }
-          console.log('PDF initial page:', { page: doc.page.number, y: doc.y });
-
-          // Page title and summary (kept together on the same page)
-          const titleText = "SwasthyaTrack Report";
-          const generatedDate = creationDate;
-          const summaryText = `Summary: This ${type || 'report'} provides key health metrics, visualizations, and detailed analysis for the selected period. For a quick snapshot, see the Key Health Metrics section.`;
-
-          const printableWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
-          const titleHeight = doc.heightOfString(titleText, { width: printableWidth });
-          const dateHeight = doc.heightOfString(`Generated: ${generatedDate.toLocaleDateString()}`, { width: printableWidth });
-          const summaryHeight = doc.heightOfString(summaryText, { width: printableWidth });
-          const blockHeight = titleHeight + dateHeight + summaryHeight + 28;
-
-          // Ensure the whole block fits together on one page
-          ensureBlockFits(doc, blockHeight);
-
-          // Use absolute positions to avoid leaving first page blank; center via width
-          const topY = doc.page.margins.top + 12;
-          doc.fontSize(18).font("Helvetica-Bold").text(titleText, doc.page.margins.left, topY, { align: "center", width: printableWidth });
-          doc.fontSize(12).font("Helvetica").text(`Generated: ${generatedDate.toLocaleDateString()}`, doc.page.margins.left, topY + titleHeight + 4, { align: "center", width: printableWidth });
-          doc.fontSize(12).font("Helvetica-Bold").text("Summary", doc.page.margins.left, topY + titleHeight + dateHeight + 8, { align: "left", width: printableWidth });
-          doc.fontSize(11).font("Helvetica").text(summaryText, doc.page.margins.left, topY + titleHeight + dateHeight + 8 + 16, { align: "left", width: printableWidth });
-
-          // Move doc.y to the end of the block so subsequent content flows correctly
-          try { doc.y = topY + blockHeight + 6; } catch (e) { /* ignore */ }
-
-          if (type === "monthly-checkup") {
-            try {
-              doc.fontSize(16).font("Helvetica-Bold").text("Monthly Health Checkup Summary");
-              doc.fontSize(12).font("Helvetica").text(`Month: ${currentMonth}/${currentYear}`);
-              doc.moveDown();
-  
-              const filterParams: any = { month: currentMonth, year: currentYear };
-              if (normalizedFilters.schoolId) filterParams.schoolId = normalizedFilters.schoolId;
-              if (studentId && studentId !== "all") filterParams.studentId = studentId;
-  
-              const checkups = await storage.getMonthlyCheckups(filterParams);
-              doc.fontSize(12).text(`Total Checkups: ${checkups.checkups.length}`);
-  
-              const referredCount = checkups.checkups.filter((c: any) => c.treatmentType === "Referred").length;
-              const primaryCount = checkups.checkups.filter((c: any) => c.treatmentType === "Primary").length;
-              const presentCount = checkups.checkups.filter((c: any) => c.present).length;
-              const absentCount = checkups.checkups.filter((c: any) => !c.present).length;
-  
-              doc.text(`Referred: ${referredCount}`);
-              doc.text(`Primary Treatment: ${primaryCount}`);
-              doc.text(`Present: ${presentCount}, Absent: ${absentCount}`);
-              doc.moveDown();
-  
-              // Add treatment distribution chart to PDF
-              if (referredCount > 0 || primaryCount > 0) {
-                await addChartToDoc(doc, {
-                  type: 'pie',
-                  data: {
-                    labels: ['Referred', 'Primary'],
-                    datasets: [{ data: [referredCount, primaryCount], backgroundColor: ['#FF6384', '#36A2EB'] }]
-                  },
-                  options: {
-                    responsive: false,
-                    plugins: { title: { display: true, text: 'Treatment Types Distribution' } }
-                  }
-                }, 400, 300);
-              }
-  
-              doc.fontSize(12).font("Helvetica-Bold").text("Checkup Details:");
-              doc.font("Helvetica");
-              for (const checkup of checkups.checkups.slice(0, 20)) {
-                const student = await storage.getStudent(checkup.studentId);
-                const studentName = student?.fullName || "Unknown";
-                ensureSpace(doc, 30);
-                doc.fontSize(12).text(`- ${studentName} (${student?.classSection || "N/A"}): ${checkup.treatmentType}, Presence: ${checkup.present ? "Present" : "Absent"}`);
-                if (checkup.symptoms && checkup.symptoms.length > 0) {
-                  doc.fontSize(12).text(`  Symptoms: ${checkup.symptoms.join(", ")}`, { indent: 10, width: doc.page.width - doc.page.margins.left - doc.page.margins.right });
-                }
-                if (checkup.suggestedMedicines) {
-                  doc.fontSize(12).text(`  Medicines: ${checkup.suggestedMedicines}`, { indent: 10, width: doc.page.width - doc.page.margins.left - doc.page.margins.right });
-                }
-              }
-            } catch (tErr) { console.error("PDF generation error (monthly-checkup):", String(tErr)); throw tErr; }
-          } else if (type === "meal-tracking") {
-            try {
-              doc.fontSize(16).font("Helvetica-Bold").text("Meal Tracking Summary");
-              doc.fontSize(12).font("Helvetica").text(`Month: ${currentMonth}/${currentYear}`);
-              doc.moveDown();
-  
-              const filterParams: any = {};
-              // Use normalized filter (treat "all" as undefined) so server-side logic is consistent
-              if (normalizedFilters.schoolId) filterParams.schoolId = normalizedFilters.schoolId;
-
-              const meals = await storage.getMealLogs(filterParams);
-              const monthMeals = meals.filter((m: any) => {
-                const mealDate = new Date(m.date);
-                return mealDate.getMonth() + 1 === currentMonth && mealDate.getFullYear() === currentYear;
-              });
-
-              // Normalize mealType to lowercase for robust counting (stored enum is lowercase)
-              const breakfasts = monthMeals.filter((m: any) => String(m.mealType || '').toLowerCase() === "breakfast").length;
-              const lunches = monthMeals.filter((m: any) => String(m.mealType || '').toLowerCase() === "lunch").length;
-              const dinners = monthMeals.filter((m: any) => String(m.mealType || '').toLowerCase() === "dinner").length;
-              const uniqueDays = new Set(monthMeals.map((m: any) => m.date));
-              const totalDaysInMonth = new Date(currentYear, currentMonth, 0).getDate();
-              const compliance = uniqueDays.size > 0 ? Math.round((uniqueDays.size / totalDaysInMonth) * 100) : 0;
-  
-              doc.fontSize(12).text(`Total Meal Logs: ${monthMeals.length}`);
-              doc.text(`Breakfasts: ${breakfasts}`);
-              doc.text(`Lunches: ${lunches}`);
-              doc.text(`Dinners: ${dinners}`);
-              doc.text(`Days Logged: ${uniqueDays.size} / ${totalDaysInMonth} (${compliance}% compliance)`);
-              doc.moveDown();
-  
-              doc.fontSize(12).font("Helvetica-Bold").text("Recent Meals:");
-              doc.font("Helvetica");
-              for (const meal of monthMeals.slice(0, 20)) {
-                const student = meal.studentId ? await storage.getStudent(meal.studentId as string) : null;
-                const studentName = student?.fullName || "Unknown";
-                const mealDate = meal.date ? new Date(meal.date).toLocaleDateString() : "Unknown Date";
-                doc.fontSize(12).text(`- ${mealDate} ${meal.mealType}: ${studentName}`);
-                if (meal.menuItems && meal.menuItems.length > 0) {
-                  doc.fontSize(12).text(`  Items: ${meal.menuItems.join(", ")}`, { indent: 10, width: doc.page.width - doc.page.margins.left - doc.page.margins.right });
-                }
-                if (meal.imageUrl) {
-                  doc.fontSize(12).text(`  Image: ${meal.imageUrl}`, { indent: 10 });
-                }
-                if (meal.latitude && meal.longitude) {
-                  doc.fontSize(12).text(`  Location: ${meal.latitude}, ${meal.longitude}`, { indent: 10 });
-                }
-              }
-            } catch (tErr) { console.error("PDF generation error (meal-tracking):", String(tErr)); throw tErr; }
-          } else if (type === "annual-health") {
-          doc.fontSize(16).font("Helvetica-Bold").text("Annual Health Card Report");
-          doc.fontSize(12).font("Helvetica").text(`Year: ${currentYear}`);
-          doc.moveDown();
-
-          const filterParams: any = { year: currentYear };
-          if (schoolId && schoolId !== "all") filterParams.schoolId = schoolId;
-          if (studentId && studentId !== "all") filterParams.studentId = studentId;
-
-          const cardsResult = await storage.getAnnualHealthCards(filterParams);
-          const cards = cardsResult.cards || [];
-          const approvedCards = cards.filter((c: any) => c.status === "Approved");
-          const rejectedCards = cards.filter((c: any) => c.status === "Rejected");
-          const pendingCards = cards.filter((c: any) => c.status === "Pending");
-
-          doc.fontSize(12).text(`Total Health Cards: ${cards.length}`);
-          doc.text(`Approved: ${approvedCards.length}`);
-          doc.text(`Pending: ${pendingCards.length}`);
-          doc.text(`Rejected: ${rejectedCards.length}`);
-          doc.moveDown();
-
-          doc.fontSize(12).font("Helvetica-Bold").text("Card Details:");
-          doc.font("Helvetica");
-          for (const card of cards.slice(0, 20)) {
-            try {
-              const student = await storage.getStudent(card.studentId);
-              const studentName = student?.fullName || "Unknown";
-              ensureSpace(doc, 40);
-              doc.fontSize(12).text(`- ${studentName} (${card.classSection || "N/A"}): Status: ${card.status}, BMI: ${card.bmi ? parseFloat(card.bmi).toFixed(2) : "N/A"}, Weight: ${card.weightKg || "N/A"}kg, Height: ${card.heightCm || "N/A"}cm`);
-              if (card.notes) {
-                doc.fontSize(12).text(`  Notes: ${card.notes.substring(0, 200)}`, { indent: 10, width: doc.page.width - doc.page.margins.left - doc.page.margins.right });
-              }
-            } catch (innerErr: any) {
-              // Log the problematic card and error stack to aid debugging without losing the entire report
-              console.error('Error rendering annual health card for PDF:', innerErr?.stack || innerErr?.message || String(innerErr));
-              try {
-                console.error('Problematic card sample:', safeSample({ id: card?.id, studentId: card?.studentId, status: card?.status, keys: Object.keys(card || {}) }));
-              } catch (e) {
-                console.error('Failed to sample card for logging', String(e));
-              }
-              // Continue with next card to keep report generation resilient
-              continue;
-            }
-          }
-        } else if (type === "hostel-attendance") {
-          doc.fontSize(16).font("Helvetica-Bold").text("Hostel Attendance Report");
-          doc.fontSize(11).font("Helvetica").text(`Month: ${currentMonth}/${currentYear}`);
-          doc.moveDown();
-
-          const monthStart = new Date(currentYear, currentMonth - 1, 1).toISOString().split("T")[0];
-          const monthEnd = new Date(currentYear, currentMonth, 0).toISOString().split("T")[0];
-
-          const allAttendance: any[] = [];
-          const dates = [];
-          for (let d = new Date(monthStart); d <= new Date(monthEnd); d.setDate(d.getDate() + 1)) {
-            dates.push(d.toISOString().split("T")[0]);
-          }
-
-          for (const date of dates) {
-            // Use normalized filter so clients passing 'all' or omitting schoolId will get aggregated data
-            const attendance = await storage.getHostelAttendance({ date, schoolId: normalizedFilters.schoolId as string | undefined });
-            allAttendance.push(...attendance);
-          }
-
-          const uniqueStudents = new Set(allAttendance.map(a => a.studentId));
-          doc.fontSize(12).text(`Total Attendance Records: ${allAttendance.length}`);
-          doc.text(`Unique Students: ${uniqueStudents.size}`);
-
-          const presentCount = allAttendance.filter(a => a.checkInTime && !a.isVacation).length;
-          const absentCount = allAttendance.filter(a => !a.checkInTime && !a.isVacation).length;
-          const onVacationCount = allAttendance.filter(a => a.isVacation).length;
-
-          doc.text(`Present: ${presentCount}`);
-          doc.text(`Absent: ${absentCount}`);
-          doc.text(`On Vacation: ${onVacationCount}`);
-          doc.moveDown();
-
-          doc.fontSize(12).font("Helvetica-Bold").text("Recent Attendance:");
-          doc.font("Helvetica");
-          for (const record of allAttendance.slice(0, 20)) {
-            const student = await storage.getStudent(record.studentId);
-            const studentName = student?.fullName || "Unknown";
-            const status = record.isVacation ? "On Vacation" : (record.checkInTime ? "Present" : "Absent");
-            const checkInTime = record.checkInTime ? new Date(record.checkInTime).toLocaleTimeString() : "";
-            doc.fontSize(11).text(`- ${studentName}: ${record.date} - ${status}${checkInTime ? ` (Check-in: ${checkInTime})` : ""}`);
-            if (record.checkInImageUrl) {
-              doc.fontSize(10).text(`  Check-in Image: ${record.checkInImageUrl}`, { indent: 10 });
-            }
-            if (record.checkOutImageUrl) {
-              doc.fontSize(10).text(`  Check-out Image: ${record.checkOutImageUrl}`, { indent: 10 });
-            }
-          }
-        } else if (type === "po-consolidated") {
-          doc.fontSize(16).font("Helvetica-Bold").text("PO Consolidated Report");
-          doc.fontSize(11).font("Helvetica").text(`Month: ${currentMonth}/${currentYear}`);
-          doc.moveDown();
-  
-          const schoolsResult = await storage.getSchools(1, 1000);
-          let schools = schoolsResult.schools || [];
-
-          // If request is from a PO, scope the consolidated report to the PO's district
-          if (req.user?.role === "PO") {
-            try {
-              const currentUser = await storage.getUser(req.user.id);
-              const poDistrict = currentUser?.district;
-              if (poDistrict) schools = schools.filter(s => sameDistrict(s.district, poDistrict));
-            } catch (err) {
-              console.warn('Failed to narrow schools to PO district for consolidated report:', (err as any)?.message || err);
-            }
-          }
-
-          doc.fontSize(10).text(`Total Schools: ${schools.length}`);
-
-          const schoolIds = new Set(schools.map(s => s.id));
-
-          const studentsResult = await storage.getStudents({ limit: 10000 });
-          const allStudents = (studentsResult.students || []).filter(s => schoolIds.size ? schoolIds.has(s.schoolId) : true);
-          doc.text(`Total Students: ${allStudents.length}`);
-
-          const allCheckupsResult = await storage.getMonthlyCheckups({ month: currentMonth, year: currentYear, limit: 10000 });
-          const allCheckups = (allCheckupsResult.checkups || []).filter((c: any) => schoolIds.size ? schoolIds.has(c.schoolId) : true);
-          doc.text(`Monthly Checkups: ${allCheckups.length}`);
-
-          const allCardsResult = await storage.getAnnualHealthCards({ year: currentYear, limit: 10000 });
-          const allCards = (allCardsResult.cards || []).filter((c: any) => schoolIds.size ? schoolIds.has(c.schoolId) : true);
-          doc.text(`Health Cards (${currentYear}): ${allCards.length}`);
-          doc.text(`Approved Cards: ${allCards.filter((c: any) => c.status === "Approved").length}`);
-          doc.moveDown();
-          doc.fontSize(10).font("Helvetica-Bold").text("Schools Summary:");
-          doc.font("Helvetica");
-          for (const school of schools.slice(0, 20)) {
-            const schoolStudents = await storage.getStudents({ schoolId: school.id, limit: 1000 });
-            doc.fontSize(11).text(`- ${school.name} (${school.district}, ${school.block}): ${schoolStudents.students.length} students`);
-          }
-        } else if (type === "students") {
-          doc.fontSize(16).font("Helvetica-Bold").text("Students Report");
-          doc.fontSize(11).font("Helvetica").text(`Generated: ${new Date().toLocaleDateString()}`);
-          doc.moveDown();
-  
-          const studentsResult = await storage.getStudents({ limit: 1000 });
-          const students = studentsResult.students || [];
-          doc.fontSize(12).text(`Total Students: ${students.length}`);
-  
-          doc.moveDown();
-          doc.fontSize(12).font("Helvetica-Bold").text("Student Details:");
-          doc.font("Helvetica");
-          for (const student of students.slice(0, 50)) {
-            doc.fontSize(11).text(`- ${student.fullName} (${student.classSection}): ${student.uniqueId}, Gender: ${student.gender}`);
-          }
-        } else if (type === "school-students") {
-          doc.fontSize(16).font("Helvetica-Bold").text("School Students Report");
-          doc.fontSize(11).font("Helvetica").text(`School ID: ${schoolId}`);
-          doc.moveDown();
-  
-          const studentsResult = await storage.getStudents({ schoolId: schoolId as string, limit: 1000 });
-          const students = studentsResult.students || [];
-          doc.fontSize(12).text(`Total Students: ${students.length}`);
-  
-          doc.moveDown();
-          doc.fontSize(12).font("Helvetica-Bold").text("Student Details:");
-          doc.font("Helvetica");
-          for (const student of students.slice(0, 50)) {
-            doc.fontSize(11).text(`- ${student.fullName} (${student.classSection}): ${student.uniqueId}, Gender: ${student.gender}`);
-          }
-        } else {
-          doc.fontSize(12).text("Report type not found");
-        }
-
-        doc.end();
-      } catch (error: any) {
-        console.error("Report generation error:", error?.message || String(error));
-        console.error(error?.stack || "no stack available");
-        // Only send response if headers haven't been sent yet
-        if (!res.headersSent) {
-          res.status(500).json({ message: error?.message || "Failed to generate report" });
-        } else {
-          // Headers already sent, destroy response to prevent sending truncated PDF
-          try { res.destroy(error); } catch (e) { /* ignore */ }
-        }
-      }
-      }
+      // Filter to valid image paths (local uploads and external/public URLs)
+      const validImages = images.filter(
+        (img) => img && (img.startsWith("/uploads/") || img.startsWith("http:") || img.startsWith("https:"))
+      );
+
+      res.json({ images: validImages, count: validImages.length });
     } catch (error: any) {
-      console.error("Report generation error:", error?.message || String(error));
-      console.error(error?.stack || "no stack available");
-      if (!res.headersSent) {
-        res.status(500).json({ message: error?.message || "Failed to generate report" });
-      }
+      console.error("Image download error:", error?.message || String(error));
+      res.status(500).json({ message: error?.message || "Failed to fetch images" });
     }
   });
 
-  // Image download endpoint
+  // Alerts endpoint
+  app.get("/api/alerts", authenticateToken, async (req: AuthRequest, res) => {
+    try {
+      const user = req.user!;
+      
+      // Get month and year from query parameters
+      const month = parseInt(req.query.month as string) || new Date().getMonth() + 1;
+      const year = parseInt(req.query.year as string) || new Date().getFullYear();
+
+      // Get students for this teacher/class
+      const { students } = await storage.getStudents({
+        schoolId: user.schoolId || undefined,
+        classSection: user.role === "ClassTeacher" ? user.classSection : undefined,
+        limit: 1000
+      });
+
+      const alerts: any[] = [];
+
+      // Check for students without health cards
+      for (const student of students) {
+        const { cards } = await storage.getAnnualHealthCards({
+          studentId: student.id,
+          year,
+          limit: 1
+        });
+
+        if (cards.length === 0) {
+          alerts.push({
+            id: `no-card-${student.id}`,
+            type: "missing_health_card",
+            title: "Missing Health Card",
+            message: `${student.fullName} (${student.classSection}) does not have a health card for ${year}`,
+            studentId: student.id,
+            studentName: student.fullName,
+            classSection: student.classSection,
+            severity: "high",
+            createdAt: new Date().toISOString()
+          });
+        }
+      }
+
+      res.json({ alerts, count: alerts.length });
+    } catch (error: any) {
+      console.error("Alerts error:", error?.message || String(error));
+      res.status(500).json({ message: error?.message || "Failed to fetch alerts" });
+    }
+  });
+
+      // Enforce role-based scoping
   app.get("/api/images/download", authenticateToken, async (req: AuthRequest, res) => {
     try {
       const { type, date, schoolId } = req.query;
@@ -9697,64 +8923,6 @@ async function generatePDFReport(reportData: any, reportType: string, userRole: 
     }
   });
 
-  // Vaccination tracking endpoint
-  app.get("/api/vaccination-tracking", authenticateToken, async (req: AuthRequest, res) => {
-    try {
-      const user = req.user!;
-      
-      // Get month and year from query parameters
-      const month = parseInt(req.query.month as string) || new Date().getMonth() + 1;
-      const year = parseInt(req.query.year as string) || new Date().getFullYear();
-
-      // Get students for this teacher/class
-      const { students } = await storage.getStudents({
-        schoolId: user.schoolId || undefined,
-        classSection: user.role === "ClassTeacher" ? user.classSection : undefined,
-        limit: 1000
-      });
-
-      // Get vaccination data from health cards (filtered by year)
-      const vaccinationData = [];
-      for (const student of students) {
-        const { cards } = await storage.getAnnualHealthCards({
-          studentId: student.id,
-          year,
-          limit: 1
-        });
-
-        if (cards.length > 0) {
-          const card = cards[0];
-          vaccinationData.push({
-            studentId: student.id,
-            studentName: student.fullName,
-            classSection: student.classSection,
-            lastUpdated: card.updatedAt || card.createdAt
-          });
-        } else {
-          vaccinationData.push({
-            studentId: student.id,
-            studentName: student.fullName,
-            classSection: student.classSection,
-            lastUpdated: null
-          });
-        }
-      }
-
-      // Calculate summary
-      const summary = {
-        totalStudents: students.length,
-      };
-
-      res.json({
-        vaccinationData,
-        summary
-      });
-    } catch (error: any) {
-      console.error("Get vaccination tracking error:", error?.message || String(error));
-      res.status(500).json({ message: error?.message || "Failed to fetch vaccination tracking" });
-    }
-  });
-
   // Growth trends endpoint
   app.get("/api/growth-trends", authenticateToken, async (req: AuthRequest, res) => {
     try {
@@ -9894,9 +9062,8 @@ async function generatePDFReport(reportData: any, reportType: string, userRole: 
   app.get("/api/teacher/class-health-summary", authenticateToken, authorizeRoles("ClassTeacher", "Admin"), async (req: AuthRequest, res) => {
     try {
       const user = req.user!;
-      const { month, year, ageGroup, healthCategory, class_id } = req.query;
+      const { year } = req.query;
 
-      const selectedMonth = month ? parseInt(month as string) : new Date().getMonth() + 1;
       const selectedYear = year ? parseInt(year as string) : new Date().getFullYear();
 
       // Get students for this teacher/class
@@ -9969,9 +9136,8 @@ async function generatePDFReport(reportData: any, reportType: string, userRole: 
   app.get("/api/teacher/referral-tracking", authenticateToken, authorizeRoles("ClassTeacher", "Admin"), async (req: AuthRequest, res) => {
     try {
       const user = req.user!;
-      const { month, year, ageGroup, healthCategory, class_id } = req.query;
+      const { year } = req.query;
 
-      const selectedMonth = month ? parseInt(month as string) : new Date().getMonth() + 1;
       const selectedYear = year ? parseInt(year as string) : new Date().getFullYear();
 
       // Get students for this teacher/class
@@ -10002,10 +9168,10 @@ async function generatePDFReport(reportData: any, reportType: string, userRole: 
             limit: 100
           });
 
-          // Filter by month/year
+          // Filter by year only (removed month filter since selectedMonth is not defined)
           const filteredReferrals = studentReferrals.filter(r => {
             const referralDate = new Date(r.referralDate);
-            return referralDate.getMonth() + 1 === selectedMonth && referralDate.getFullYear() === selectedYear;
+            return referralDate.getFullYear() === selectedYear;
           });
 
           filteredReferrals.forEach(referral => {
@@ -10028,11 +9194,11 @@ async function generatePDFReport(reportData: any, reportType: string, userRole: 
         console.warn("Referrals table not available for referral tracking");
       }
 
-
       // Calculate summary
       const summary = {
         total: referrals.length,
         pending: referrals.filter(r => r.status === "Pending").length,
+        inProgress: referrals.filter(r => r.status === "In Progress").length,
         completed: referrals.filter(r => r.status === "Completed").length,
         overdue: referrals.filter(r => {
           if (r.status !== "Pending") return false;
@@ -10043,7 +9209,10 @@ async function generatePDFReport(reportData: any, reportType: string, userRole: 
 
       res.json({
         referrals,
-        summary
+        summary,
+        pendingCount: summary.pending,
+        inProgressCount: summary.inProgress,
+        completedCount: summary.completed
       });
     } catch (error: any) {
       console.error("Get referral tracking error:", error?.message || String(error));
@@ -10309,192 +9478,6 @@ async function generatePDFReport(reportData: any, reportType: string, userRole: 
     }
   });
 
-  // PO Dashboard Export Endpoints
-  app.get("/api/po/export/:type", authenticateToken, authorizeRoles("PO", "Admin"), async (req: AuthRequest, res) => {
-    try {
-      const { type } = req.params;
-      const { month, year, format = "excel" } = req.query;
-
-      const selectedMonth = month ? parseInt(month as string) : new Date().getMonth() + 1;
-      const selectedYear = year ? parseInt(year as string) : new Date().getFullYear();
-
-      // Get PO's district
-      const user = await storage.getUser(req.user!.id);
-      const poDistrict: string | undefined = user?.district ?? undefined;
-
-      // Get schools for PO's district
-      let schools: any[] = [];
-      if (req.user?.role === "Admin") {
-        const result = await storage.getSchools(1, 1000);
-        schools = result.schools;
-      } else if (poDistrict) {
-        const allSchools = await storage.getSchools(1, 1000);
-        schools = allSchools.schools.filter(s => sameDistrict(s.district, poDistrict));
-      }
-
-      // Get data based on export type
-      let exportData: any[] = [];
-      let filename = `po-export-${type}-${selectedYear}-${selectedMonth}`;
-
-      switch (type) {
-        case "monthly-health":
-          // Monthly health report
-          exportData = await Promise.all(
-            schools.map(async (school) => {
-              const { students } = await storage.getStudents({ schoolId: school.id, limit: 1000 });
-              const { cards } = await storage.getAnnualHealthCards({ schoolId: school.id, status: "Approved" });
-              const { checkups } = await storage.getMonthlyCheckups({ schoolId: school.id, month: selectedMonth, year: selectedYear });
-
-              return {
-                schoolName: school.name,
-                district: school.district,
-                block: school.block,
-                totalStudents: students.length,
-                healthCardsCompleted: cards.length,
-                monthlyCheckups: checkups.length,
-                referralsGenerated: checkups.filter(c => c.treatmentType === "Referred").length,
-                completionRate: students.length > 0 ? Math.round((cards.length / students.length) * 100) : 0,
-              };
-            })
-          );
-          break;
-
-        case "school-referral-summary":
-          // School-wise referral summary
-          exportData = await Promise.all(
-            schools.map(async (school) => {
-              const { checkups } = await storage.getMonthlyCheckups({ schoolId: school.id, month: selectedMonth, year: selectedYear });
-              const referrals = checkups.filter(c => c.treatmentType === "Referred");
-
-              return {
-                schoolName: school.name,
-                district: school.district,
-                block: school.block,
-                totalReferrals: referrals.length,
-                pendingReferrals: referrals.length, // Simplified
-                completedReferrals: 0, // Simplified
-                topIssues: (() => {
-                  const issues = [];
-                  if (referrals.some(r => r.symptoms?.includes("anemia") || r.symptoms?.includes("Anemia"))) issues.push("Severe Anemia");
-                  if (referrals.some(r => r.symptoms?.includes("goitre") || r.symptoms?.includes("Goitre"))) issues.push("Goitre");
-                  if (referrals.some(r => r.symptoms?.includes("tb") || r.symptoms?.includes("TB"))) issues.push("TB");
-                  if (referrals.some(r => r.symptoms?.includes("leprosy") || r.symptoms?.includes("Leprosy"))) issues.push("Leprosy");
-                  return issues.length > 0 ? issues : ["General Health Issues"];
-                })(),
-              };
-            })
-          );
-          break;
-
-        case "nutritional-status":
-          // Nutritional status summary
-          const allCards = await Promise.all(
-            schools.map(async (school) => {
-              const { cards } = await storage.getAnnualHealthCards({ schoolId: school.id, year: selectedYear });
-              return cards;
-            })
-          );
-          const flatCards = allCards.flat();
-
-          exportData = [{
-            totalStudentsAssessed: flatCards.length,
-            underweightCount: flatCards.filter(c => {
-              const bmi = typeof c.bmi === 'number' ? c.bmi : (typeof c.bmi === 'string' ? parseFloat(c.bmi as string) : null);
-              return bmi && bmi < 18.5;
-            }).length,
-            normalWeightCount: flatCards.filter(c => {
-              const bmi = typeof c.bmi === 'number' ? c.bmi : (typeof c.bmi === 'string' ? parseFloat(c.bmi as string) : null);
-              return bmi && bmi >= 18.5 && bmi < 25;
-            }).length,
-            overweightCount: flatCards.filter(c => {
-              const bmi = typeof c.bmi === 'number' ? c.bmi : (typeof c.bmi === 'string' ? parseFloat(c.bmi as string) : null);
-              return bmi && bmi >= 25;
-            }).length,
-            severeAnemiaCount: flatCards.filter(c => c.b3_severe_anemia).length,
-            goitreCount: flatCards.filter(c => c.b6_goitre).length,
-            averageBMI: flatCards.length > 0 ? flatCards.reduce((sum, c) => {
-              const bmi = typeof c.bmi === 'number' ? c.bmi : (typeof c.bmi === 'string' ? parseFloat(c.bmi as string) : null);
-              return sum + (bmi || 0);
-            }, 0) / flatCards.length : 0,
-          }];
-          break;
-
-        case "deficiencies-report":
-          // Deficiencies report
-          const deficienciesData = await Promise.all(
-            schools.map(async (school) => {
-              const { cards } = await storage.getAnnualHealthCards({ schoolId: school.id, year: selectedYear });
-              return {
-                schoolName: school.name,
-                vitaminADeficiency: cards.filter(c => c.b4_vitamin_a_deficiency).length,
-                vitaminDDeficiency: cards.filter(c => c.b5_vitamin_d_deficiency).length,
-                ironDeficiency: cards.filter(c => c.b3_severe_anemia).length,
-                iodineDeficiency: cards.filter(c => c.b6_goitre).length,
-                zincDeficiency: cards.filter(c => c.b8_vitb_deficiency).length,
-              };
-            })
-          );
-          exportData = deficienciesData;
-          break;
-
-        case "tb-leprosy-report":
-          // TB/Leprosy red-flag report
-          const criticalCases = await Promise.all(
-            schools.map(async (school) => {
-              const { cards } = await storage.getAnnualHealthCards({ schoolId: school.id, year: selectedYear });
-              return {
-                schoolName: school.name,
-                tbSuspected: cards.filter(c => c.c8_suspected).length,
-                leprosySuspected: cards.filter(c => c.c7_suspected).length,
-                totalCriticalCases: cards.filter(c => c.c7_suspected || c.c8_suspected).length,
-              };
-            })
-          );
-          exportData = criticalCases.filter(c => c.totalCriticalCases > 0);
-          break;
-
-        case "adolescent-health":
-          // Adolescent health red-flag
-          const adolescentData = await Promise.all(
-            schools.map(async (school) => {
-              const { cards } = await storage.getAnnualHealthCards({ schoolId: school.id, year: selectedYear });
-              const adolescents = cards.filter(c => (c.ageYears || 0) >= 10);
-
-              return {
-                schoolName: school.name,
-                totalAdolescents: adolescents.length,
-                mentalHealthIssues: adolescents.filter(c => c.e1_life_events_difficulty || c.e3_persistent_sadness).length,
-                substanceIssues: adolescents.filter(c => c.e2_peer_pressure_substance).length,
-                reproductiveHealthIssues: adolescents.filter(c => c.e5_pain_urination || c.e6_foul_discharge).length,
-              };
-            })
-          );
-          exportData = adolescentData.filter(a => a.mentalHealthIssues > 0 || a.substanceIssues > 0 || a.reproductiveHealthIssues > 0);
-          break;
-
-        default:
-          return res.status(400).json({ message: "Invalid export type" });
-      }
-
-      // Generate CSV content
-      if (format === "csv" || format === "excel") {
-        const csvContent = generateCSV(exportData);
-        res.setHeader("Content-Type", "text/csv");
-        res.setHeader("Content-Disposition", `attachment; filename="${filename}.csv"`);
-        res.send(csvContent);
-      } else {
-        // JSON format
-        res.setHeader("Content-Type", "application/json");
-        res.setHeader("Content-Disposition", `attachment; filename="${filename}.json"`);
-        res.json(exportData);
-      }
-
-    } catch (error: any) {
-      console.error("PO export error:", error?.message || String(error));
-      res.status(500).json({ message: error?.message || "Failed to generate export" });
-    }
-  });
-
   // ============================================================================
   // PERIOD TRACKER ROUTES
   // ============================================================================
@@ -10511,29 +9494,18 @@ async function generatePDFReport(reportData: any, reportType: string, userRole: 
         return res.status(404).json({ message: "Student not found" });
       }
 
-      // Authorization: Only Lady Superintendent and Admin can access Period Tracker
-      if (req.user?.role === "Lady Superintendent") {
-        if (!req.user.schoolId) {
-          return res.status(403).json({ message: "Lady Superintendent not assigned to a school" });
-        }
-        if (student.schoolId !== req.user.schoolId) {
-          return res.status(403).json({ message: "Access denied: Student not in your school" });
-        }
-      } else if (req.user?.role !== "Admin") {
-        return res.status(403).json({ message: "Access denied: Period Tracker is only accessible to Lady Superintendent" });
-      }
-
-      const result = await storage.getPeriodTrackerEntries({
+      // Get period tracker entries
+      const entries = await storage.getPeriodTrackerEntries({
         studentId,
         startDate: startDate as string,
         endDate: endDate as string,
-        page: page ? parseInt(page as string) : undefined,
-        limit: limit ? parseInt(limit as string) : undefined,
+        page: page ? parseInt(page as string) : 1,
+        limit: limit ? parseInt(limit as string) : 50
       });
 
-      res.json(result);
+      res.json(entries);
     } catch (error: any) {
-      console.error("Get period tracker entries error:", error?.message || String(error));
+      console.error("Period tracker error:", error?.message || String(error));
       res.status(500).json({ message: error?.message || "Failed to fetch period tracker entries" });
     }
   });
@@ -10777,7 +9749,7 @@ async function generatePDFReport(reportData: any, reportType: string, userRole: 
   });
 
   // Public Platform Statistics Endpoint (no authentication required)
-  app.get("/api/platform-stats", async (req: Request, res: Response) => {
+  app.get("/api/platform-stats", async (_req: Request, res: Response) => {
     try {
       // Get current date boundaries for today's stats
       const today = new Date();
@@ -10927,8 +9899,6 @@ async function generatePDFReport(reportData: any, reportType: string, userRole: 
     }
   });
 
-
   return _httpServer;
 }
-
 

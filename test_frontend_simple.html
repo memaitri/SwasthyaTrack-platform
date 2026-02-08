@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Critical Students - Simple Test</title>
+    <style>
+        body { font-family: Arial; max-width: 1200px; margin: 20px auto; padding: 20px; }
+        .card { border: 1px solid #ddd; padding: 15px; margin: 10px 0; border-radius: 8px; }
+        .high { border-left: 4px solid #f44336; }
+        .medium { border-left: 4px solid #ff9800; }
+        .low { border-left: 4px solid #ffc107; }
+        button { background: #1976d2; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; }
+        .error { background: #ffebee; color: #c62828; padding: 15px; border-radius: 4px; }
+        .success { background: #e8f5e9; color: #2e7d32; padding: 15px; border-radius: 4px; }
+        .loading { background: #e3f2fd; color: #1976d2; padding: 15px; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <h1>🔥 Critical Students - Simple Test</h1>
+    
+    <div id="status"></div>
+    
+    <div style="margin: 20px 0;">
+        <button onclick="testWithToken()">Test with Token</button>
+        <button onclick="testWithoutToken()">Test without Token (will fail)</button>
+    </div>
+    
+    <div id="results"></div>
+
+    <script>
+        async function testWithToken() {
+            const token = prompt('Paste your auth token (from DevTools → Application → Local Storage):');
+            if (!token) return;
+            
+            await fetchCriticalStudents(token);
+        }
+        
+        async function testWithoutToken() {
+            await fetchCriticalStudents(null);
+        }
+        
+        async function fetchCriticalStudents(token) {
+            const statusDiv = document.getElementById('status');
+            const resultsDiv = document.getElementById('results');
+            
+            statusDiv.innerHTML = '<div class="loading">⏳ Fetching critical students...</div>';
+            resultsDiv.innerHTML = '';
+            
+            try {
+                const headers = {
+                    'Content-Type': 'application/json'
+                };
+                
+                if (token) {
+                    headers['Authorization'] = `Bearer ${token}`;
+                }
+                
+                console.log('Fetching from:', 'http://localhost:5000/api/po/critical-students?schoolType=All&limit=100');
+                console.log('Headers:', headers);
+                
+                const response = await fetch('http://localhost:5000/api/po/critical-students?schoolType=All&limit=100', {
+                    method: 'GET',
+                    headers: headers
+                });
+                
+                console.log('Response status:', response.status);
+                console.log('Response ok:', response.ok);
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('Error response:', errorText);
+                    statusDiv.innerHTML = `<div class="error">❌ Error: ${response.status} ${response.statusText}<br>${errorText}</div>`;
+                    return;
+                }
+                
+                const data = await response.json();
+                console.log('Data received:', data);
+                
+                statusDiv.innerHTML = `<div class="success">✅ Success! Found ${data.total || 0} critical students</div>`;
+                
+                if (!data.criticalStudents || data.criticalStudents.length === 0) {
+                    resultsDiv.innerHTML = '<div class="card">No critical students found</div>';
+                    return;
+                }
+                
+                let html = '<h2>Critical Students:</h2>';
+                
+                data.criticalStudents.forEach((student, idx) => {
+                    const priorityClass = student.priorityScore >= 70 ? 'high' 
+                        : student.priorityScore >= 40 ? 'medium' 
+                        : 'low';
+                    
+                    const priorityLabel = student.priorityScore >= 70 ? '🔴 HIGH' 
+                        : student.priorityScore >= 40 ? '🟠 MEDIUM' 
+                        : '🟡 LOW';
+                    
+                    html += `
+                        <div class="card ${priorityClass}">
+                            <h3>${idx + 1}. ${student.studentName} - ${priorityLabel} (${student.priorityScore})</h3>
+                            <p><strong>School:</strong> ${student.schoolName}</p>
+                            <p><strong>Class:</strong> ${student.classSection} | <strong>Gender:</strong> ${student.gender} | <strong>Age:</strong> ${student.age || 'N/A'}</p>
+                            <p><strong>Reasons (${student.reasons.length}):</strong></p>
+                            <ul>
+                                ${student.reasons.map(r => `
+                                    <li><strong>[${r.severity.toUpperCase()}]</strong> ${r.description}
+                                        ${r.value && r.threshold ? ` (Current: ${r.value}, Threshold: ${r.threshold})` : ''}
+                                    </li>
+                                `).join('')}
+                            </ul>
+                        </div>
+                    `;
+                });
+                
+                resultsDiv.innerHTML = html;
+                
+            } catch (error) {
+                console.error('Fetch error:', error);
+                statusDiv.innerHTML = `<div class="error">❌ Error: ${error.message}</div>`;
+            }
+        }
+        
+        // Auto-test on load if we have a token in localStorage
+        window.addEventListener('load', () => {
+            const token = localStorage.getItem('token');
+            if (token) {
+                console.log('Found token in localStorage, auto-testing...');
+                fetchCriticalStudents(token);
+            } else {
+                document.getElementById('status').innerHTML = '<div class="loading">ℹ️ Click "Test with Token" to start</div>';
+            }
+        });
+    </script>
+</body>
+</html>

@@ -21,8 +21,6 @@ import { Eye, FileDown, Filter, Edit, CheckCircle2, XCircle, ArrowLeft } from "l
 import { Link, useLocation } from "wouter";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { exportToCSV } from "@/lib/csvExport";
-import { exportToPDF, exportToExcel } from "@/lib/exportService";
 import { HealthCardFormSections } from "@/components/health-card/HealthCardFormSections";
 import { useForm } from "react-hook-form";
 
@@ -37,7 +35,6 @@ export default function HealthCardsPage() {
    const [yearFilter, setYearFilter] = useState(String(new Date().getFullYear()));
    const [page, setPage] = useState(1);
    const [editingCard, setEditingCard] = useState<any>(null);
-   const [exportFormat, setExportFormat] = useState("csv");
    const [rejectingCard, setRejectingCard] = useState<any>(null);
    const [rejectionReason, setRejectionReason] = useState("");
    const isAdmin = hasRole("Admin");
@@ -121,9 +118,12 @@ export default function HealthCardsPage() {
       return res.json();
     },
     onSuccess: () => {
+      const isClassTeacher = user?.role === "ClassTeacher";
       toast({
-        title: "Health card updated",
-        description: "The health card has been updated successfully.",
+        title: isClassTeacher ? "Health card updated - Pending approval" : "Health card updated",
+        description: isClassTeacher 
+          ? "Your changes have been submitted and are pending Headmaster approval."
+          : "The health card has been updated successfully.",
       });
       
       // Automatic propagation: Invalidate all related queries across all views
@@ -208,40 +208,7 @@ export default function HealthCardsPage() {
     },
   });
 
-  const exportReferrals = async (cardId: string) => {
-    try {
-      const res = await apiRequest("GET", `/api/annual-cards/${cardId}/referrals`);
-      const data = await res.json();
-      const referrals: any[] = data.referrals || [];
-      if (referrals.length === 0) {
-        toast({ title: "No referrals", description: "No referral data found for this card." });
-        return;
-      }
 
-      // Normalize for CSV
-      const rows = referrals.map(r => ({
-        studentName: data.student?.fullName || data.student?.full_name || data.student?.nameOfChild || "",
-        studentClass: data.student?.classSection || data.student?.class_section || "",
-        section: r.section,
-        label: r.label,
-        facility: r.facility || r.facility || r.facilityName || "",
-        date: r.date || "",
-        details: typeof r.details === 'object' ? JSON.stringify(r.details) : (r.details || "")
-      }));
-
-      exportToCSV(rows, [
-        { key: 'studentName', header: 'Student Name' },
-        { key: 'studentClass', header: 'Class' },
-        { key: 'section', header: 'Section' },
-        { key: 'label', header: 'Condition' },
-        { key: 'facility', header: 'Referral Facility' },
-        { key: 'date', header: 'Referral Date' },
-        { key: 'details', header: 'Details' },
-      ], `referrals_${cardId}`);
-    } catch (error: any) {
-      toast({ title: 'Error', description: error.message || 'Failed to export referrals', variant: 'destructive' });
-    }
-  };
 
   // -- Full details helpers and export
   const [showFullDetails, setShowFullDetails] = React.useState(false);
@@ -255,22 +222,7 @@ export default function HealthCardsPage() {
     return String(val);
   };
 
-  const exportJSON = (card: any) => {
-    try {
-      const dataStr = JSON.stringify(card, null, 2);
-      const blob = new Blob([dataStr], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `healthcard_${card.id || 'card'}.json`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      toast({ title: 'Error', description: 'Failed to export JSON', variant: 'destructive' });
-    }
-  };
+
 
   const handleSaveEdit = () => {
     if (!editingCard) return;
@@ -338,12 +290,7 @@ export default function HealthCardsPage() {
               <Button variant="ghost" size="sm" onClick={() => setShowFullDetails(s => !s)}>
                 {showFullDetails ? 'Hide full details' : 'Show full details'}
               </Button>
-              {/* Hide Export JSON button for Class Teachers */}
-              {!hasRole("ClassTeacher") && (
-                <Button variant="ghost" size="sm" onClick={() => exportJSON(card)}>
-                  <FileDown className="h-4 w-4 mr-2" />Export JSON
-                </Button>
-              )}
+
             </div>
           </div>
 
@@ -614,19 +561,6 @@ export default function HealthCardsPage() {
               ))}
             </SelectContent>
           </Select>
-          {/* Hide export format selector for Class Teachers */}
-          {!hasRole("ClassTeacher") && (
-            <Select value={exportFormat} onValueChange={setExportFormat}>
-              <SelectTrigger className="w-32">
-                <SelectValue placeholder="Export Format" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="csv">CSV</SelectItem>
-                <SelectItem value="pdf">PDF (with charts)</SelectItem>
-                <SelectItem value="excel">Excel (with charts)</SelectItem>
-              </SelectContent>
-            </Select>
-          )}
         </div>
 
         {error && (
@@ -747,9 +681,6 @@ export default function HealthCardsPage() {
                   {/* Hide export buttons for Class Teachers */}
                   {!hasRole("ClassTeacher") && (
                     <>
-                      <Button variant="ghost" size="icon" data-testid={`button-export-referrals-${item.id}`} onClick={() => exportReferrals(item.id)}>
-                        <FileDown className="h-4 w-4" />
-                      </Button>
                       <Button variant="ghost" size="icon" data-testid={`button-download-${item.id}`}>
                         <FileDown className="h-4 w-4" />
                       </Button>
@@ -785,31 +716,6 @@ export default function HealthCardsPage() {
           data={cards}
           getRowKey={(item: any) => item.id}
           isLoading={isLoading}
-          // Remove export functionality for Class Teachers
-          exportable={!hasRole("ClassTeacher")}
-          onExport={!hasRole("ClassTeacher") ? async (type) => {
-            const fmt = type || exportFormat;
-            if (fmt === "csv") {
-              const csvColumns = [
-                { key: "nameOfChild", header: "Student Name" },
-                { key: "classSection", header: "Class" },
-                { key: "year", header: "Year" },
-                { key: "schoolName", header: "School" },
-                { key: "status", header: "Status" },
-                { key: "dateOfEntry", header: "Submitted Date" },
-              ];
-              
-              exportToCSV(
-                cards,
-                csvColumns,
-                "health_cards"
-              );
-            } else if (fmt === "pdf") {
-              exportToPDF(cards as any, { includeNutrition: false, includeMedical: true }, user?.fullName || user?.email || '');
-            } else if (fmt === "xlsx") {
-              exportToExcel(cards as any, { includeNutrition: false, includeMedical: true }, user?.fullName || user?.email || '');
-            }
-          } : undefined}
           pagination={{
             currentPage: page,
             totalPages,

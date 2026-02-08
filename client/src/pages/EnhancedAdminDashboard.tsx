@@ -19,7 +19,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
-import { exportToPDF, exportToExcel } from "@/lib/exportService";
 import {
   Users,
   School,
@@ -40,10 +39,8 @@ import {
   Calendar,
   MapPin,
   Award,
-  Download,
   Filter,
-  Maximize2,
-} from "lucide-react";
+  Maximize2} from "lucide-react";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
 
@@ -58,8 +55,7 @@ const roleBadgeColors: Record<string, string> = {
   PO: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
   Headmaster: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300",
   ClassTeacher: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
-  MedicalTeam: "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300",
-};
+  MedicalTeam: "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300"};
 
 function EnhancedAdminDashboardContent() {
   const [selectedSchoolId, setSelectedSchoolId] = useState<string>("all");
@@ -85,8 +81,7 @@ function EnhancedAdminDashboardContent() {
     queryFn: async () => {
       const res = await apiRequest("GET", "/api/schools");
       return res.json();
-    },
-  });
+    }});
 
   const { data: dashboardData, isLoading } = useQuery({
     queryKey: ["/api/admin/dashboard", selectedSchoolId, filterValues],
@@ -100,8 +95,7 @@ function EnhancedAdminDashboardContent() {
       const url = `/api/admin/dashboard${params.toString() ? `?${params}` : ""}`;
       const res = await apiRequest("GET", url);
       return res.json();
-    },
-  });
+    }});
 
   const metrics = dashboardData?.metrics || {
     totalUsers: 0,
@@ -111,11 +105,10 @@ function EnhancedAdminDashboardContent() {
     totalHealthCards: 0,
     approvedHealthCards: 0,
     pendingHealthCards: 0,
-    vaccinationCoverage: 0,
+    healthCardCoverage: 0,
     healthScreeningRate: 0,
     dataCompleteness: 0,
-    systemUptime: 0,
-  };
+    systemUptime: 0};
 
   const recentUsers = dashboardData?.recentUsers || [];
   const usersByRole = dashboardData?.usersByRole || [];
@@ -125,12 +118,11 @@ function EnhancedAdminDashboardContent() {
   // Enhanced metrics with trends
   const enhancedMetrics = {
     healthCardCompletion: metrics.totalHealthCards > 0 ? Math.round((metrics.approvedHealthCards / metrics.totalHealthCards) * 100) : 0,
-    vaccinationRate: metrics.vaccinationCoverage ?? 0,
+    healthCardRate: metrics.healthCardCoverage ?? 0,
     screeningRate: metrics.healthScreeningRate ?? 0,
     dataQuality: metrics.dataCompleteness ?? 0,
     activeUsersToday: systemActivity.reduce((sum: number, day: SystemActivityItem) => sum + day.logins, 0),
-    totalActionsToday: systemActivity.reduce((sum: number, day: SystemActivityItem) => sum + day.actions, 0),
-  };
+    totalActionsToday: systemActivity.reduce((sum: number, day: SystemActivityItem) => sum + day.actions, 0)};
 
   // Geographic distribution data
   const geographicData = schoolsData?.schools?.reduce((acc: any[], school: any) => {
@@ -145,8 +137,7 @@ function EnhancedAdminDashboardContent() {
         region: district,
         schools: 1,
         students: school.totalStudents || 0,
-        coverage: school.healthCardCompletion || 0,
-      });
+        coverage: school.healthCardCompletion || 0});
     }
     return acc;
   }, []) || [];
@@ -161,8 +152,7 @@ function EnhancedAdminDashboardContent() {
         { value: '7d', label: 'Last 7 days' },
         { value: '30d', label: 'Last 30 days' },
         { value: '90d', label: 'Last 3 months' },
-        { value: '1y', label: 'Last year' },
-      ]
+        { value: '1y', label: 'Last year' }]
     },
     {
       id: 'userRole',
@@ -174,8 +164,7 @@ function EnhancedAdminDashboardContent() {
         { value: 'PO', label: 'Program Officer' },
         { value: 'Headmaster', label: 'Headmaster' },
         { value: 'ClassTeacher', label: 'Class Teacher' },
-        { value: 'MedicalTeam', label: 'Medical Team' },
-      ]
+        { value: 'MedicalTeam', label: 'Medical Team' }]
     },
     {
       id: 'schoolType',
@@ -185,8 +174,7 @@ function EnhancedAdminDashboardContent() {
         { value: 'all', label: 'All Schools' },
         { value: 'primary', label: 'Primary' },
         { value: 'secondary', label: 'Secondary' },
-        { value: 'higher_secondary', label: 'Higher Secondary' },
-      ]
+        { value: 'higher_secondary', label: 'Higher Secondary' }]
     }
   ];
 
@@ -207,32 +195,7 @@ function EnhancedAdminDashboardContent() {
     });
   };
 
-  const handleExport = async (format: 'png' | 'pdf' | 'csv') => {
-    try {
-      if (format === 'csv') {
-        const exportData = recentUsers.map((u: any) => ({
-          'Name': u.fullName,
-          'Email': u.email,
-          'Username': u.username,
-          'Role': u.role,
-          'Status': u.isActive ? 'Active' : 'Inactive',
-        }));
-        
-        const { exportToCSV } = await import('@/lib/csvExport');
-        exportToCSV(exportData, [
-          { key: 'Name', header: 'Name' },
-          { key: 'Email', header: 'Email' },
-          { key: 'Username', header: 'Username' },
-          { key: 'Role', header: 'Role' },
-          { key: 'Status', header: 'Status' },
-        ], `admin-dashboard-${new Date().toISOString().split('T')[0]}.csv`);
-      } else if (format === 'pdf') {
-        await exportToPDF(recentUsers as any, { includeNutrition: false, includeMedical: false }, 'Admin');
-      }
-    } catch (err) {
-      console.error('Export failed', err);
-    }
-  };
+
 
   return (
     <AppLayout title="Enhanced Admin Dashboard">
@@ -269,9 +232,9 @@ function EnhancedAdminDashboardContent() {
                 </SelectContent>
               </Select>
               
-              <Button variant="outline" onClick={() => handleExport('pdf')}>
-                <Download className="h-4 w-4 mr-2" />
-                Export Report
+              <Button variant="outline">
+                <Settings className="h-4 w-4 mr-2" />
+                Settings
               </Button>
             </div>
           </div>
@@ -357,7 +320,7 @@ function EnhancedAdminDashboardContent() {
                   chartType="pie"
                   animationDelay={400}
                   onDrillDown={() => handleChartDrillDown("user-roles", 0, "User Roles")}
-                  onExport={handleExport}
+                  
                   showInsights={true}
                   insights={[
                     "Class Teachers represent 45% of all users",
@@ -374,8 +337,7 @@ function EnhancedAdminDashboardContent() {
                       "hsl(142, 76%, 36%)",
                       "hsl(43, 74%, 49%)",
                       "hsl(350, 70%, 50%)",
-                      "hsl(120, 60%, 50%)",
-                    ]}
+                      "hsl(120, 60%, 50%)"]}
                     doughnut
                     enableDrillDown={true}
                     onSegmentClick={(index, value, label) => 
@@ -403,16 +365,13 @@ function EnhancedAdminDashboardContent() {
                       data: systemActivity.map((a: any) => a.logins),
                       borderColor: "hsl(210, 70%, 50%)",
                       backgroundColor: "hsla(210, 70%, 50%, 0.1)",
-                      fill: true,
-                    },
+                      fill: true},
                     {
                       label: "System Actions",
                       data: systemActivity.map((a: any) => a.actions),
                       borderColor: "hsl(45, 93%, 47%)",
                       backgroundColor: "hsla(45, 93%, 47%, 0.1)",
-                      fill: true,
-                    },
-                  ]}
+                      fill: true}]}
                   onPointClick={(dataIndex, datasetIndex, value, label) =>
                     handleChartDrillDown("activity", dataIndex, label)
                   }
@@ -429,7 +388,7 @@ function EnhancedAdminDashboardContent() {
               chartType="bar"
               animationDelay={600}
               subtitle="Health service coverage across districts"
-              onExport={handleExport}
+              
             >
               <InteractiveBarChart
                 labels={geographicData.map((d: any) => d.region)}
@@ -442,8 +401,7 @@ function EnhancedAdminDashboardContent() {
                       d.coverage > 60 ? "hsl(45, 93%, 47%)" :
                       "hsl(0, 84%, 60%)"
                     ),
-                    borderColor: "hsl(var(--border))",
-                  }
+                    borderColor: "hsl(var(--border))"}
                 ]}
                 onBarClick={(dataIndex, datasetIndex, value, label) =>
                   handleChartDrillDown("district", dataIndex, label)
@@ -477,8 +435,7 @@ function EnhancedAdminDashboardContent() {
                       data: [65, 72, 68, 78, 85, 92],
                       borderColor: "hsl(142, 76%, 36%)",
                       backgroundColor: "hsla(142, 76%, 36%, 0.1)",
-                      fill: true,
-                    }
+                      fill: true}
                   ]}
                   showTrendline={true}
                 />
@@ -499,8 +456,7 @@ function EnhancedAdminDashboardContent() {
                         "hsl(142, 76%, 36%)",
                         "hsl(210, 70%, 50%)",
                         "hsl(280, 65%, 60%)"
-                      ],
-                    }
+                      ]}
                   ]}
                   enableDrillDown={true}
                 />
@@ -528,8 +484,7 @@ function EnhancedAdminDashboardContent() {
                         <p className="text-xs text-muted-foreground">{item.email}</p>
                       </div>
                     </div>
-                  ),
-                },
+                  )},
                 { key: "username", header: "Username" },
                 {
                   key: "role",
@@ -541,15 +496,13 @@ function EnhancedAdminDashboardContent() {
                     >
                       {item.role}
                     </Badge>
-                  ),
-                },
+                  )},
                 {
                   key: "isActive",
                   header: "Status",
                   render: (item: any) => (
                     <StatusBadge status={item.isActive ? "Active" : "Inactive"} size="sm" />
-                  ),
-                },
+                  )},
                 {
                   key: "createdAt",
                   header: "Created",
@@ -557,14 +510,10 @@ function EnhancedAdminDashboardContent() {
                     <span className="text-sm text-muted-foreground">
                       {new Date(item.createdAt).toLocaleDateString()}
                     </span>
-                  ),
-                },
-              ]}
+                  )}]}
               data={recentUsers}
               getRowKey={(item: any) => item.id}
               isLoading={isLoading}
-              exportable
-              onExport={(type) => handleExport(type as any)}
               searchable
               searchPlaceholder="Search users..."
               emptyMessage="No users found"

@@ -46,7 +46,6 @@ const roleMenuItems = {
     { title: "Students", url: "/students", icon: Users },
     { title: "Approvals", url: "/approvals", icon: ClipboardList },
     { title: "Hostel Attendance", url: "/hostel", icon: Home },
-    { title: "Reports", url: "/reports", icon: FileText },
   ],
   Headmaster: [
     { title: "Dashboard", url: "/", icon: LayoutDashboard },
@@ -54,7 +53,6 @@ const roleMenuItems = {
     { title: "Health Cards", url: "/health-cards", icon: FileHeart },
     { title: "Hostel Attendance", url: "/hostel", icon: Home },
     { title: "Approvals", url: "/approvals", icon: ClipboardList },
-    { title: "Reports", url: "/reports", icon: FileText },
   ],
   ClassTeacher: [
     { title: "Dashboard", url: "/", icon: LayoutDashboard },

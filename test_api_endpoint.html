@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Critical Students API</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+        }
+        .result {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        .error {
+            background: #ffebee;
+            color: #c62828;
+        }
+        .success {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+        button {
+            background: #1976d2;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background: #1565c0;
+        }
+        pre {
+            background: #263238;
+            color: #aed581;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+        .student-card {
+            border: 1px solid #ddd;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .priority-high { border-left: 4px solid #f44336; }
+        .priority-medium { border-left: 4px solid #ff9800; }
+        .priority-low { border-left: 4px solid #ffc107; }
+    </style>
+</head>
+<body>
+    <h1>🧪 Test Critical Students API</h1>
+    
+    <div>
+        <h2>Step 1: Get Auth Token</h2>
+        <p>Open DevTools (F12) → Application → Local Storage → Copy the token value</p>
+        <input type="text" id="token" placeholder="Paste token here" style="width: 100%; padding: 8px; margin: 10px 0;">
+    </div>
+
+    <div>
+        <h2>Step 2: Test API</h2>
+        <button onclick="testAPI()">Test /api/po/critical-students</button>
+    </div>
+
+    <div id="results"></div>
+
+    <script>
+        async function testAPI() {
+            const token = document.getElementById('token').value;
+            const resultsDiv = document.getElementById('results');
+            
+            if (!token) {
+                resultsDiv.innerHTML = '<div class="result error">❌ Please enter your auth token first!</div>';
+                return;
+            }
+
+            resultsDiv.innerHTML = '<div class="result">⏳ Testing API...</div>';
+
+            try {
+                // Test the endpoint
+                const response = await fetch('http://localhost:5000/api/po/critical-students?schoolType=All&limit=100', {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                console.log('Response status:', response.status);
+                console.log('Response headers:', response.headers);
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    resultsDiv.innerHTML = `
+                        <div class="result error">
+                            <h3>❌ API Error</h3>
+                            <p>Status: ${response.status} ${response.statusText}</p>
+                            <pre>${errorText}</pre>
+                        </div>
+                    `;
+                    return;
+                }
+
+                const data = await response.json();
+                console.log('Response data:', data);
+
+                // Display results
+                let html = `
+                    <div class="result success">
+                        <h3>✅ API Response Successful</h3>
+                        <p><strong>Total Critical Students:</strong> ${data.total || 0}</p>
+                        <p><strong>District:</strong> ${data.metadata?.district || 'N/A'}</p>
+                        <p><strong>School Type:</strong> ${data.metadata?.schoolType || 'N/A'}</p>
+                    </div>
+                `;
+
+                if (data.criticalStudents && data.criticalStudents.length > 0) {
+                    html += '<h3>Critical Students:</h3>';
+                    data.criticalStudents.forEach((student, idx) => {
+                        const priorityClass = student.priorityScore >= 70 ? 'priority-high' 
+                            : student.priorityScore >= 40 ? 'priority-medium' 
+                            : 'priority-low';
+                        
+                        html += `
+                            <div class="student-card ${priorityClass}">
+                                <h4>${idx + 1}. ${student.studentName} - Priority: ${student.priorityScore}</h4>
+                                <p><strong>School:</strong> ${student.schoolName}</p>
+                                <p><strong>Class:</strong> ${student.classSection} | <strong>Gender:</strong> ${student.gender}</p>
+                                <p><strong>Reasons (${student.reasons.length}):</strong></p>
+                                <ul>
+                                    ${student.reasons.map(r => `<li>[${r.severity.toUpperCase()}] ${r.description}</li>`).join('')}
+                                </ul>
+                            </div>
+                        `;
+                    });
+                } else {
+                    html += '<div class="result">ℹ️ No critical students found</div>';
+                }
+
+                html += `
+                    <h3>Raw JSON Response:</h3>
+                    <pre>${JSON.stringify(data, null, 2)}</pre>
+                `;
+
+                resultsDiv.innerHTML = html;
+
+            } catch (error) {
+                console.error('Error:', error);
+                resultsDiv.innerHTML = `
+                    <div class="result error">
+                        <h3>❌ Error</h3>
+                        <p>${error.message}</p>
+                        <pre>${error.stack}</pre>
+                    </div>
+                `;
+            }
+        }
+    </script>
+</body>
+</html>

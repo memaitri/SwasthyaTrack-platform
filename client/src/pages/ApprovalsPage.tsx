@@ -7,6 +7,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
@@ -30,6 +31,9 @@ import {
   Loader2,
   MapPin,
   School,
+  Ban,
+  Unlock,
+  ShieldAlert,
 } from "lucide-react";
 
 export default function ApprovalsPage() {
@@ -49,6 +53,12 @@ export default function ApprovalsPage() {
   const [isSchoolRejectOpen, setIsSchoolRejectOpen] = useState(false);
   const [userRejectionReason, setUserRejectionReason] = useState("");
   const [schoolRejectionReason, setSchoolRejectionReason] = useState("");
+  
+  // Block/Unblock state
+  const [selectedStaff, setSelectedStaff] = useState<any>(null);
+  const [isBlockOpen, setIsBlockOpen] = useState(false);
+  const [blockReason, setBlockReason] = useState("");
+  const [activeTab, setActiveTab] = useState("pending");
 
   // POs should only see school and user approvals, not health cards
   const showHealthCardApprovals = user?.role !== "PO";
@@ -98,6 +108,55 @@ export default function ApprovalsPage() {
   });
 
   const pendingSchools = pendingSchoolsData?.pending || [];
+
+  // Approved staff for blocking/unblocking (PO and Admin only)
+  const { data: staffData, isLoading: isLoadingStaff } = useQuery({
+    queryKey: ["/api/users/staff"],
+    queryFn: async () => {
+      try {
+        const res = await apiRequest("GET", "/api/users/staff");
+        return res.json();
+      } catch (e) {
+        return { staff: [] };
+      }
+    },
+    enabled: user?.role === "PO" || user?.role === "Admin",
+  });
+
+  const approvedStaff = staffData?.staff || [];
+
+  // Block user mutation
+  const blockUserMutation = useMutation({
+    mutationFn: async ({ userId, reason }: { userId: string; reason?: string }) => {
+      return apiRequest("POST", `/api/users/${userId}/block`, { reason });
+    },
+    onSuccess: () => {
+      toast({ title: "User blocked", description: "The user account has been blocked and they have been logged out." });
+      queryClient.invalidateQueries({ queryKey: ["/api/users/staff"], exact: true });
+      queryClient.invalidateQueries({ queryKey: ["/api/users"], exact: false });
+      setIsBlockOpen(false);
+      setSelectedStaff(null);
+      setBlockReason("");
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to block user", variant: "destructive" });
+    },
+  });
+
+  // Unblock user mutation
+  const unblockUserMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      return apiRequest("POST", `/api/users/${userId}/unblock`, {});
+    },
+    onSuccess: () => {
+      toast({ title: "User unblocked", description: "The user account has been unblocked and they can now log in." });
+      queryClient.invalidateQueries({ queryKey: ["/api/users/staff"], exact: true });
+      queryClient.invalidateQueries({ queryKey: ["/api/users"], exact: false });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to unblock user", variant: "destructive" });
+    },
+  });
 
   const approveMutation = useMutation({
     mutationFn: async (cardId: string) => {
@@ -265,37 +324,125 @@ export default function ApprovalsPage() {
 
         {user?.role === "PO" && (
           <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-            <h2 className="font-semibold text-blue-800 dark:text-blue-200 mb-2">PO Approval Dashboard</h2>
+            <h2 className="font-semibold text-blue-800 dark:text-blue-200 mb-2">PO Management Dashboard</h2>
             <p className="text-sm text-blue-700 dark:text-blue-300">
-              As a Program Officer, you can approve Headmaster registrations and school requests within your district. 
-              Review each request carefully before making approval decisions.
+              As a Program Officer, you can approve Headmaster registrations, school requests, and manage staff accounts within your district.
             </p>
           </div>
         )}
 
-        {showHealthCardApprovals && user?.role !== "Admin" && (
-          <div>
-            <h2 className="text-lg font-semibold text-foreground">Pending Health Card Submissions</h2>
-            <p className="text-muted-foreground">
-              Review and approve or reject pending health card submissions
-            </p>
-          </div>
-        )}
+        {user?.role === "PO" || user?.role === "Admin" ? (
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="pending">Pending Approvals</TabsTrigger>
+              <TabsTrigger value="schools">Schools</TabsTrigger>
+              <TabsTrigger value="staff">Manage Staff</TabsTrigger>
+            </TabsList>
 
-{isLoading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {[1, 2, 3, 4, 5, 6].map((i) => (
-              <Card key={i}>
-                <CardContent className="p-6">
-                  <Skeleton className="h-20 w-full" />
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        ) : (
-          <>
-            {(user?.role === "Admin" || user?.role === "PO") && (
-              <div className="mt-6">
+            <TabsContent value="pending" className="space-y-6 mt-6">
+              <div>
+                <h2 className="text-lg font-semibold text-foreground">
+                  {user?.role === "PO" ? "Pending Headmaster Registrations" : "Pending Account Registrations"}
+                </h2>
+                <p className="text-muted-foreground">
+                  {user?.role === "PO" 
+                    ? "Review new Headmaster account registration requests in your district"
+                    : "Review new account registration requests"
+                  }
+                </p>
+
+                {isLoadingUsers ? (
+                  <div className="space-y-2 mt-4">
+                    <Skeleton className="h-10 w-full" />
+                    <Skeleton className="h-10 w-full" />
+                  </div>
+                ) : pendingUsers.length === 0 ? (
+                  <Card className="mt-4">
+                    <CardContent className="py-6 text-center">
+                      <CheckCircle2 className="h-12 w-12 text-emerald-500 mx-auto mb-3" />
+                      <p className="text-muted-foreground">No pending user registrations</p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                    {pendingUsers.map((u: any) => (
+                      <Card key={u.id} className="hover-elevate">
+                        <CardContent className="p-4">
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="flex items-center gap-3">
+                              <Avatar className="h-10 w-10">
+                                <AvatarFallback className="bg-primary/10 text-primary">
+                                  {u.fullName?.slice(0, 2).toUpperCase() || "U"}
+                                </AvatarFallback>
+                              </Avatar>
+                              <div>
+                                <h4 className="font-semibold text-foreground">{u.fullName}</h4>
+                                <p className="text-sm text-muted-foreground">{u.role}</p>
+                              </div>
+                            </div>
+                            <StatusBadge status="Pending" size="sm" />
+                          </div>
+                          
+                          <div className="space-y-2 mb-4">
+                            <div className="text-sm text-muted-foreground">
+                              <strong>Email:</strong> {u.email}
+                            </div>
+                            {u.district && (
+                              <div className="flex items-center gap-2 text-sm">
+                                <MapPin className="h-4 w-4 text-muted-foreground" />
+                                <span>District: {u.district}</span>
+                              </div>
+                            )}
+                            {u.schoolId && (
+                              <div className="text-sm text-muted-foreground">
+                                <strong>School ID:</strong> {u.schoolId}
+                              </div>
+                            )}
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                              <Clock className="h-4 w-4" />
+                              <span>
+                                Requested: {u.requestedAt ? new Date(u.requestedAt).toLocaleString() : new Date(u.createdAt).toLocaleString()}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="flex-1"
+                              onClick={() => {
+                                setSelectedUser(u);
+                                setIsUserViewOpen(true);
+                              }}
+                            >
+                              <Eye className="h-4 w-4 mr-1" />
+                              View Details
+                            </Button>
+                            <Button 
+                              size="sm" 
+                              className="flex-1"
+                              onClick={() => approveUserMutation.mutate(u.id)} 
+                              disabled={approveUserMutation.isPending}
+                            >
+                              {approveUserMutation.isPending ? (
+                                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                              ) : (
+                                <CheckCircle2 className="h-4 w-4 mr-1" />
+                              )}
+                              Approve
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </TabsContent>
+
+            <TabsContent value="schools" className="space-y-6 mt-6">
+              <div>
                 <h3 className="text-lg font-semibold">
                   {user?.role === "PO" ? "Pending School Requests (Your District)" : "Pending School Requests"}
                 </h3>
@@ -396,195 +543,238 @@ export default function ApprovalsPage() {
                   </div>
                 )}
               </div>
-            )}
-            <div className="mb-6">
-              <h2 className="text-lg font-semibold text-foreground">
-                {user?.role === "PO" ? "Pending Headmaster Registrations" : "Pending Account Registrations"}
-              </h2>
-              <p className="text-muted-foreground">
-                {user?.role === "PO" 
-                  ? "Review new Headmaster account registration requests in your district"
-                  : "Review new account registration requests for your school"
-                }
-              </p>
+            </TabsContent>
 
-              {isLoadingUsers ? (
-                <div className="space-y-2 mt-4">
-                  <Skeleton className="h-10 w-full" />
-                  <Skeleton className="h-10 w-full" />
-                </div>
-              ) : pendingUsers.length === 0 ? (
-                <Card className="mt-4">
-                  <CardContent className="py-6 text-center">
-                    <p className="text-muted-foreground">No pending user registrations</p>
-                  </CardContent>
-                </Card>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                  {pendingUsers.map((u: any) => (
-                    <Card key={u.id} className="hover-elevate">
-                      <CardContent className="p-4">
-                        <div className="flex items-start justify-between mb-3">
-                          <div className="flex items-center gap-3">
-                            <Avatar className="h-10 w-10">
-                              <AvatarFallback className="bg-primary/10 text-primary">
-                                {u.fullName?.slice(0, 2).toUpperCase() || "U"}
-                              </AvatarFallback>
-                            </Avatar>
-                            <div>
-                              <h4 className="font-semibold text-foreground">{u.fullName}</h4>
-                              <p className="text-sm text-muted-foreground">{u.role}</p>
-                            </div>
-                          </div>
-                          <StatusBadge status="Pending" size="sm" />
-                        </div>
-                        
-                        <div className="space-y-2 mb-4">
-                          <div className="text-sm text-muted-foreground">
-                            <strong>Email:</strong> {u.email}
-                          </div>
-                          {u.district && (
-                            <div className="flex items-center gap-2 text-sm">
-                              <MapPin className="h-4 w-4 text-muted-foreground" />
-                              <span>District: {u.district}</span>
-                            </div>
-                          )}
-                          {u.schoolId && (
-                            <div className="text-sm text-muted-foreground">
-                              <strong>School ID:</strong> {u.schoolId}
-                            </div>
-                          )}
-                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                            <Clock className="h-4 w-4" />
-                            <span>
-                              Requested: {u.requestedAt ? new Date(u.requestedAt).toLocaleString() : new Date(u.createdAt).toLocaleString()}
-                            </span>
-                          </div>
-                        </div>
-
-                        <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="flex-1"
-                            onClick={() => {
-                              setSelectedUser(u);
-                              setIsUserViewOpen(true);
-                            }}
-                          >
-                            <Eye className="h-4 w-4 mr-1" />
-                            View Details
-                          </Button>
-                          <Button 
-                            size="sm" 
-                            className="flex-1"
-                            onClick={() => approveUserMutation.mutate(u.id)} 
-                            disabled={approveUserMutation.isPending}
-                          >
-                            {approveUserMutation.isPending ? (
-                              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                            ) : (
-                              <CheckCircle2 className="h-4 w-4 mr-1" />
-                            )}
-                            Approve
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Continue showing health card approvals below (only for non-PO roles) */}
-            {showHealthCardApprovals && (
-              <>
-                {pendingCards.length === 0 ? (
-                  user?.role === "Admin" ? null : (
-                    <Card>
-                      <CardContent className="flex flex-col items-center justify-center py-12">
-                        <CheckCircle2 className="h-16 w-16 text-emerald-500 mb-4" />
-                        <h3 className="text-xl font-semibold text-foreground mb-2">All Caught Up!</h3>
-                        <p className="text-muted-foreground text-center">
-                          No pending health cards require your approval at this time.
-                        </p>
-                      </CardContent>
-                    </Card>
-                  )
+            <TabsContent value="staff" className="space-y-6 mt-6">
+              <div>
+                <h3 className="text-lg font-semibold">Staff Account Management</h3>
+                <p className="text-muted-foreground">
+                  Block or unblock staff accounts. Blocked users are immediately logged out and cannot log in.
+                </p>
+                {isLoadingStaff ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                    {[1, 2, 3].map((i) => (
+                      <Card key={i}>
+                        <CardContent className="p-4">
+                          <Skeleton className="h-20 w-full" />
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                ) : approvedStaff.length === 0 ? (
+                  <Card className="mt-4">
+                    <CardContent className="py-6 text-center">
+                      <User className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
+                      <p className="text-muted-foreground">No staff accounts found</p>
+                    </CardContent>
+                  </Card>
                 ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {pendingCards.map((card: any) => (
-                      <Card key={card.id} className="hover-elevate" data-testid={`card-${card.id}`}>
-                        <CardContent className="p-6">
-                          <div className="flex items-start justify-between mb-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                    {approvedStaff.map((staff: any) => (
+                      <Card key={staff.id} className="hover-elevate">
+                        <CardContent className="p-4">
+                          <div className="flex items-start justify-between mb-3">
                             <div className="flex items-center gap-3">
-                              <Avatar className="h-12 w-12">
-                                <AvatarFallback className="bg-primary/10 text-primary">
-                                  {card.nameOfChild?.slice(0, 2).toUpperCase() || "ST"}
+                              <Avatar className="h-10 w-10">
+                                <AvatarFallback className={staff.isBlocked ? "bg-red-100 text-red-600" : "bg-primary/10 text-primary"}>
+                                  {staff.fullName?.slice(0, 2).toUpperCase() || "U"}
                                 </AvatarFallback>
                               </Avatar>
                               <div>
-                                <p className="font-semibold text-foreground">{card.nameOfChild}</p>
-                                <p className="text-sm text-muted-foreground">Class {card.classSection}</p>
+                                <h4 className="font-semibold text-foreground">{staff.fullName}</h4>
+                                <p className="text-sm text-muted-foreground">{staff.role}</p>
                               </div>
                             </div>
-                            <StatusBadge status="Pending" size="sm" />
+                            {staff.isBlocked ? (
+                              <Badge variant="destructive" className="flex items-center gap-1">
+                                <Ban className="h-3 w-3" />
+                                Blocked
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                                Active
+                              </Badge>
+                            )}
                           </div>
-
+                          
                           <div className="space-y-2 mb-4">
-                            <div className="flex items-center gap-2 text-sm">
-                              <Activity className="h-4 w-4 text-muted-foreground" />
-                              <span>BMI: {card.bmi ? parseFloat(card.bmi).toFixed(1) : "N/A"}</span>
+                            <div className="text-sm text-muted-foreground">
+                              <strong>Email:</strong> {staff.email}
                             </div>
-                            <div className="flex items-center gap-2 text-sm">
-                              <Heart className="h-4 w-4 text-muted-foreground" />
-                              <span>BP: {card.sbp}/{card.dbp || "N/A"}</span>
-                            </div>
-                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                              <Clock className="h-4 w-4" />
-                              <span>
-                                Submitted {card.dateOfEntry ? new Date(card.dateOfEntry).toLocaleDateString() : "Recently"}
-                              </span>
-                            </div>
+                            {staff.district && (
+                              <div className="flex items-center gap-2 text-sm">
+                                <MapPin className="h-4 w-4 text-muted-foreground" />
+                                <span>District: {staff.district}</span>
+                              </div>
+                            )}
+                            {staff.isBlocked && staff.blockReason && (
+                              <div className="p-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded text-sm">
+                                <div className="flex items-start gap-2">
+                                  <ShieldAlert className="h-4 w-4 text-red-600 mt-0.5" />
+                                  <div>
+                                    <p className="font-medium text-red-800 dark:text-red-200">Block Reason:</p>
+                                    <p className="text-red-700 dark:text-red-300">{staff.blockReason}</p>
+                                    {staff.blockedAt && (
+                                      <p className="text-xs text-red-600 dark:text-red-400 mt-1">
+                                        Blocked: {new Date(staff.blockedAt).toLocaleString()}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
                           </div>
 
                           <div className="flex gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="flex-1"
-                              onClick={() => {
-                                setSelectedCard(card);
-                                setIsViewOpen(true);
-                              }}
-                              data-testid={`button-view-${card.id}`}
-                            >
-                              <Eye className="h-4 w-4 mr-1" />
-                              View
-                            </Button>
-                            <Button
-                              size="sm"
-                              className="flex-1"
-                              onClick={() => {
-                                setSelectedCard(card);
-                                approveMutation.mutate(card.id);
-                              }}
-                              disabled={approveMutation.isPending}
-                              data-testid={`button-approve-${card.id}`}
-                            >
-                              <CheckCircle2 className="h-4 w-4 mr-1" />
-                              Approve
-                            </Button>
+                            {staff.isBlocked ? (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="flex-1"
+                                onClick={() => unblockUserMutation.mutate(staff.id)}
+                                disabled={unblockUserMutation.isPending}
+                              >
+                                {unblockUserMutation.isPending ? (
+                                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                                ) : (
+                                  <Unlock className="h-4 w-4 mr-1" />
+                                )}
+                                Unblock
+                              </Button>
+                            ) : (
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                className="flex-1"
+                                onClick={() => {
+                                  setSelectedStaff(staff);
+                                  setIsBlockOpen(true);
+                                }}
+                              >
+                                <Ban className="h-4 w-4 mr-1" />
+                                Block Account
+                              </Button>
+                            )}
                           </div>
                         </CardContent>
                       </Card>
                     ))}
                   </div>
                 )}
+              </div>
+            </TabsContent>
+          </Tabs>
+        ) : (
+          <>
+            {showHealthCardApprovals && (
+              <div>
+                <h2 className="text-lg font-semibold text-foreground">Pending Health Card Submissions</h2>
+                <p className="text-muted-foreground">
+                  Review and approve or reject pending health card submissions
+                </p>
+              </div>
+            )}
+
+            {isLoading ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {[1, 2, 3, 4, 5, 6].map((i) => (
+                  <Card key={i}>
+                    <CardContent className="p-6">
+                      <Skeleton className="h-20 w-full" />
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              <>
+                {showHealthCardApprovals && (
+                  <>
+                    {pendingCards.length === 0 ? (
+                      <Card>
+                        <CardContent className="flex flex-col items-center justify-center py-12">
+                          <CheckCircle2 className="h-16 w-16 text-emerald-500 mb-4" />
+                          <h3 className="text-xl font-semibold text-foreground mb-2">All Caught Up!</h3>
+                          <p className="text-muted-foreground text-center">
+                            No pending health cards require your approval at this time.
+                          </p>
+                        </CardContent>
+                      </Card>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {pendingCards.map((card: any) => (
+                          <Card key={card.id} className="hover-elevate" data-testid={`card-${card.id}`}>
+                            <CardContent className="p-6">
+                              <div className="flex items-start justify-between mb-4">
+                                <div className="flex items-center gap-3">
+                                  <Avatar className="h-12 w-12">
+                                    <AvatarFallback className="bg-primary/10 text-primary">
+                                      {card.nameOfChild?.slice(0, 2).toUpperCase() || "ST"}
+                                    </AvatarFallback>
+                                  </Avatar>
+                                  <div>
+                                    <p className="font-semibold text-foreground">{card.nameOfChild}</p>
+                                    <p className="text-sm text-muted-foreground">Class {card.classSection}</p>
+                                  </div>
+                                </div>
+                                <StatusBadge status="Pending" size="sm" />
+                              </div>
+
+                              <div className="space-y-2 mb-4">
+                                <div className="flex items-center gap-2 text-sm">
+                                  <Activity className="h-4 w-4 text-muted-foreground" />
+                                  <span>BMI: {card.bmi ? parseFloat(card.bmi).toFixed(1) : "N/A"}</span>
+                                </div>
+                                <div className="flex items-center gap-2 text-sm">
+                                  <Heart className="h-4 w-4 text-muted-foreground" />
+                                  <span>BP: {card.sbp}/{card.dbp || "N/A"}</span>
+                                </div>
+                                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                  <Clock className="h-4 w-4" />
+                                  <span>
+                                    Submitted {card.dateOfEntry ? new Date(card.dateOfEntry).toLocaleDateString() : "Recently"}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="flex gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="flex-1"
+                                  onClick={() => {
+                                    setSelectedCard(card);
+                                    setIsViewOpen(true);
+                                  }}
+                                  data-testid={`button-view-${card.id}`}
+                                >
+                                  <Eye className="h-4 w-4 mr-1" />
+                                  View
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  className="flex-1"
+                                  onClick={() => {
+                                    setSelectedCard(card);
+                                    approveMutation.mutate(card.id);
+                                  }}
+                                  disabled={approveMutation.isPending}
+                                  data-testid={`button-approve-${card.id}`}
+                                >
+                                  <CheckCircle2 className="h-4 w-4 mr-1" />
+                                  Approve
+                                </Button>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
               </>
             )}
           </>
-)}
+        )}
       </div>
 
       {/* Health Card Dialogs - Only for non-PO roles */}
@@ -995,6 +1185,63 @@ export default function ApprovalsPage() {
                 <XCircle className="h-4 w-4 mr-2" />
               )}
               Confirm Rejection
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Block User Dialog */}
+      <Dialog open={isBlockOpen} onOpenChange={setIsBlockOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Block User Account</DialogTitle>
+            <DialogDescription>
+              This user will be immediately logged out and prevented from logging in. Please provide a reason for blocking.
+            </DialogDescription>
+          </DialogHeader>
+          {selectedStaff && (
+            <div className="p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg mb-4">
+              <div className="flex items-center gap-3">
+                <Avatar className="h-10 w-10">
+                  <AvatarFallback className="bg-primary/10 text-primary">
+                    {selectedStaff.fullName?.slice(0, 2).toUpperCase() || "U"}
+                  </AvatarFallback>
+                </Avatar>
+                <div>
+                  <p className="font-semibold">{selectedStaff.fullName}</p>
+                  <p className="text-sm text-muted-foreground">{selectedStaff.role} • {selectedStaff.email}</p>
+                </div>
+              </div>
+            </div>
+          )}
+          <Textarea
+            placeholder="Enter reason for blocking this account..."
+            value={blockReason}
+            onChange={(e) => setBlockReason(e.target.value)}
+            className="min-h-[100px]"
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsBlockOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (selectedStaff) {
+                  blockUserMutation.mutate({ 
+                    userId: selectedStaff.id, 
+                    reason: blockReason.trim() || "Blocked by administrator" 
+                  });
+                }
+              }}
+              disabled={blockUserMutation.isPending}
+            >
+              {blockUserMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Ban className="h-4 w-4 mr-2" />
+              )}
+              Block Account
             </Button>
           </DialogFooter>
         </DialogContent>

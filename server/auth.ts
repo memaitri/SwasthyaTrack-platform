@@ -63,6 +63,15 @@ router.post("/login", async (req, res) => {
       return res.status(401).json({ message: "Account is not active. Please contact administrator." });
     }
 
+    // Check if user is blocked
+    if (user.isBlocked) {
+      return res.status(403).json({ 
+        message: "Your account has been blocked. Please contact your Program Officer or administrator.",
+        blocked: true,
+        blockReason: user.blockReason
+      });
+    }
+
     // Verify password
     const isValidPassword = await bcrypt.compare(data.password, user.password);
     if (!isValidPassword) {

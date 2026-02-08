@@ -77,7 +77,7 @@ export default function DataQualityDashboard() {
     totalProfiles: 0,
     missingHealthCards: 0,
     incompleteHealthCards: 0,
-    missingVaccinationRecords: 0,
+    missingHealthRecords: 0,
     missingDOB: 0,
     dataEntryCompliance: 0,
   };
@@ -156,9 +156,9 @@ export default function DataQualityDashboard() {
             variant="warning"
           />
           <MetricCard
-            title="Missing Vaccination Data"
-            value={metrics.missingVaccinationRecords}
-            subtitle="Incomplete immunization records"
+            title="Missing Health Records"
+            value={metrics.missingHealthRecords}
+            subtitle="Incomplete health data"
             icon={Stethoscope}
             variant="warning"
           />

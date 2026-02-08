@@ -7,7 +7,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { SharedReports } from "@/components/reports/SharedReports";
 import { apiRequest } from "@/lib/queryClient";
 import {
   Users,
@@ -108,7 +107,6 @@ export default function LadySuperintendentDashboard() {
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="students">Students</TabsTrigger>
-            <TabsTrigger value="shared">Shared Reports</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
@@ -164,10 +162,6 @@ export default function LadySuperintendentDashboard() {
                 </div>
               </CardContent>
             </Card>
-          </TabsContent>
-
-          <TabsContent value="shared" className="space-y-6">
-            <SharedReports />
           </TabsContent>
         </Tabs>
       </div>

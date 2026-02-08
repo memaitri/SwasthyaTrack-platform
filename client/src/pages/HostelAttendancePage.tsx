@@ -445,6 +445,24 @@ export default function HostelAttendancePage() {
                   ),
                 },
                 {
+                  key: "gender",
+                  header: "Gender",
+                  render: (item: any) => (
+                    <Badge 
+                      variant="outline" 
+                      className={
+                        item.gender === "F" 
+                          ? "bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-400 no-default-hover-elevate no-default-active-elevate" 
+                          : item.gender === "M"
+                          ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 no-default-hover-elevate no-default-active-elevate"
+                          : "no-default-hover-elevate no-default-active-elevate"
+                      }
+                    >
+                      {item.gender === "F" ? "Female" : item.gender === "M" ? "Male" : "N/A"}
+                    </Badge>
+                  ),
+                },
+                {
                   key: "status",
                   header: "Status",
                   render: (item: any) => {
@@ -769,6 +787,24 @@ export default function HostelAttendancePage() {
                         <p className="text-xs text-muted-foreground">Class {item.classSection}</p>
                       </div>
                     </div>
+                  ),
+                },
+                {
+                  key: "gender",
+                  header: "Gender",
+                  render: (item: any) => (
+                    <Badge 
+                      variant="outline" 
+                      className={
+                        item.gender === "F" 
+                          ? "bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-400 no-default-hover-elevate no-default-active-elevate" 
+                          : item.gender === "M"
+                          ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 no-default-hover-elevate no-default-active-elevate"
+                          : "no-default-hover-elevate no-default-active-elevate"
+                      }
+                    >
+                      {item.gender === "F" ? "Female" : item.gender === "M" ? "Male" : "N/A"}
+                    </Badge>
                   ),
                 },
                 {

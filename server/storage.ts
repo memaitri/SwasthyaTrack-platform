@@ -272,6 +272,10 @@ export class DatabaseStorage implements IStorage {
       approvedAt: users.approvedAt,
       createdAt: users.createdAt,
       updatedAt: users.updatedAt,
+      isBlocked: users.isBlocked,
+      blockedBy: users.blockedBy,
+      blockedAt: users.blockedAt,
+      blockReason: users.blockReason,
     }).from(users).where(eq(users.id, id));
     return user;
   }
@@ -296,6 +300,10 @@ export class DatabaseStorage implements IStorage {
       approvedAt: users.approvedAt,
       createdAt: users.createdAt,
       updatedAt: users.updatedAt,
+      isBlocked: users.isBlocked,
+      blockedBy: users.blockedBy,
+      blockedAt: users.blockedAt,
+      blockReason: users.blockReason,
     }).from(users).where(eq(users.username, username));
     return user;
   }
@@ -1228,8 +1236,8 @@ export class DatabaseStorage implements IStorage {
       .from(annualHealthCards)
       .where(and(eq(annualHealthCards.year, selectedYear), cardSchoolCondition || undefined, cardDistrictCondition || undefined) as any);
 
-    // Vaccination coverage: proportion of students with an annual health card this year (proxy for vaccination data availability)
-    const vaccinationCoverage = totalStudents > 0
+    // Health card coverage: proportion of students with an annual health card this year
+    const healthCardCoverage = totalStudents > 0
       ? Math.round(((totalHealthCardsResult?.count || 0) / totalStudents) * 100)
       : 0;
 
@@ -1239,7 +1247,7 @@ export class DatabaseStorage implements IStorage {
     // System uptime percentage based on process uptime over 30 days window
     const systemUptime = Math.min(100, parseFloat(((process.uptime() / (30 * 24 * 60 * 60)) * 100).toFixed(2)));
 
-    // Monthly trends for the last 6 months (health cards, checkups, vaccinations)
+    // Monthly trends for the last 6 months (health cards and checkups)
     const monthlyTrends: any[] = [];
     for (let i = 5; i >= 0; i--) {
       const date = new Date();
@@ -1272,7 +1280,7 @@ export class DatabaseStorage implements IStorage {
         checkupsCount = 0;
       }
 
-      monthlyTrends.push({ month: date.toLocaleString('default', { month: 'short' }), healthCards: cardsCount, checkups: checkupsCount, vaccinations: cardsCount });
+      monthlyTrends.push({ month: date.toLocaleString('default', { month: 'short' }), healthCards: cardsCount, checkups: checkupsCount });
     }
 
     return {
@@ -1285,7 +1293,7 @@ export class DatabaseStorage implements IStorage {
       rejectedCards: Number(rejectedCardsResult?.count) || 0,
       healthCardCompletion,
       monthlyCheckupCoverage: checkupCoverage,
-      vaccinationCoverage,
+      healthCardCoverage,
       healthScreeningRate: checkupCoverage,
       dataCompleteness,
       systemUptime,
