@@ -9136,18 +9136,19 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
   app.get("/api/teacher/referral-tracking", authenticateToken, authorizeRoles("ClassTeacher", "Admin"), async (req: AuthRequest, res) => {
     try {
       const user = req.user!;
-      const { year } = req.query;
+      const { month, year, ageGroup, healthCategory, class_id } = req.query;
 
+      const selectedMonth = month ? parseInt(month as string) : new Date().getMonth() + 1;
       const selectedYear = year ? parseInt(year as string) : new Date().getFullYear();
 
       // Get students for this teacher/class
       const { students } = await storage.getStudents({
         schoolId: user.schoolId || undefined,
-        classSection: user.role === "ClassTeacher" ? user.classSection : undefined,
+        classSection: user.role === "ClassTeacher" ? (user.classSection || class_id as string) : (class_id as string || undefined),
         limit: 1000
       });
 
-      // Get referrals for this period
+      // Get referrals from ALL THREE SOURCES
       interface ReferralItem {
         id: string;
         studentId: string;
@@ -9159,40 +9160,111 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
         status: string;
         date: string;
         followUpRequired: boolean;
+        source: 'health_card' | 'monthly_checkup' | 'period_tracker';
       }
       const referrals: ReferralItem[] = [];
+      
       try {
         for (const student of students) {
-          const { referrals: studentReferrals } = await storage.getReferrals({
-            studentId: student.id,
-            limit: 100
-          });
-
-          // Filter by year only (removed month filter since selectedMonth is not defined)
-          const filteredReferrals = studentReferrals.filter(r => {
-            const referralDate = new Date(r.referralDate);
-            return referralDate.getFullYear() === selectedYear;
-          });
-
-          filteredReferrals.forEach(referral => {
-            referrals.push({
-              id: referral.id,
+          // SOURCE 1: Referrals from Health Cards (explicit referrals table)
+          try {
+            const { referrals: studentReferrals } = await storage.getReferrals({
               studentId: student.id,
-              studentName: student.fullName,
-              classSection: student.classSection,
-              type: referral.referralType,
-              facility: referral.facility,
-              issue: referral.issue,
-              status: referral.status,
-              date: referral.referralDate,
-              followUpRequired: false
+              limit: 100
             });
-          });
+
+            // Filter by year only (show all referrals for the year)
+            const filteredReferrals = studentReferrals.filter(r => {
+              const referralDate = new Date(r.referralDate);
+              return referralDate.getFullYear() === selectedYear;
+            });
+
+            filteredReferrals.forEach(referral => {
+              referrals.push({
+                id: referral.id,
+                studentId: student.id,
+                studentName: student.fullName,
+                classSection: student.classSection,
+                type: referral.referralType,
+                facility: referral.facility,
+                issue: referral.issue,
+                status: referral.status,
+                date: referral.referralDate,
+                followUpRequired: false,
+                source: 'health_card'
+              });
+            });
+          } catch (error) {
+            console.warn(`Failed to fetch health card referrals for student ${student.id}:`, error);
+          }
+
+          // SOURCE 2: Referrals from Monthly Checkups
+          try {
+            const checkups = await storage.getMonthlyCheckups({
+              studentId: student.id,
+              year: selectedYear,
+              limit: 100
+            });
+
+            checkups.checkups
+              .filter(c => c.referredTo && c.referredTo.trim() !== '')
+              .forEach(checkup => {
+                referrals.push({
+                  id: `checkup-${checkup.id}`,
+                  studentId: student.id,
+                  studentName: student.fullName,
+                  classSection: student.classSection,
+                  type: 'medical',
+                  facility: checkup.referredTo,
+                  issue: `Monthly checkup referral${checkup.symptoms && checkup.symptoms.length > 0 ? ': ' + checkup.symptoms.join(', ') : ''}`,
+                  status: 'Pending', // Monthly checkups don't have status tracking
+                  date: checkup.checkupDate,
+                  followUpRequired: true,
+                  source: 'monthly_checkup'
+                });
+              });
+          } catch (error) {
+            console.warn(`Failed to fetch monthly checkup referrals for student ${student.id}:`, error);
+          }
+
+          // SOURCE 3: Referrals from Period Tracker (Lady Superintendent)
+          try {
+            const startDate = `${selectedYear}-01-01`;
+            const endDate = `${selectedYear}-12-31`;
+            const { entries: periodEntries } = await storage.getPeriodTrackerEntries({
+              studentId: student.id,
+              startDate,
+              endDate,
+              limit: 100
+            });
+
+            periodEntries
+              .filter(entry => entry.isReferred && entry.referralFacility)
+              .forEach(entry => {
+                referrals.push({
+                  id: `period-${entry.id}`,
+                  studentId: student.id,
+                  studentName: student.fullName,
+                  classSection: student.classSection,
+                  type: 'adolescent',
+                  facility: entry.referralFacility,
+                  issue: `Menstrual health referral${entry.symptoms && entry.symptoms.length > 0 ? ': ' + entry.symptoms.join(', ') : ''}`,
+                  status: 'Pending', // Period tracker doesn't have status tracking
+                  date: entry.referredDate || entry.entryDate,
+                  followUpRequired: true,
+                  source: 'period_tracker'
+                });
+              });
+          } catch (error) {
+            console.warn(`Failed to fetch period tracker referrals for student ${student.id}:`, error);
+          }
         }
       } catch (error) {
-        // Referrals table might not exist yet
-        console.warn("Referrals table not available for referral tracking");
+        console.error("Error fetching referrals:", error);
       }
+
+      // Sort by date (most recent first)
+      referrals.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
       // Calculate summary
       const summary = {
