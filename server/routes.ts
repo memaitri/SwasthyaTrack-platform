@@ -228,13 +228,24 @@ const upload = multer({
   storage: storage_multer,
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
   fileFilter: (_req: any, file: any, cb: any) => {
-    const allowedTypes = /jpeg|jpg|png|gif|webp/;
-    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-    const mimetype = allowedTypes.test(file.mimetype);
-    if (mimetype && extname) {
+    console.log('[Multer] File upload attempt:', {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      fieldname: file.fieldname
+    });
+    
+    const allowedExtensions = /\.(jpeg|jpg|png|gif|webp|avif)$/i;
+    const allowedMimeTypes = /^image\/(jpeg|jpg|png|gif|webp|avif)$/i;
+    
+    const extname = allowedExtensions.test(file.originalname.toLowerCase());
+    const mimetype = allowedMimeTypes.test(file.mimetype.toLowerCase());
+    
+    if (mimetype || extname) {
+      console.log('[Multer] File accepted');
       return cb(null, true);
     } else {
-      cb(new Error("Only image files are allowed"));
+      console.log('[Multer] File rejected - not an allowed image type');
+      cb(new Error("Only image files are allowed (jpeg, jpg, png, gif, webp, avif)"));
     }
   },
 });
@@ -3226,6 +3237,31 @@ export async function registerRoutes(
 
       // Remove fields that shouldn't be updated directly
       const { id: _, createdAt, ...allowedUpdates } = updateData;
+
+      // Convert date strings to Date objects for all date fields
+      const dateFields = [
+        'a1_referral_date', 'b1_referral_date', 'b2_referral_date', 'b3_referral_date',
+        'b4_referral_date', 'b5_referral_date', 'b6_referral_date', 'b7_referral_date',
+        'b8_referral_date', 'c1_referral_date', 'c2_referral_date', 'c3_referral_date',
+        'c4_referral_date', 'c5_referral_date', 'c6_referral_date', 'c7_referral_date',
+        'c8_referral_date', 'c9_referral_date', 'd1_referral_date', 'd2_referral_date',
+        'd3_referral_date', 'd4_referral_date', 'd5_referral_date', 'd6_referral_date',
+        'd7_referral_date', 'd8_referral_date', 'd9_referral_date', 'e1_referral_date',
+        'e2_referral_date', 'e3_referral_date', 'e4_referral_date', 'e5_referral_date',
+        'e6_referral_date', 'e7_referral_date', 'menstrual_last_period_date',
+        'doctor_signature_date', 'date_of_visit', 'approvalDate', 'updatedAt'
+      ];
+
+      for (const field of dateFields) {
+        if (allowedUpdates[field] && typeof allowedUpdates[field] === 'string') {
+          try {
+            allowedUpdates[field] = new Date(allowedUpdates[field]);
+          } catch (e) {
+            console.warn(`Failed to parse date field ${field}:`, allowedUpdates[field]);
+            delete allowedUpdates[field]; // Remove invalid date
+          }
+        }
+      }
 
       // CRITICAL: If a Class Teacher is updating, reset status to Pending for HM approval
       // This ensures EVERY edit requires approval, not just initial creation

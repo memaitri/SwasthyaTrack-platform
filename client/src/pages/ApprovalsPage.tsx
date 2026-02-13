@@ -305,7 +305,7 @@ export default function ApprovalsPage() {
           <div>
             <h1 className="text-3xl font-bold text-foreground flex items-center gap-2">
               <CheckCircle2 className="h-8 w-8 text-emerald-600" />
-              {user?.role === "PO" ? "School & Headmaster Approvals" : user?.role === "Admin" ? "Admin Approval Center" : "Health Card Approvals"}
+              {user?.role === "PO" ? "School & Headmaster Approvals" : user?.role === "Admin" ? "Admin Approval Center" : user?.role === "Headmaster" ? "Staff & Health Card Approvals" : "Health Card Approvals"}
             </h1>
             <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground">
               <div className="flex items-center gap-1">
@@ -331,22 +331,34 @@ export default function ApprovalsPage() {
           </div>
         )}
 
-        {user?.role === "PO" || user?.role === "Admin" ? (
+        {user?.role === "Headmaster" && (
+          <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-lg p-4">
+            <h2 className="font-semibold text-emerald-800 dark:text-emerald-200 mb-2">Headmaster Approval Dashboard</h2>
+            <p className="text-sm text-emerald-700 dark:text-emerald-300">
+              As a Headmaster, you can approve Class Teacher, Lady Superintendent, and Meal Superintendent registrations for your school, as well as review health card submissions.
+            </p>
+          </div>
+        )}
+
+        {user?.role === "PO" || user?.role === "Admin" || user?.role === "Headmaster" ? (
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="pending">Pending Approvals</TabsTrigger>
-              <TabsTrigger value="schools">Schools</TabsTrigger>
-              <TabsTrigger value="staff">Manage Staff</TabsTrigger>
+            <TabsList className={user?.role === "Headmaster" ? "grid w-full grid-cols-2" : "grid w-full grid-cols-3"}>
+              <TabsTrigger value="pending">{user?.role === "Headmaster" ? "Staff Approvals" : "Pending Approvals"}</TabsTrigger>
+              {user?.role !== "Headmaster" && <TabsTrigger value="schools">Schools</TabsTrigger>}
+              {user?.role !== "Headmaster" && <TabsTrigger value="staff">Manage Staff</TabsTrigger>}
+              {user?.role === "Headmaster" && <TabsTrigger value="healthcards">Health Cards</TabsTrigger>}
             </TabsList>
 
             <TabsContent value="pending" className="space-y-6 mt-6">
               <div>
                 <h2 className="text-lg font-semibold text-foreground">
-                  {user?.role === "PO" ? "Pending Headmaster Registrations" : "Pending Account Registrations"}
+                  {user?.role === "PO" ? "Pending Headmaster Registrations" : user?.role === "Headmaster" ? "Pending Staff Registrations" : "Pending Account Registrations"}
                 </h2>
                 <p className="text-muted-foreground">
                   {user?.role === "PO" 
                     ? "Review new Headmaster account registration requests in your district"
+                    : user?.role === "Headmaster"
+                    ? "Review new Class Teacher, Lady Superintendent, and Meal Superintendent registration requests for your school"
                     : "Review new account registration requests"
                   }
                 </p>
@@ -663,6 +675,109 @@ export default function ApprovalsPage() {
                 )}
               </div>
             </TabsContent>
+
+            {/* Health Cards Tab - Only for Headmaster */}
+            {user?.role === "Headmaster" && (
+              <TabsContent value="healthcards" className="space-y-6 mt-6">
+                <div>
+                  <h2 className="text-lg font-semibold text-foreground">Pending Health Card Submissions</h2>
+                  <p className="text-muted-foreground">
+                    Review and approve or reject pending health card submissions from class teachers
+                  </p>
+                </div>
+
+                {isLoading ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {[1, 2, 3, 4, 5, 6].map((i) => (
+                      <Card key={i}>
+                        <CardContent className="p-6">
+                          <Skeleton className="h-20 w-full" />
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                ) : pendingCards.length === 0 ? (
+                  <Card>
+                    <CardContent className="flex flex-col items-center justify-center py-12">
+                      <CheckCircle2 className="h-16 w-16 text-emerald-500 mb-4" />
+                      <h3 className="text-xl font-semibold text-foreground mb-2">All Caught Up!</h3>
+                      <p className="text-muted-foreground text-center">
+                        No pending health cards require your approval at this time.
+                      </p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {pendingCards.map((card: any) => (
+                      <Card key={card.id} className="hover-elevate" data-testid={`card-${card.id}`}>
+                        <CardContent className="p-6">
+                          <div className="flex items-start justify-between mb-4">
+                            <div className="flex items-center gap-3">
+                              <Avatar className="h-12 w-12">
+                                <AvatarFallback className="bg-primary/10 text-primary">
+                                  {card.nameOfChild?.slice(0, 2).toUpperCase() || "ST"}
+                                </AvatarFallback>
+                              </Avatar>
+                              <div>
+                                <p className="font-semibold text-foreground">{card.nameOfChild}</p>
+                                <p className="text-sm text-muted-foreground">Class {card.classSection}</p>
+                              </div>
+                            </div>
+                            <StatusBadge status="Pending" size="sm" />
+                          </div>
+
+                          <div className="space-y-2 mb-4">
+                            <div className="flex items-center gap-2 text-sm">
+                              <Activity className="h-4 w-4 text-muted-foreground" />
+                              <span>BMI: {card.bmi ? parseFloat(card.bmi).toFixed(1) : "N/A"}</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-sm">
+                              <Heart className="h-4 w-4 text-muted-foreground" />
+                              <span>BP: {card.sbp}/{card.dbp || "N/A"}</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                              <Clock className="h-4 w-4" />
+                              <span>
+                                Submitted {card.dateOfEntry ? new Date(card.dateOfEntry).toLocaleDateString() : "Recently"}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="flex-1"
+                              onClick={() => {
+                                setSelectedCard(card);
+                                setIsViewOpen(true);
+                              }}
+                              data-testid={`button-view-${card.id}`}
+                            >
+                              <Eye className="h-4 w-4 mr-1" />
+                              View
+                            </Button>
+                            <Button
+                              size="sm"
+                              className="flex-1"
+                              onClick={() => {
+                                setSelectedCard(card);
+                                approveMutation.mutate(card.id);
+                              }}
+                              disabled={approveMutation.isPending}
+                              data-testid={`button-approve-${card.id}`}
+                            >
+                              <CheckCircle2 className="h-4 w-4 mr-1" />
+                              Approve
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </TabsContent>
+            )}
           </Tabs>
         ) : (
           <>

@@ -578,9 +578,28 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateAnnualHealthCard(id: string, data: Partial<InsertAnnualHealthCard>): Promise<AnnualHealthCard | undefined> {
+    // Sanitize data: convert any string dates to Date objects
+    const sanitizedData: any = {};
+    
+    for (const [key, value] of Object.entries(data)) {
+      if (value === null || value === undefined) {
+        sanitizedData[key] = value;
+      } else if (typeof value === 'string' && (key.includes('date') || key.includes('Date'))) {
+        // Convert date strings to Date objects
+        try {
+          sanitizedData[key] = new Date(value);
+        } catch (e) {
+          console.warn(`Failed to parse date field ${key}:`, value);
+          sanitizedData[key] = value; // Keep original if parsing fails
+        }
+      } else {
+        sanitizedData[key] = value;
+      }
+    }
+    
     const [card] = await db
       .update(annualHealthCards)
-      .set({ ...data as any, updatedAt: new Date() })
+      .set({ ...sanitizedData, updatedAt: new Date() })
       .where(eq(annualHealthCards.id, id))
       .returning();
     return card;
