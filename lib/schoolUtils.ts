@@ -48,3 +48,50 @@ export function getSchoolTenureLabel(years: number): string {
   if (years < 6) return "5th Year";
   return "Senior Student";
 }
+
+/**
+ * Get all available class sections
+ * Classes 1-10 have A and B sections
+ * Classes 11-12 have Science and Commerce streams with A and B sections
+ */
+export function getClassOptions(): string[] {
+  const classes: string[] = [];
+  
+  // Classes 1-10 with A and B sections
+  for (let i = 1; i <= 10; i++) {
+    classes.push(`${i}A`);
+    classes.push(`${i}B`);
+  }
+  
+  // Class 11 and 12 with Science and Commerce streams
+  classes.push('11A-Science');
+  classes.push('11B-Science');
+  classes.push('11A-Commerce');
+  classes.push('11B-Commerce');
+  classes.push('12A-Science');
+  classes.push('12B-Science');
+  classes.push('12A-Commerce');
+  classes.push('12B-Commerce');
+  
+  return classes;
+}
+
+/**
+ * Parse class section to extract class number, section, and stream
+ */
+export function parseClassSection(classSection: string): {
+  classNumber: number;
+  section: string;
+  stream?: string;
+} {
+  const match = classSection.match(/^(\d+)([AB])?(?:-(\w+))?$/i);
+  if (!match) {
+    return { classNumber: 0, section: '' };
+  }
+  
+  return {
+    classNumber: parseInt(match[1]),
+    section: match[2] || '',
+    stream: match[3] || undefined,
+  };
+}

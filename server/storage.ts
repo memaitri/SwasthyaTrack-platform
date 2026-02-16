@@ -241,6 +241,7 @@ export interface IStorage {
     reason: string;
     performedBy: string;
     performedByRole: string;
+    stream?: string; // For class 10 to 11 promotion
   }): Promise<{ success: boolean; message: string; student?: Student }>;
   getStudentAcademicActions(params: {
     studentId?: string;
@@ -1914,8 +1915,9 @@ export class DatabaseStorage implements IStorage {
     reason: string;
     performedBy: string;
     performedByRole: string;
+    stream?: string; // For class 10 to 11 promotion
   }): Promise<{ success: boolean; message: string; student?: Student }> {
-    const { studentId, actionType, reason, performedBy, performedByRole } = params;
+    const { studentId, actionType, reason, performedBy, performedByRole, stream } = params;
 
     // Validate the action first
     const validation = await this.validateAcademicAction(studentId, actionType, performedBy);
@@ -1951,7 +1953,7 @@ export class DatabaseStorage implements IStorage {
 
     if (actionType === 'Promote') {
       newStatus = 'Promoted';
-      newClassSection = this.calculateNextClass(oldClassSection);
+      newClassSection = this.calculateNextClass(oldClassSection, stream);
     } else if (actionType === 'Demote') {
       newStatus = 'Demoted';
       newClassSection = this.calculatePreviousClass(oldClassSection);
@@ -2150,28 +2152,88 @@ export class DatabaseStorage implements IStorage {
     return { valid: true, message: "Action is valid" };
   }
 
-  private calculateNextClass(currentClass: string): string {
-    // Extract class number from formats like "Class 1-A", "1st Grade", "Grade 1", etc.
-    const classMatch = currentClass.match(/(\d+)/);
+  private calculateNextClass(currentClass: string, stream?: string): string {
+    // Normalize the input format first (handle both "1-A" and "1A" formats)
+    let normalized = currentClass.replace(/^Class\s+/i, '').trim();
+    
+    // Convert old format "1-A" to new format "1A"
+    const oldFormatMatch = normalized.match(/^(\d+)-([AB])$/i);
+    if (oldFormatMatch) {
+      normalized = `${oldFormatMatch[1]}${oldFormatMatch[2].toUpperCase()}`;
+    }
+    
+    // Extract class number and section (e.g., "1A" -> 1 and A, "10B" -> 10 and B)
+    const classMatch = normalized.match(/(\d+)([A-Z])?/);
     if (!classMatch) return currentClass;
 
     const currentNumber = parseInt(classMatch[1]);
+    const section = classMatch[2] || 'A'; // Default to A if no section
+    
     if (currentNumber >= 12) return currentClass; // Max class
 
     const newNumber = currentNumber + 1;
-    return currentClass.replace(/\d+/, newNumber.toString());
+    
+    // Special handling for class 10 to 11 transition
+    if (currentNumber === 10) {
+      if (stream === 'Science') {
+        return `11${section}-Science`;
+      } else if (stream === 'Commerce') {
+        return `11${section}-Commerce`;
+      }
+      // Default to Science if no stream specified
+      return `11${section}-Science`;
+    }
+    
+    // Special handling for class 11 to 12 with stream preservation
+    if (currentNumber === 11) {
+      if (normalized.includes('Science')) {
+        return `12${section}-Science`;
+      } else if (normalized.includes('Commerce')) {
+        return `12${section}-Commerce`;
+      }
+    }
+    
+    // For classes 1-9, preserve the section
+    return `${newNumber}${section}`;
   }
 
   private calculatePreviousClass(currentClass: string): string {
-    // Extract class number from formats like "Class 1-A", "1st Grade", "Grade 1", etc.
-    const classMatch = currentClass.match(/(\d+)/);
+    // Normalize the input format first (handle both "1-A" and "1A" formats)
+    let normalized = currentClass.replace(/^Class\s+/i, '').trim();
+    
+    // Convert old format "1-A" to new format "1A"
+    const oldFormatMatch = normalized.match(/^(\d+)-([AB])$/i);
+    if (oldFormatMatch) {
+      normalized = `${oldFormatMatch[1]}${oldFormatMatch[2].toUpperCase()}`;
+    }
+    
+    // Extract class number and section
+    const classMatch = normalized.match(/(\d+)([A-Z])?/);
     if (!classMatch) return currentClass;
 
     const currentNumber = parseInt(classMatch[1]);
+    const section = classMatch[2] || 'A'; // Default to A if no section
+    
     if (currentNumber <= 1) return currentClass; // Min class
 
     const newNumber = currentNumber - 1;
-    return currentClass.replace(/\d+/, newNumber.toString());
+    
+    // Special handling for class 11 to 10 (remove stream)
+    if (currentNumber === 11) {
+      return `10${section}`;
+    }
+    
+    // Special handling for class 12 to 11 with stream preservation
+    if (currentNumber === 12) {
+      if (normalized.includes('Science')) {
+        return `11${section}-Science`;
+      } else if (normalized.includes('Commerce')) {
+        return `11${section}-Commerce`;
+      }
+    }
+    
+    // For other classes, preserve the section
+    return `${newNumber}${section}`;
   }
 
   // Medical Teams

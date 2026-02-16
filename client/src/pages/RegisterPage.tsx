@@ -17,6 +17,7 @@ import { FileHeart, Loader2, Eye, EyeOff, School, Plus } from "lucide-react";
 import { Brand } from "@/components/Brand";
 import { Textarea } from "@/components/ui/textarea";
 import { apiRequest } from "@/lib/queryClient";
+import { getClassOptions } from "@/lib/schoolUtils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 const registerSchema = z.object({
@@ -109,6 +110,8 @@ export default function RegisterPage() {
   const [selectedRegion, setSelectedRegion] = useState("");
   const [isCreatingSchool, setIsCreatingSchool] = useState(false);
   const [captchaVerified, setCaptchaVerified] = useState(false);
+  
+  const classOptions = getClassOptions();
 
   const { data: schoolsData, refetch: refetchSchools } = useQuery({
     queryKey: ["/api/schools", selectedRegion],
@@ -568,15 +571,11 @@ export default function RegisterPage() {
                                 </SelectTrigger>
                               </FormControl>
                               <SelectContent>
-                                {[...Array(10)].map((_, i) => (
-                                  <SelectItem key={`${i + 1}-A`} value={`${i + 1}-A`}>
-                                    Class {i + 1}-A
+                                {classOptions.map((classOption) => (
+                                  <SelectItem key={classOption} value={classOption}>
+                                    {classOption}
                                   </SelectItem>
                                 ))}
-                                <SelectItem value="11-Science">Class 11 - Science</SelectItem>
-                                <SelectItem value="11-Arts">Class 11 - Arts</SelectItem>
-                                <SelectItem value="12-Science">Class 12 - Science</SelectItem>
-                                <SelectItem value="12-Arts">Class 12 - Arts</SelectItem>
                               </SelectContent>
                             </Select>
                             <FormMessage />

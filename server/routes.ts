@@ -2670,7 +2670,7 @@ export async function registerRoutes(
   app.post("/api/students/:id/academic-action", authenticateToken, authorizeRoles("ClassTeacher", "Headmaster", "Admin"), async (req: AuthRequest, res) => {
     try {
       const { id } = req.params;
-      const { actionType, reason } = req.body;
+      const { actionType, reason, stream } = req.body;
 
       // Validate input
       if (!actionType || !['Promote', 'Demote', 'Detain'].includes(actionType)) {
@@ -2688,6 +2688,7 @@ export async function registerRoutes(
         reason: reason.trim(),
         performedBy: req.user!.id,
         performedByRole: req.user!.role,
+        stream, // Pass stream for class 10 to 11 promotion
       });
 
       if (!result.success) {

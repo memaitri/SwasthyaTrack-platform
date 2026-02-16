@@ -15,7 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { HealthCardFormSections } from "@/components/health-card/HealthCardFormSections";
 import { calculateAge, getMenstrualTrackingValidationMessage } from "@/lib/menstrualHealthUtils";
-import { calculateYearsInSchool, formatYearsInSchool } from "@/lib/schoolUtils";
+import { calculateYearsInSchool, formatYearsInSchool, getClassOptions } from "@/lib/schoolUtils";
 import { Loader2, Save, ArrowLeft, User, FileHeart } from "lucide-react";
 import { Link } from "wouter";
 import { useAuth } from "@/lib/auth";
@@ -251,6 +251,7 @@ export default function StudentFormPage() {
   // For ClassTeacher, only show their assigned class
   const isClassTeacher = user?.role === "ClassTeacher";
   const assignedClass = user?.classSection;
+  const classOptions = getClassOptions();
 
   const studentForm = useForm<StudentForm>({
     resolver: zodResolver(studentFormSchema),
@@ -690,13 +691,30 @@ export default function StudentFormPage() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Class Section *</FormLabel>
-                          <FormControl>
-                            <Input 
-                              placeholder="e.g., 5A, 6B" 
-                              {...field} 
-                              readOnly={isClassTeacher && !!assignedClass}
-                            />
-                          </FormControl>
+                          {isClassTeacher && assignedClass ? (
+                            <FormControl>
+                              <Input 
+                                placeholder="e.g., 5A, 6B" 
+                                {...field} 
+                                readOnly={true}
+                              />
+                            </FormControl>
+                          ) : (
+                            <Select onValueChange={field.onChange} value={field.value}>
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select class section" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                {classOptions.map((classOption) => (
+                                  <SelectItem key={classOption} value={classOption}>
+                                    {classOption}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
                           <FormMessage />
                         </FormItem>
                       )}

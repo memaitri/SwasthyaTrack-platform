@@ -48,10 +48,15 @@ export function StudentAcademicActions({ student, userRole, userClassSection, us
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedAction, setSelectedAction] = useState<'Promote' | 'Demote' | 'Detain' | ''>('');
   const [reason, setReason] = useState('');
+  const [stream, setStream] = useState<'Science' | 'Commerce' | ''>('');
   const [validationError, setValidationError] = useState('');
   const [isValidating, setIsValidating] = useState(false);
 
   const queryClient = useQueryClient();
+
+  // Check if student is in class 10 (both A and B sections)
+  const isClass10 = student.classSection.match(/^10[AB]?$/i);
+  const showStreamSelection = selectedAction === 'Promote' && isClass10;
 
   // Check if user can perform actions
   const canPerformActions = () => {
@@ -94,14 +99,14 @@ export function StudentAcademicActions({ student, userRole, userClassSection, us
 
   // Perform academic action mutation
   const performActionMutation = useMutation({
-    mutationFn: async ({ actionType, reason }: { actionType: string; reason: string }) => {
+    mutationFn: async ({ actionType, reason, stream }: { actionType: string; reason: string; stream?: string }) => {
       const response = await fetch(`/api/students/${student.id}/academic-action`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           ...getAuthHeaders(),
         },
-        body: JSON.stringify({ actionType, reason }),
+        body: JSON.stringify({ actionType, reason, stream }),
       });
 
       if (!response.ok) {
@@ -121,6 +126,7 @@ export function StudentAcademicActions({ student, userRole, userClassSection, us
       setIsDialogOpen(false);
       setSelectedAction('');
       setReason('');
+      setStream('');
       setValidationError('');
     },
     onError: (error: Error) => {
@@ -134,6 +140,7 @@ export function StudentAcademicActions({ student, userRole, userClassSection, us
 
   const handleActionChange = (action: 'Promote' | 'Demote' | 'Detain') => {
     setSelectedAction(action);
+    setStream(''); // Reset stream when action changes
     validateAction(action);
   };
 
@@ -142,6 +149,15 @@ export function StudentAcademicActions({ student, userRole, userClassSection, us
       toast({
         title: 'Error',
         description: 'Please select an action and provide a reason',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (showStreamSelection && !stream) {
+      toast({
+        title: 'Error',
+        description: 'Please select a stream (Science or Commerce) for class 11',
         variant: 'destructive',
       });
       return;
@@ -165,7 +181,11 @@ export function StudentAcademicActions({ student, userRole, userClassSection, us
       return;
     }
 
-    performActionMutation.mutate({ actionType: selectedAction, reason: reason.trim() });
+    performActionMutation.mutate({ 
+      actionType: selectedAction, 
+      reason: reason.trim(),
+      stream: stream || undefined
+    });
   };
 
   const getStatusBadge = (status: string) => {
@@ -275,6 +295,24 @@ export function StudentAcademicActions({ student, userRole, userClassSection, us
                   </Select>
                 </div>
 
+                {showStreamSelection && (
+                  <div className="space-y-2">
+                    <Label htmlFor="stream">Select Stream for Class 11</Label>
+                    <Select value={stream} onValueChange={(value: 'Science' | 'Commerce') => setStream(value)}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select stream" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Science">Science</SelectItem>
+                        <SelectItem value="Commerce">Commerce</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      Student will be promoted to class 11{student.classSection.match(/[AB]/)?.[0] || ''}-{stream || '[Stream]'}
+                    </p>
+                  </div>
+                )}
+
                 {validationError && (
                   <Alert variant="destructive">
                     <AlertTriangle className="h-4 w-4" />
@@ -303,6 +341,7 @@ export function StudentAcademicActions({ student, userRole, userClassSection, us
                       !selectedAction || 
                       !reason.trim() || 
                       reason.trim().length < 10 || 
+                      (showStreamSelection && !stream) ||
                       !!validationError || 
                       isValidating ||
                       performActionMutation.isPending
@@ -317,6 +356,7 @@ export function StudentAcademicActions({ student, userRole, userClassSection, us
                       setIsDialogOpen(false);
                       setSelectedAction('');
                       setReason('');
+                      setStream('');
                       setValidationError('');
                     }}
                   >
