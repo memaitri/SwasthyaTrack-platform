@@ -52,6 +52,7 @@ export const users = pgTable("users", {
   role: text("role").notNull().$type<Role>(),
   schoolId: varchar("school_id"),
   classSection: text("class_section"), // For ClassTeacher - assigned class
+  region: text("region"), // For PO - assigned region (Maharashtra, etc.)
   district: text("district"),
   block: text("block"),
   isActive: boolean("is_active").default(true),
@@ -633,6 +634,9 @@ export const monthlyCheckups = pgTable("monthly_checkups", {
   suggestedMedicines: jsonb("suggested_medicines").$type<string[]>().default([]),
   treatmentType: text("treatment_type").$type<TreatmentType>().default("Primary"),
   referredTo: text("referred_to"),
+  referralStatus: text("referral_status"),
+  referralCompletionDate: date("referral_completion_date"),
+  referralNotes: text("referral_notes"),
   present: boolean("present").default(true),
   notes: text("notes"),
   recordedBy: varchar("recorded_by"),
@@ -828,6 +832,9 @@ export const periodTrackerEntries = pgTable("period_tracker_entries", {
   isReferred: boolean("is_referred").default(false),
   referredDate: date("referred_date"),
   referralFacility: text("referral_facility"),
+  referralStatus: text("referral_status"),
+  referralCompletionDate: date("referral_completion_date"),
+  referralNotes: text("referral_notes"),
   
   // Tracking metadata
   recordedBy: varchar("recorded_by"),
@@ -876,7 +883,7 @@ export const studentCheckups = pgTable("student_checkups", {
   studentId: varchar("student_id").notNull(),
   eventId: varchar("event_id").notNull(),
   teamId: varchar("team_id").notNull(),
-  status: text("status").notNull().$type<CheckupStatus>().default("Not started"),
+  status: text("status").notNull().$type<CheckupStatus>().default("In progress"),
   present: boolean("present").default(true),
   checkupMonth: integer("checkup_month").notNull().default(sql`EXTRACT(MONTH FROM CURRENT_DATE)`),
   checkupYear: integer("checkup_year").notNull().default(sql`EXTRACT(YEAR FROM CURRENT_DATE)`),

@@ -31,6 +31,9 @@ export function HealthCardFormSections({
     (userRole === "ClassTeacher" || userRole === "Lady Superintendent" || userRole === "Admin");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Get today's date in YYYY-MM-DD format for max date validation
+  const today = new Date().toISOString().split('T')[0];
+
   // Calculate BMI when weight or height changes
   const weight = form.watch("weightKg");
   const height = form.watch("heightCm");
@@ -74,6 +77,117 @@ export function HealthCardFormSections({
       form.setValue("bpClassification", bpCategory);
     }
   }, [bpCategory, form]);
+
+  // Auto-sync: Watch Section B (Deficiencies) and auto-check referral_deficiency_yes
+  const deficiencyFields = [
+    "b1_severe_thinning", "b2_bilateral_oedema", "b3_severe_anemia",
+    "b4_vitamin_a_deficiency", "b5_vitamin_d_deficiency", "b6_goitre",
+    "b7_obesity", "b8_vitb_deficiency"
+  ];
+  const deficiencyValues = deficiencyFields.map(field => form.watch(field));
+  const hasDeficiency = deficiencyValues.some(val => val === true);
+  
+  // Watch all B section referral facilities
+  const b1Facility = form.watch("b1_referral_facility");
+  const b2Facility = form.watch("b2_referral_facility");
+  const b3Facility = form.watch("b3_referral_facility");
+  const b4Facility = form.watch("b4_referral_facility");
+  const b5Facility = form.watch("b5_referral_facility");
+  const b6Facility = form.watch("b6_referral_facility");
+  const b7Facility = form.watch("b7_referral_facility");
+  const b8Facility = form.watch("b8_referral_facility");
+  
+  React.useEffect(() => {
+    form.setValue("referral_deficiency_yes", hasDeficiency);
+    // Auto-populate facility if any deficiency is checked and a facility is selected
+    if (hasDeficiency) {
+      const facilities = [b1Facility, b2Facility, b3Facility, b4Facility, b5Facility, b6Facility, b7Facility, b8Facility].filter(f => f);
+      if (facilities.length > 0) {
+        form.setValue("referral_deficiency_facility_date", facilities[0]);
+      }
+    }
+  }, [hasDeficiency, b1Facility, b2Facility, b3Facility, b4Facility, b5Facility, b6Facility, b7Facility, b8Facility, form]);
+
+  // Auto-sync: Watch Section C (Diseases) and auto-check referral_disease_yes
+  const diseaseFields = [
+    "c1_convulsive", "c2_otitis_media", "c3_dental", "c4_skin_conditions",
+    "c5_asthma", "c6_rheumatic_heart"
+  ];
+  const diseaseValues = diseaseFields.map(field => form.watch(field));
+  const hasDisease = diseaseValues.some(val => val === true);
+  
+  const c1Facility = form.watch("c1_referral_facility");
+  const c2Facility = form.watch("c2_referral_facility");
+  const c3Facility = form.watch("c3_referral_facility");
+  const c4Facility = form.watch("c4_referral_facility");
+  const c5Facility = form.watch("c5_referral_facility");
+  const c6Facility = form.watch("c6_referral_facility");
+  
+  React.useEffect(() => {
+    form.setValue("referral_disease_yes", hasDisease);
+    if (hasDisease) {
+      const facilities = [c1Facility, c2Facility, c3Facility, c4Facility, c5Facility, c6Facility].filter(f => f);
+      if (facilities.length > 0) {
+        form.setValue("referral_disease_facility_date", facilities[0]);
+      }
+    }
+  }, [hasDisease, c1Facility, c2Facility, c3Facility, c4Facility, c5Facility, c6Facility, form]);
+
+  // Auto-sync: Watch Section D (Developmental Delays) and auto-check referral_developmental_yes
+  const developmentalFields = [
+    "d1_seeing_difficulty", "d2_walking_delay", "d3_reading_writing",
+    "d4_muscle_stiffness", "d5_hearing_difficulty", "d6_speech_difficulty",
+    "d7_learning_difficulty", "d8_inattention_hyperactivity", "d9_behavioral_concerns"
+  ];
+  const developmentalValues = developmentalFields.map(field => form.watch(field));
+  const hasDevelopmental = developmentalValues.some(val => val === true);
+  
+  const d1Facility = form.watch("d1_referral_facility");
+  const d2Facility = form.watch("d2_referral_facility");
+  const d3Facility = form.watch("d3_referral_facility");
+  const d4Facility = form.watch("d4_referral_facility");
+  const d5Facility = form.watch("d5_referral_facility");
+  const d6Facility = form.watch("d6_referral_facility");
+  const d7Facility = form.watch("d7_referral_facility");
+  const d8Facility = form.watch("d8_referral_facility");
+  const d9Facility = form.watch("d9_referral_facility");
+  
+  React.useEffect(() => {
+    form.setValue("referral_developmental_yes", hasDevelopmental);
+    if (hasDevelopmental) {
+      const facilities = [d1Facility, d2Facility, d3Facility, d4Facility, d5Facility, d6Facility, d7Facility, d8Facility, d9Facility].filter(f => f);
+      if (facilities.length > 0) {
+        form.setValue("referral_developmental_facility_date", facilities[0]);
+      }
+    }
+  }, [hasDevelopmental, d1Facility, d2Facility, d3Facility, d4Facility, d5Facility, d6Facility, d7Facility, d8Facility, d9Facility, form]);
+
+  // Auto-sync: Watch Section E (Adolescent Health) and auto-check referral_adolescent_yes
+  const adolescentFields = [
+    "e1_life_events_difficulty", "e2_peer_pressure_substance", "e3_persistent_sadness",
+    "e4_menstruation_started", "e5_pain_urination", "e6_foul_discharge",
+    "e7_severe_menstrual_pain"
+  ];
+  const adolescentValues = adolescentFields.map(field => form.watch(field));
+  const hasAdolescent = adolescentValues.some(val => val === true);
+  
+  const e1Facility = form.watch("e1_referral_facility");
+  const e2Facility = form.watch("e2_referral_facility");
+  const e3Facility = form.watch("e3_referral_facility");
+  const e4Facility = form.watch("e4_referral_facility");
+  const e5Facility = form.watch("e5_referral_facility");
+  const e6Facility = form.watch("e6_referral_facility");
+  const e7Facility = form.watch("e7_referral_facility");
+  
+  React.useEffect(() => {
+    form.setValue("referral_adolescent_yes", hasAdolescent);
+    if (hasAdolescent) {
+      const facilities = [e1Facility, e2Facility, e3Facility, e4Facility, e5Facility, e6Facility, e7Facility].filter(f => f);
+      if (facilities.length > 0) {
+        form.setValue("referral_adolescent_facility_date", facilities[0]);
+      }
+    }
+  }, [hasAdolescent, e1Facility, e2Facility, e3Facility, e4Facility, e5Facility, e6Facility, e7Facility, form]);
 
   return (
     <div className="space-y-6">
@@ -2304,9 +2418,9 @@ export function HealthCardFormSections({
                           <SelectValue placeholder="Select referral facility" />
                         </SelectTrigger>
                         <SelectContent>
-                          {["Medical College/Teaching Hospital", "District Hospital - Hemato-oncology", "Tertiary Care Center - Pediatric Hematology", "Blood Bank/Hemophilia Center", "PHC/CHC", "Pediatrician"].map((facility) => (
-                            <SelectItem key={facility} value={facility}>
-                              {facility}
+                          {REFERRAL_FACILITY_OPTIONS.map((key) => (
+                            <SelectItem key={key} value={key}>
+                              {REFERRAL_FACILITIES[key]}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -2519,7 +2633,7 @@ export function HealthCardFormSections({
                               <FormItem>
                                 <FormLabel className="text-xs">Date referred:</FormLabel>
                                 <FormControl>
-                                  <Input type="date" {...field} />
+                                  <Input type="date" max={today} {...field} />
                                 </FormControl>
                               </FormItem>
                             )}
@@ -2598,7 +2712,7 @@ export function HealthCardFormSections({
                               <FormItem>
                                 <FormLabel className="text-xs">Date referred:</FormLabel>
                                 <FormControl>
-                                  <Input type="date" {...field} />
+                                  <Input type="date" max={today} {...field} />
                                 </FormControl>
                               </FormItem>
                             )}
@@ -2677,7 +2791,7 @@ export function HealthCardFormSections({
                               <FormItem>
                                 <FormLabel className="text-xs">Date referred:</FormLabel>
                                 <FormControl>
-                                  <Input type="date" {...field} />
+                                  <Input type="date" max={today} {...field} />
                                 </FormControl>
                               </FormItem>
                             )}
@@ -2757,7 +2871,7 @@ export function HealthCardFormSections({
                               <FormItem>
                                 <FormLabel className="text-xs">Date referred:</FormLabel>
                                 <FormControl>
-                                  <Input type="date" {...field} />
+                                  <Input type="date" max={today} {...field} />
                                 </FormControl>
                               </FormItem>
                             )}
@@ -2837,7 +2951,7 @@ export function HealthCardFormSections({
                               <FormItem>
                                 <FormLabel className="text-xs">Date referred:</FormLabel>
                                 <FormControl>
-                                  <Input type="date" {...field} />
+                                  <Input type="date" max={today} {...field} />
                                 </FormControl>
                               </FormItem>
                             )}
@@ -2917,7 +3031,7 @@ export function HealthCardFormSections({
                               <FormItem>
                                 <FormLabel className="text-xs">Date referred:</FormLabel>
                                 <FormControl>
-                                  <Input type="date" {...field} />
+                                  <Input type="date" max={today} {...field} />
                                 </FormControl>
                               </FormItem>
                             )}
@@ -2997,7 +3111,7 @@ export function HealthCardFormSections({
                                 <FormItem>
                                   <FormLabel className="text-xs">Date referred:</FormLabel>
                                   <FormControl>
-                                    <Input type="date" {...field} />
+                                    <Input type="date" max={today} {...field} />
                                   </FormControl>
                                 </FormItem>
                               )}
@@ -3085,7 +3199,7 @@ export function HealthCardFormSections({
                         <FormItem>
                           <FormLabel className="text-sm">Last period date</FormLabel>
                           <FormControl>
-                            <Input type="date" {...field} />
+                            <Input type="date" max={today} {...field} />
                           </FormControl>
                         </FormItem>
                       )}
@@ -3431,13 +3545,13 @@ export function HealthCardFormSections({
           
           {[
             { category: "Defect at Birth", yesField: "a1_visible_defect", facilityField: "a1_referral_facility", defaultFacility: "DH/DEIC" },
-            { category: "Deficiency", yesField: "deficiency_any", facilityField: "deficiency_facility", defaultFacility: "PHC/CHC/DH" },
-            { category: "Disease", yesField: "disease_any", facilityField: "disease_facility", defaultFacility: "PHC/CHC/DH/DEIC" },
+            { category: "Deficiency", yesField: "referral_deficiency_yes", facilityField: "referral_deficiency_facility_date", defaultFacility: "PHC/CHC/DH" },
+            { category: "Disease", yesField: "referral_disease_yes", facilityField: "referral_disease_facility_date", defaultFacility: "PHC/CHC/DH/DEIC" },
             { category: "Leprosy", yesField: "c7_suspected", facilityField: "c7_referral_facility", defaultFacility: "PHC/CHC/DH/Leprosy Clinic" },
             { category: "TB", yesField: "c8_suspected", facilityField: "c8_referral_facility", defaultFacility: "PHC/DOTS centre/DH" },
             { category: "Sickle Cell Anaemia", yesField: "c9_suspected", facilityField: "c9_referral_facility", defaultFacility: "Medical College/District Hospital" },
-            { category: "Developmental Delay", yesField: "developmental_any", facilityField: "developmental_facility", defaultFacility: "DEIC" },
-            { category: "Adolescent Health Concern", yesField: "adolescent_any", facilityField: "adolescent_facility", defaultFacility: "CHC/AFHC/Mental Health" },
+            { category: "Developmental Delay", yesField: "referral_developmental_yes", facilityField: "referral_developmental_facility_date", defaultFacility: "DEIC" },
+            { category: "Adolescent Health Concern", yesField: "referral_adolescent_yes", facilityField: "referral_adolescent_facility_date", defaultFacility: "CHC/AFHC/Mental Health" },
           ].map((item) => (
             <div key={item.category} className="grid grid-cols-4 gap-4 items-center text-sm py-2 border-b">
               <div>{item.category}</div>
@@ -3517,7 +3631,7 @@ export function HealthCardFormSections({
                 <FormItem>
                   <FormLabel className="text-sm font-semibold">Date of Visit:</FormLabel>
                   <FormControl>
-                    <Input type="date" {...field} />
+                    <Input type="date" max={today} {...field} />
                   </FormControl>
                 </FormItem>
               )}

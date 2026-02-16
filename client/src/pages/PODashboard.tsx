@@ -70,6 +70,385 @@ type DrillDownType =
   | "deficiencies"
   | null;
 
+// Meal Compliance Section Component
+function MealComplianceSection({ filters, isActive }: { filters: any; isActive?: boolean }) {
+  const { data: complianceData, isLoading, error } = useQuery({
+    queryKey: ['po-meal-compliance', filters.month, filters.year, filters.schoolType],
+    enabled: isActive !== false, // Only fetch when tab is active
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        month: String(filters.month || new Date().getMonth() + 1),
+        year: String(filters.year || new Date().getFullYear()),
+        schoolType: filters.schoolType || 'All',
+      });
+      console.log('[MealCompliance] Fetching data with params:', params.toString());
+      const res = await apiRequest("GET", `/api/po/meal-compliance?${params}`);
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error('[MealCompliance] API error:', res.status, errorText);
+        throw new Error(`Failed to fetch meal compliance: ${res.status}`);
+      }
+      const data = await res.json();
+      console.log('[MealCompliance] Received data:', data);
+      return data;
+    },
+  });
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Utensils className="h-5 w-5" />
+            Meal Compliance Analytics
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="h-64 flex items-center justify-center">
+            <div className="text-muted-foreground">Loading compliance data...</div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (error) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Utensils className="h-5 w-5" />
+            Meal Compliance Analytics
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="h-64 flex items-center justify-center">
+            <div className="text-red-600">
+              Error loading meal compliance data. Please check the console for details.
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const compliance = complianceData?.overallCompliance || 0;
+  const complianceColor = compliance >= 80 ? 'text-green-600' : compliance >= 60 ? 'text-yellow-600' : 'text-red-600';
+  const complianceBg = compliance >= 80 ? 'bg-green-50 dark:bg-green-900/20' : compliance >= 60 ? 'bg-yellow-50 dark:bg-yellow-900/20' : 'bg-red-50 dark:bg-red-900/20';
+
+  // Debug: Log the actual data
+  console.log('[MealCompliance] Rendering with data:', {
+    hasData: !!complianceData,
+    compliance,
+    totalStudents: complianceData?.totalStudents,
+    totalLoggedMeals: complianceData?.totalLoggedMeals,
+    totalExpectedMeals: complianceData?.totalExpectedMeals,
+    fullData: complianceData
+  });
+
+  return (
+    <>
+      {/* Overall Compliance Card */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Utensils className="h-5 w-5" />
+            Meal Compliance Analytics
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Compliance = (Students who logged meals / Total expected students) × 100
+          </p>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div className={`text-center p-6 rounded-lg ${complianceBg}`}>
+              <div className={`text-4xl font-bold ${complianceColor}`}>
+                {compliance}%
+              </div>
+              <div className="text-sm text-muted-foreground mt-2">Overall Compliance</div>
+            </div>
+            <div className="text-center p-6 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+              <div className="text-3xl font-bold text-blue-600">
+                {complianceData?.totalStudents?.toLocaleString() || 0}
+              </div>
+              <div className="text-sm text-muted-foreground mt-2">Total Students</div>
+            </div>
+            <div className="text-center p-6 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
+              <div className="text-3xl font-bold text-purple-600">
+                {complianceData?.totalLoggedMeals?.toLocaleString() || 0}
+              </div>
+              <div className="text-sm text-muted-foreground mt-2">Meals Logged</div>
+            </div>
+            <div className="text-center p-6 bg-gray-50 dark:bg-gray-900/20 rounded-lg">
+              <div className="text-3xl font-bold text-gray-600">
+                {complianceData?.totalExpectedMeals?.toLocaleString() || 0}
+              </div>
+              <div className="text-sm text-muted-foreground mt-2">Expected Meals</div>
+            </div>
+          </div>
+
+          {/* Monthly Trend Chart */}
+          {complianceData?.monthlyTrend && complianceData.monthlyTrend.length > 0 && (
+            <div className="mt-6">
+              <ChartContainer title="6-Month Compliance Trend">
+                <LineChart
+                  labels={complianceData.monthlyTrend.map((m: any) => `${m.month} ${m.year}`)}
+                  datasets={[{
+                    label: "Compliance %",
+                    data: complianceData.monthlyTrend.map((m: any) => m.compliance),
+                    borderColor: "#3b82f6",
+                    backgroundColor: "rgba(59, 130, 246, 0.1)",
+                  }]}
+                />
+              </ChartContainer>
+            </div>
+          )}
+
+          {/* School-wise Compliance Table */}
+          {complianceData?.schoolCompliance && complianceData.schoolCompliance.length > 0 && (
+            <div className="mt-6">
+              <h4 className="font-semibold mb-3">Top 10 Schools by Compliance</h4>
+              <div className="border rounded-lg overflow-hidden">
+                <table className="w-full">
+                  <thead className="bg-muted">
+                    <tr>
+                      <th className="text-left p-3 text-sm font-medium">School Name</th>
+                      <th className="text-left p-3 text-sm font-medium">Type</th>
+                      <th className="text-right p-3 text-sm font-medium">Students</th>
+                      <th className="text-right p-3 text-sm font-medium">Logged</th>
+                      <th className="text-right p-3 text-sm font-medium">Expected</th>
+                      <th className="text-right p-3 text-sm font-medium">Compliance</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {complianceData.schoolCompliance.slice(0, 10).map((school: any, index: number) => (
+                      <tr key={index} className="border-t hover:bg-muted/50">
+                        <td className="p-3 text-sm">{school.schoolName}</td>
+                        <td className="p-3 text-sm">
+                          <Badge variant="outline">{school.schoolType}</Badge>
+                        </td>
+                        <td className="p-3 text-sm text-right">{school.studentCount}</td>
+                        <td className="p-3 text-sm text-right">{school.loggedMeals.toLocaleString()}</td>
+                        <td className="p-3 text-sm text-right">{school.expectedMeals.toLocaleString()}</td>
+                        <td className="p-3 text-sm text-right">
+                          <Badge 
+                            variant={school.compliance >= 80 ? "default" : school.compliance >= 60 ? "secondary" : "destructive"}
+                          >
+                            {school.compliance}%
+                          </Badge>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Compliance Distribution Chart */}
+      {complianceData?.schoolCompliance && complianceData.schoolCompliance.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Compliance Distribution by School</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ChartContainer title="School Compliance Levels">
+              <BarChart
+                labels={complianceData.schoolCompliance.slice(0, 15).map((s: any) => 
+                  s.schoolName.length > 20 ? s.schoolName.substring(0, 20) + '...' : s.schoolName
+                )}
+                datasets={[{
+                  label: "Compliance %",
+                  data: complianceData.schoolCompliance.slice(0, 15).map((s: any) => s.compliance),
+                  backgroundColor: complianceData.schoolCompliance.slice(0, 15).map((s: any) => 
+                    s.compliance >= 80 ? '#22c55e' : s.compliance >= 60 ? '#eab308' : '#ef4444'
+                  ),
+                }]}
+              />
+            </ChartContainer>
+          </CardContent>
+        </Card>
+      )}
+    </>
+  );
+}
+
+// Missing Meal Items Section Component
+function MissingMealItemsSection({ filters, isActive }: { filters: any; isActive?: boolean }) {
+  const { data: missingData, isLoading, error } = useQuery({
+    queryKey: ['po-meal-missing-items', filters.month, filters.year, filters.schoolType],
+    enabled: isActive !== false, // Only fetch when tab is active
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        month: String(filters.month || new Date().getMonth() + 1),
+        year: String(filters.year || new Date().getFullYear()),
+        schoolType: filters.schoolType || 'All',
+      });
+      console.log('[MissingMealItems] Fetching data with params:', params.toString());
+      const res = await apiRequest("GET", `/api/po/meal-missing-items?${params}`);
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error('[MissingMealItems] API error:', res.status, errorText);
+        throw new Error(`Failed to fetch missing meal items: ${res.status}`);
+      }
+      const data = await res.json();
+      console.log('[MissingMealItems] Received data:', data);
+      return data;
+    },
+  });
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5" />
+            Missing Meal Items by School
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="h-64 flex items-center justify-center">
+            <div className="text-muted-foreground">Loading missing items data...</div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <AlertTriangle className="h-5 w-5" />
+          Missing Meal Items by School
+        </CardTitle>
+        <p className="text-sm text-muted-foreground">
+          Track which meals are missing from records - Breakfast, Lunch, and Dinner
+        </p>
+      </CardHeader>
+      <CardContent>
+        {missingData?.schools && missingData.schools.length > 0 ? (
+          <div className="space-y-4">
+            {/* Summary Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="text-center p-4 bg-red-50 dark:bg-red-900/20 rounded-lg">
+                <div className="text-2xl font-bold text-red-600">
+                  {missingData.schools.reduce((sum: number, s: any) => sum + s.missing.breakfast, 0).toLocaleString()}
+                </div>
+                <div className="text-sm text-muted-foreground mt-1">Missing Breakfast</div>
+              </div>
+              <div className="text-center p-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg">
+                <div className="text-2xl font-bold text-orange-600">
+                  {missingData.schools.reduce((sum: number, s: any) => sum + s.missing.lunch, 0).toLocaleString()}
+                </div>
+                <div className="text-sm text-muted-foreground mt-1">Missing Lunch</div>
+              </div>
+              <div className="text-center p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
+                <div className="text-2xl font-bold text-yellow-600">
+                  {missingData.schools.reduce((sum: number, s: any) => sum + s.missing.dinner, 0).toLocaleString()}
+                </div>
+                <div className="text-sm text-muted-foreground mt-1">Missing Dinner</div>
+              </div>
+              <div className="text-center p-4 bg-gray-50 dark:bg-gray-900/20 rounded-lg">
+                <div className="text-2xl font-bold text-gray-600">
+                  {missingData.schools.reduce((sum: number, s: any) => sum + s.missing.total, 0).toLocaleString()}
+                </div>
+                <div className="text-sm text-muted-foreground mt-1">Total Missing</div>
+              </div>
+            </div>
+
+            {/* School-wise Missing Items Table */}
+            <div className="border rounded-lg overflow-hidden">
+              <table className="w-full">
+                <thead className="bg-muted">
+                  <tr>
+                    <th className="text-left p-3 text-sm font-medium">School Name</th>
+                    <th className="text-left p-3 text-sm font-medium">Type</th>
+                    <th className="text-right p-3 text-sm font-medium">Students</th>
+                    <th className="text-right p-3 text-sm font-medium">Missing Breakfast</th>
+                    <th className="text-right p-3 text-sm font-medium">Missing Lunch</th>
+                    <th className="text-right p-3 text-sm font-medium">Missing Dinner</th>
+                    <th className="text-right p-3 text-sm font-medium">Total Missing</th>
+                    <th className="text-right p-3 text-sm font-medium">Compliance</th>
+                    <th className="text-center p-3 text-sm font-medium">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {missingData.schools.map((school: any, index: number) => (
+                    <tr key={index} className="border-t hover:bg-muted/50">
+                      <td className="p-3 text-sm">{school.schoolName}</td>
+                      <td className="p-3 text-sm">
+                        <Badge variant="outline">{school.schoolType}</Badge>
+                      </td>
+                      <td className="p-3 text-sm text-right">{school.expectedStudents}</td>
+                      <td className="p-3 text-sm text-right text-red-600">{school.missing.breakfast.toLocaleString()}</td>
+                      <td className="p-3 text-sm text-right text-orange-600">{school.missing.lunch.toLocaleString()}</td>
+                      <td className="p-3 text-sm text-right text-yellow-600">{school.missing.dinner.toLocaleString()}</td>
+                      <td className="p-3 text-sm text-right font-medium">{school.missing.total.toLocaleString()}</td>
+                      <td className="p-3 text-sm text-right">
+                        <Badge 
+                          variant={school.compliancePercent >= 80 ? "default" : school.compliancePercent >= 60 ? "secondary" : "destructive"}
+                        >
+                          {school.compliancePercent}%
+                        </Badge>
+                      </td>
+                      <td className="p-3 text-sm text-center">
+                        <Badge 
+                          variant={
+                            school.status === 'Good' ? "default" : 
+                            school.status === 'Fair' ? "secondary" : 
+                            "destructive"
+                          }
+                        >
+                          {school.status}
+                        </Badge>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Visual Chart */}
+            <div className="mt-6">
+              <ChartContainer title="Top 15 Schools with Most Missing Meals">
+                <BarChart
+                  labels={missingData.schools.slice(0, 15).map((s: any) => 
+                    s.schoolName.length > 20 ? s.schoolName.substring(0, 20) + '...' : s.schoolName
+                  )}
+                  datasets={[
+                    {
+                      label: "Missing Breakfast",
+                      data: missingData.schools.slice(0, 15).map((s: any) => s.missing.breakfast),
+                      backgroundColor: "#ef4444",
+                    },
+                    {
+                      label: "Missing Lunch",
+                      data: missingData.schools.slice(0, 15).map((s: any) => s.missing.lunch),
+                      backgroundColor: "#f97316",
+                    },
+                    {
+                      label: "Missing Dinner",
+                      data: missingData.schools.slice(0, 15).map((s: any) => s.missing.dinner),
+                      backgroundColor: "#eab308",
+                    }
+                  ]}
+                />
+              </ChartContainer>
+            </div>
+          </div>
+        ) : (
+          <div className="text-center py-8 text-muted-foreground">
+            No missing meal data available for the selected period
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 // Type definitions for data structures
 interface FacilityLoad {
   facility: string;
@@ -661,7 +1040,7 @@ export default function PODashboard() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-7">
+          <TabsList className="grid w-full grid-cols-8">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="critical">Critical Students</TabsTrigger>
             <TabsTrigger value="referrals">Referrals</TabsTrigger>
@@ -669,6 +1048,7 @@ export default function PODashboard() {
             <TabsTrigger value="diseases">Diseases</TabsTrigger>
             <TabsTrigger value="adolescent">Adolescent</TabsTrigger>
             <TabsTrigger value="menstrual">Menstrual Health</TabsTrigger>
+            <TabsTrigger value="meals">Meal Tracking</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
@@ -2136,6 +2516,24 @@ export default function PODashboard() {
                 </CardContent>
               </Card>
             )}
+          </TabsContent>
+
+          {/* ========================================
+              MEAL TRACKING TAB
+              ======================================== */}
+          <TabsContent value="meals" className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-bold">Meal Tracking & Compliance</h3>
+                <p className="text-sm text-muted-foreground">Monitor meal logging compliance and identify missing records</p>
+              </div>
+            </div>
+
+            {/* Meal Compliance Overview */}
+            <MealComplianceSection filters={filters} isActive={activeTab === "meals"} />
+
+            {/* Missing Meal Items by School */}
+            <MissingMealItemsSection filters={filters} isActive={activeTab === "meals"} />
           </TabsContent>
         </Tabs>
 

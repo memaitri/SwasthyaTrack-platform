@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Meal API</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .result { margin: 20px 0; padding: 10px; border: 1px solid #ccc; }
+        .error { background-color: #fee; }
+        .success { background-color: #efe; }
+        pre { background: #f5f5f5; padding: 10px; overflow: auto; }
+    </style>
+</head>
+<body>
+    <h1>Test Meal API Endpoints</h1>
+    
+    <button onclick="testMealCompliance()">Test Meal Compliance API</button>
+    <button onclick="testMissingItems()">Test Missing Items API</button>
+    
+    <div id="result"></div>
+
+    <script>
+        const API_BASE = 'http://localhost:5000';
+        
+        async function testMealCompliance() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '<p>Testing /api/po/meal-compliance...</p>';
+            
+            try {
+                const token = localStorage.getItem('token');
+                if (!token) {
+                    resultDiv.innerHTML = '<div class="result error"><strong>Error:</strong> No token found. Please login first.</div>';
+                    return;
+                }
+                
+                const url = `${API_BASE}/api/po/meal-compliance?month=2&year=2026&schoolType=All`;
+                console.log('Fetching:', url);
+                
+                const response = await fetch(url, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                console.log('Response status:', response.status);
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    resultDiv.innerHTML = `
+                        <div class="result error">
+                            <strong>Error ${response.status}:</strong>
+                            <pre>${errorText}</pre>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                const data = await response.json();
+                console.log('Response data:', data);
+                
+                resultDiv.innerHTML = `
+                    <div class="result success">
+                        <h3>✅ Success!</h3>
+                        <p><strong>Overall Compliance:</strong> ${data.overallCompliance}%</p>
+                        <p><strong>Total Students:</strong> ${data.totalStudents}</p>
+                        <p><strong>Meals Logged:</strong> ${data.totalLoggedMeals}</p>
+                        <p><strong>Expected Meals:</strong> ${data.totalExpectedMeals}</p>
+                        <details>
+                            <summary>Full Response</summary>
+                            <pre>${JSON.stringify(data, null, 2)}</pre>
+                        </details>
+                    </div>
+                `;
+            } catch (error) {
+                console.error('Error:', error);
+                resultDiv.innerHTML = `
+                    <div class="result error">
+                        <strong>Error:</strong> ${error.message}
+                        <pre>${error.stack}</pre>
+                    </div>
+                `;
+            }
+        }
+        
+        async function testMissingItems() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '<p>Testing /api/po/meal-missing-items...</p>';
+            
+            try {
+                const token = localStorage.getItem('token');
+                if (!token) {
+                    resultDiv.innerHTML = '<div class="result error"><strong>Error:</strong> No token found. Please login first.</div>';
+                    return;
+                }
+                
+                const url = `${API_BASE}/api/po/meal-missing-items?month=2&year=2026&schoolType=All`;
+                console.log('Fetching:', url);
+                
+                const response = await fetch(url, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                console.log('Response status:', response.status);
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    resultDiv.innerHTML = `
+                        <div class="result error">
+                            <strong>Error ${response.status}:</strong>
+                            <pre>${errorText}</pre>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                const data = await response.json();
+                console.log('Response data:', data);
+                
+                resultDiv.innerHTML = `
+                    <div class="result success">
+                        <h3>✅ Success!</h3>
+                        <p><strong>Total Schools:</strong> ${data.total}</p>
+                        <details>
+                            <summary>Full Response</summary>
+                            <pre>${JSON.stringify(data, null, 2)}</pre>
+                        </details>
+                    </div>
+                `;
+            } catch (error) {
+                console.error('Error:', error);
+                resultDiv.innerHTML = `
+                    <div class="result error">
+                        <strong>Error:</strong> ${error.message}
+                        <pre>${error.stack}</pre>
+                    </div>
+                `;
+            }
+        }
+        
+        // Check if logged in
+        window.onload = function() {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                document.getElementById('result').innerHTML = `
+                    <div class="result error">
+                        <strong>⚠️ Not logged in!</strong>
+                        <p>Please login to SwasthyaTrack first, then come back to this page.</p>
+                        <p><a href="http://localhost:5000" target="_blank">Go to SwasthyaTrack</a></p>
+                    </div>
+                `;
+            } else {
+                document.getElementById('result').innerHTML = `
+                    <div class="result success">
+                        <strong>✅ Token found!</strong>
+                        <p>Click the buttons above to test the API endpoints.</p>
+                    </div>
+                `;
+            }
+        };
+    </script>
+</body>
+</html>

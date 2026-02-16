@@ -324,6 +324,15 @@ function sameDistrict(a?: string, b?: string) {
   return normalizeDistrict(a) === normalizeDistrict(b);
 }
 
+// Helper: normalize region strings for safe comparison (case- and whitespace-insensitive)
+function normalizeRegion(v?: string) {
+  return (v ?? '').toString().trim().toLowerCase();
+}
+
+function sameRegion(a?: string, b?: string) {
+  return normalizeRegion(a) === normalizeRegion(b);
+}
+
 // Helper to build a complete AnnualHealthCard payload from submitted form data
 function buildHealthCardPayload(student: any, schoolId: string, healthCardData: any, userId?: string) {
   const weight = healthCardData.weightKg !== undefined && healthCardData.weightKg !== null && healthCardData.weightKg !== "" ? parseFloat(healthCardData.weightKg) : null;
@@ -349,6 +358,18 @@ function buildHealthCardPayload(student: any, schoolId: string, healthCardData: 
 
   // Normalize some inputs
   const parseOrNull = (v: any) => (v === undefined || v === null || v === "" ? null : v);
+
+  // Validate that date is not in the future
+  const validateDateNotFuture = (dateStr: any, fieldName: string) => {
+    if (!dateStr || dateStr === null || dateStr === "") return null;
+    const date = new Date(dateStr);
+    const today = new Date();
+    today.setHours(23, 59, 59, 999); // Set to end of today
+    if (date > today) {
+      throw new Error(`${fieldName} cannot be in the future`);
+    }
+    return dateStr;
+  };
 
   // Return object with most fields present in schema (safely pick from healthCardData)
   return {
@@ -383,7 +404,7 @@ function buildHealthCardPayload(student: any, schoolId: string, healthCardData: 
     a1_visible_defect: !!healthCardData.a1_visible_defect,
     a1_visible_defect_notes: parseOrNull(healthCardData.a1_visible_defect_notes),
     a1_referral_facility: parseOrNull(healthCardData.a1_referral_facility),
-    a1_referral_date: parseOrNull(healthCardData.a1_referral_date),
+    a1_referral_date: validateDateNotFuture(healthCardData.a1_referral_date, "A1 referral date"),
     defectsAtBirth: Array.isArray(healthCardData.defectsAtBirth) ? healthCardData.defectsAtBirth : (typeof healthCardData.defectsAtBirth === 'string' ? healthCardData.defectsAtBirth.split(',').map((s:string)=>s.trim()).filter(Boolean) : []),
     summary_defects_neural_tube: !!healthCardData.summary_defects_neural_tube,
     summary_defects_down_syndrome: !!healthCardData.summary_defects_down_syndrome,
@@ -398,42 +419,42 @@ function buildHealthCardPayload(student: any, schoolId: string, healthCardData: 
     b1_severe_thinning: !!healthCardData.b1_severe_thinning,
     b1_counsel_moderate: !!healthCardData.b1_counsel_moderate,
     b1_referral_facility: parseOrNull(healthCardData.b1_referral_facility),
-    b1_referral_date: parseOrNull(healthCardData.b1_referral_date),
+    b1_referral_date: validateDateNotFuture(healthCardData.b1_referral_date, "B1 referral date"),
 
     b2_bilateral_oedema: !!healthCardData.b2_bilateral_oedema,
     b2_referral_facility: parseOrNull(healthCardData.b2_referral_facility),
-    b2_referral_date: parseOrNull(healthCardData.b2_referral_date),
+    b2_referral_date: validateDateNotFuture(healthCardData.b2_referral_date, "B2 referral date"),
 
     b3_severe_anemia: !!healthCardData.b3_severe_anemia,
     b3_referral_facility: parseOrNull(healthCardData.b3_referral_facility),
-    b3_referral_date: parseOrNull(healthCardData.b3_referral_date),
+    b3_referral_date: validateDateNotFuture(healthCardData.b3_referral_date, "B3 referral date"),
 
     b4_vitamin_a_deficiency: !!healthCardData.b4_vitamin_a_deficiency,
     b4_night_blindness: !!healthCardData.b4_night_blindness,
     b4_bitots_spots: !!healthCardData.b4_bitots_spots,
     b4_referral_facility: parseOrNull(healthCardData.b4_referral_facility),
-    b4_referral_date: parseOrNull(healthCardData.b4_referral_date),
+    b4_referral_date: validateDateNotFuture(healthCardData.b4_referral_date, "B4 referral date"),
 
     b5_vitamin_d_deficiency: !!healthCardData.b5_vitamin_d_deficiency,
     b5_wrist_widening: !!healthCardData.b5_wrist_widening,
     b5_bowing_legs: !!healthCardData.b5_bowing_legs,
     b5_referral_facility: parseOrNull(healthCardData.b5_referral_facility),
-    b5_referral_date: parseOrNull(healthCardData.b5_referral_date),
+    b5_referral_date: validateDateNotFuture(healthCardData.b5_referral_date, "B5 referral date"),
 
     b6_goitre: !!healthCardData.b6_goitre,
     b6_referral_facility: parseOrNull(healthCardData.b6_referral_facility),
-    b6_referral_date: parseOrNull(healthCardData.b6_referral_date),
+    b6_referral_date: validateDateNotFuture(healthCardData.b6_referral_date, "B6 referral date"),
 
     b7_obesity: !!healthCardData.b7_obesity,
     b7_referral_facility: parseOrNull(healthCardData.b7_referral_facility),
-    b7_referral_date: parseOrNull(healthCardData.b7_referral_date),
+    b7_referral_date: validateDateNotFuture(healthCardData.b7_referral_date, "B7 referral date"),
 
     b8_vitb_deficiency: !!healthCardData.b8_vitb_deficiency,
     b8_angular_stomatitis: !!healthCardData.b8_angular_stomatitis,
     b8_raw_tongue: !!healthCardData.b8_raw_tongue,
     b8_corneal_vascularization: !!healthCardData.b8_corneal_vascularization,
     b8_referral_facility: parseOrNull(healthCardData.b8_referral_facility),
-    b8_referral_date: parseOrNull(healthCardData.b8_referral_date),
+    b8_referral_date: validateDateNotFuture(healthCardData.b8_referral_date, "B8 referral date"),
 
     summary_deficiency_anemia: !!healthCardData.summary_deficiency_anemia,
     summary_deficiency_vitamin_a: !!healthCardData.summary_deficiency_vitamin_a,
@@ -446,12 +467,12 @@ function buildHealthCardPayload(student: any, schoolId: string, healthCardData: 
     // Section C: Diseases
     c1_convulsive: !!healthCardData.c1_convulsive,
     c1_referral_facility: parseOrNull(healthCardData.c1_referral_facility),
-    c1_referral_date: parseOrNull(healthCardData.c1_referral_date),
+    c1_referral_date: validateDateNotFuture(healthCardData.c1_referral_date, "C1 referral date"),
 
     c2_otitis_media: !!healthCardData.c2_otitis_media,
     c2_assess_hearing: !!healthCardData.c2_assess_hearing,
     c2_referral_facility: parseOrNull(healthCardData.c2_referral_facility),
-    c2_referral_date: parseOrNull(healthCardData.c2_referral_date),
+    c2_referral_date: validateDateNotFuture(healthCardData.c2_referral_date, "C2 referral date"),
 
     c3_dental: !!healthCardData.c3_dental,
     c3_white_discoloration: !!healthCardData.c3_white_discoloration,
@@ -459,25 +480,25 @@ function buildHealthCardPayload(student: any, schoolId: string, healthCardData: 
     c3_gum_swelling: !!healthCardData.c3_gum_swelling,
     c3_plaque: !!healthCardData.c3_plaque,
     c3_referral_facility: parseOrNull(healthCardData.c3_referral_facility),
-    c3_referral_date: parseOrNull(healthCardData.c3_referral_date),
+    c3_referral_date: validateDateNotFuture(healthCardData.c3_referral_date, "C3 referral date"),
 
     c4_skin_conditions: !!healthCardData.c4_skin_conditions,
     c4_itching: !!healthCardData.c4_itching,
     c4_scaly_lesions: !!healthCardData.c4_scaly_lesions,
     c4_round_lesions: !!healthCardData.c4_round_lesions,
     c4_referral_facility: parseOrNull(healthCardData.c4_referral_facility),
-    c4_referral_date: parseOrNull(healthCardData.c4_referral_date),
+    c4_referral_date: validateDateNotFuture(healthCardData.c4_referral_date, "C4 referral date"),
 
     c5_asthma: !!healthCardData.c5_asthma,
     c5_breathlessness: !!healthCardData.c5_breathlessness,
     c5_wheezing: !!healthCardData.c5_wheezing,
     c5_referral_facility: parseOrNull(healthCardData.c5_referral_facility),
-    c5_referral_date: parseOrNull(healthCardData.c5_referral_date),
+    c5_referral_date: validateDateNotFuture(healthCardData.c5_referral_date, "C5 referral date"),
 
     c6_rheumatic_heart: !!healthCardData.c6_rheumatic_heart,
     c6_murmur: !!healthCardData.c6_murmur,
     c6_referral_facility: parseOrNull(healthCardData.c6_referral_facility),
-    c6_referral_date: parseOrNull(healthCardData.c6_referral_date),
+    c6_referral_date: validateDateNotFuture(healthCardData.c6_referral_date, "C6 referral date"),
 
     // C7
     c7_suspected: !!healthCardData.c7_suspected,
@@ -491,7 +512,7 @@ function buildHealthCardPayload(student: any, schoolId: string, healthCardData: 
     c7_nerve_signs: healthCardData.c7_nerve_signs || {},
     c7_contractures_deformities: healthCardData.c7_contractures_deformities || {},
     c7_referral_facility: parseOrNull(healthCardData.c7_referral_facility),
-    c7_referral_date: parseOrNull(healthCardData.c7_referral_date),
+    c7_referral_date: validateDateNotFuture(healthCardData.c7_referral_date, "C7 referral date"),
 
     // C8 (TB)
     c8_suspected: !!healthCardData.c8_suspected,
@@ -546,14 +567,14 @@ function buildHealthCardPayload(student: any, schoolId: string, healthCardData: 
     c8_joint_pain_swelling: !!healthCardData.c8_joint_pain_swelling,
     c8_bone_joint_night_cry: !!healthCardData.c8_bone_joint_night_cry,
     c8_referral_facility: parseOrNull(healthCardData.c8_referral_facility),
-    c8_referral_date: parseOrNull(healthCardData.c8_referral_date),
+    c8_referral_date: validateDateNotFuture(healthCardData.c8_referral_date, "C8 referral date"),
 
     // C9 (Sickle Cell Anaemia)
     c9_suspected: !!healthCardData.c9_suspected,
     c9_clinical_features: healthCardData.c9_clinical_features || {},
     c9_hemoglobin_type: healthCardData.c9_hemoglobin_type || {},
     c9_referral_facility: parseOrNull(healthCardData.c9_referral_facility),
-    c9_referral_date: parseOrNull(healthCardData.c9_referral_date),
+    c9_referral_date: validateDateNotFuture(healthCardData.c9_referral_date, "C9 referral date"),
 
     summary_disease_skin_conditions: !!healthCardData.summary_disease_skin_conditions,
     summary_disease_vision_impairment: !!healthCardData.summary_disease_vision_impairment,
@@ -575,54 +596,54 @@ function buildHealthCardPayload(student: any, schoolId: string, healthCardData: 
     // Section D
     d1_seeing_difficulty: !!healthCardData.d1_seeing_difficulty,
     d1_referral_facility: parseOrNull(healthCardData.d1_referral_facility),
-    d1_referral_date: parseOrNull(healthCardData.d1_referral_date),
+    d1_referral_date: validateDateNotFuture(healthCardData.d1_referral_date, "D1 referral date"),
     d2_walking_delay: !!healthCardData.d2_walking_delay,
     d2_referral_facility: parseOrNull(healthCardData.d2_referral_facility),
-    d2_referral_date: parseOrNull(healthCardData.d2_referral_date),
+    d2_referral_date: validateDateNotFuture(healthCardData.d2_referral_date, "D2 referral date"),
     d3_reading_writing: !!healthCardData.d3_reading_writing,
     d3_referral_facility: parseOrNull(healthCardData.d3_referral_facility),
-    d3_referral_date: parseOrNull(healthCardData.d3_referral_date),
+    d3_referral_date: validateDateNotFuture(healthCardData.d3_referral_date, "D3 referral date"),
     d4_muscle_stiffness: !!healthCardData.d4_muscle_stiffness,
     d4_referral_facility: parseOrNull(healthCardData.d4_referral_facility),
-    d4_referral_date: parseOrNull(healthCardData.d4_referral_date),
+    d4_referral_date: validateDateNotFuture(healthCardData.d4_referral_date, "D4 referral date"),
     d5_hearing_difficulty: !!healthCardData.d5_hearing_difficulty,
     d5_referral_facility: parseOrNull(healthCardData.d5_referral_facility),
-    d5_referral_date: parseOrNull(healthCardData.d5_referral_date),
+    d5_referral_date: validateDateNotFuture(healthCardData.d5_referral_date, "D5 referral date"),
     d6_speech_difficulty: !!healthCardData.d6_speech_difficulty,
     d6_referral_facility: parseOrNull(healthCardData.d6_referral_facility),
-    d6_referral_date: parseOrNull(healthCardData.d6_referral_date),
+    d6_referral_date: validateDateNotFuture(healthCardData.d6_referral_date, "D6 referral date"),
     d7_learning_difficulty: !!healthCardData.d7_learning_difficulty,
     d7_referral_facility: parseOrNull(healthCardData.d7_referral_facility),
-    d7_referral_date: parseOrNull(healthCardData.d7_referral_date),
+    d7_referral_date: validateDateNotFuture(healthCardData.d7_referral_date, "D7 referral date"),
     d8_inattention_hyperactivity: !!healthCardData.d8_inattention_hyperactivity,
     d8_referral_facility: parseOrNull(healthCardData.d8_referral_facility),
-    d8_referral_date: parseOrNull(healthCardData.d8_referral_date),
+    d8_referral_date: validateDateNotFuture(healthCardData.d8_referral_date, "D8 referral date"),
     d9_behavioral_concerns: !!healthCardData.d9_behavioral_concerns,
     d9_referral_facility: parseOrNull(healthCardData.d9_referral_facility),
-    d9_referral_date: parseOrNull(healthCardData.d9_referral_date),
+    d9_referral_date: validateDateNotFuture(healthCardData.d9_referral_date, "D9 referral date"),
 
     // Section E: Adolescent
     e1_life_events_difficulty: !!healthCardData.e1_life_events_difficulty,
     e1_referral_suggested: parseOrNull(healthCardData.e1_referral_suggested),
     e1_referral_facility: parseOrNull(healthCardData.e1_referral_facility),
-    e1_referral_date: parseOrNull(healthCardData.e1_referral_date),
+    e1_referral_date: validateDateNotFuture(healthCardData.e1_referral_date, "E1 referral date"),
     e2_peer_pressure_substance: !!healthCardData.e2_peer_pressure_substance,
     e2_referral_suggested: parseOrNull(healthCardData.e2_referral_suggested),
     e2_referral_facility: parseOrNull(healthCardData.e2_referral_facility),
-    e2_referral_date: parseOrNull(healthCardData.e2_referral_date),
+    e2_referral_date: validateDateNotFuture(healthCardData.e2_referral_date, "E2 referral date"),
     e3_persistent_sadness: !!healthCardData.e3_persistent_sadness,
     e3_referral_suggested: parseOrNull(healthCardData.e3_referral_suggested),
     e3_referral_facility: parseOrNull(healthCardData.e3_referral_facility),
-    e3_referral_date: parseOrNull(healthCardData.e3_referral_date),
-    e4_referral_date: parseOrNull(healthCardData.e4_referral_date),
+    e3_referral_date: validateDateNotFuture(healthCardData.e3_referral_date, "E3 referral date"),
+    e4_referral_date: validateDateNotFuture(healthCardData.e4_referral_date, "E4 referral date"),
     e5_pain_urination: !!healthCardData.e5_pain_urination,
     e5_referral_suggested: parseOrNull(healthCardData.e5_referral_suggested),
     e5_referral_facility: parseOrNull(healthCardData.e5_referral_facility),
-    e5_referral_date: parseOrNull(healthCardData.e5_referral_date),
+    e5_referral_date: validateDateNotFuture(healthCardData.e5_referral_date, "E5 referral date"),
     e6_foul_discharge: !!healthCardData.e6_foul_discharge,
     e6_referral_suggested: parseOrNull(healthCardData.e6_referral_suggested),
     e6_referral_facility: parseOrNull(healthCardData.e6_referral_facility),
-    e6_referral_date: parseOrNull(healthCardData.e6_referral_date),
+    e6_referral_date: validateDateNotFuture(healthCardData.e6_referral_date, "E6 referral date"),
 
     // E4 & E7: Female-only menstrual health fields
     e4_menstruation_started: !!healthCardData.e4_menstruation_started,
@@ -751,7 +772,7 @@ export async function registerRoutes(
           if (!school) {
             return res.status(400).json({ message: "Invalid school ID" });
           }
-          if (school.region !== data.region) {
+          if (!sameRegion(school.region, data.region)) {
             return res.status(400).json({ message: "Selected school must be in your assigned region" });
           }
         }
@@ -794,6 +815,7 @@ export async function registerRoutes(
           role: data.role,
           schoolId: data.schoolId,
           classSection: data.classSection || null, // For ClassTeacher
+          region: data.region, // For PO
           district: data.district,
           block: data.block,
           isActive: false,
@@ -901,6 +923,7 @@ export async function registerRoutes(
         role: data.role,
         schoolId: data.schoolId,
         classSection: data.classSection || null, // For ClassTeacher
+        region: data.region, // For PO
         district: data.district,
         block: data.block,
         isActive: true,
@@ -1245,15 +1268,35 @@ export async function registerRoutes(
       let staff: any[] = [];
 
       if (requester.role === "PO") {
-        // PO can view all approved staff (Headmasters and school staff) in their district
+        // PO can view all approved staff (Headmasters and school staff) in their region/district
         const poUser = await storage.getUser(requester.id);
+        const poRegion = poUser?.region;
         const poDistrict = poUser?.district;
         
-        if (!poDistrict) {
-          return res.status(400).json({ message: "PO district not configured" });
+        if (!poRegion && !poDistrict) {
+          return res.status(400).json({ message: "PO region/district not configured" });
         }
 
-        // Get Headmasters in the district
+        console.log(`[Staff List] PO ${requester.id} requesting staff - Region: ${poRegion}, District: ${poDistrict}`);
+
+        // Get all schools in region/district
+        const allSchools = await db.select({ id: schools.id, region: schools.region, district: schools.district })
+          .from(schools)
+          .where(eq(schools.isActive, true));
+
+        const filteredSchools = allSchools.filter(s => {
+          if (poRegion) {
+            return sameRegion(s.region, poRegion);
+          } else if (poDistrict) {
+            return sameDistrict(s.district, poDistrict);
+          }
+          return false;
+        });
+
+        const schoolIds = filteredSchools.map(s => s.id);
+        console.log(`[Staff List] Found ${schoolIds.length} schools in region/district`);
+
+        // Get Headmasters in the region/district
         const headmasters = await db.select({
           id: users.id,
           username: users.username,
@@ -1262,6 +1305,7 @@ export async function registerRoutes(
           role: users.role,
           schoolId: users.schoolId,
           classSection: users.classSection,
+          region: users.region,
           district: users.district,
           block: users.block,
           isActive: users.isActive,
@@ -1274,14 +1318,26 @@ export async function registerRoutes(
         }).from(users).where(and(
           eq(users.role, "Headmaster"),
           eq(users.approvalStatus, "Approved"),
-          eq(users.district, poDistrict)
+          eq(users.isActive, true)
         ));
 
-        // Get schools in the district
-        const districtSchools = await db.select({ id: schools.id }).from(schools).where(eq(schools.district, poDistrict));
-        const schoolIds = districtSchools.map(s => s.id);
+        // Filter headmasters by region/district
+        const filteredHeadmasters = headmasters.filter(hm => {
+          if (poRegion && hm.region) {
+            return sameRegion(hm.region, poRegion);
+          } else if (poDistrict && hm.district) {
+            return sameDistrict(hm.district, poDistrict);
+          }
+          // Also include headmasters assigned to schools in the region/district
+          if (hm.schoolId && schoolIds.includes(hm.schoolId)) {
+            return true;
+          }
+          return false;
+        });
 
-        // Get all staff from schools in the district
+        console.log(`[Staff List] Found ${filteredHeadmasters.length} headmasters`);
+
+        // Get all staff from schools in the region/district
         let schoolStaff: any[] = [];
         if (schoolIds.length > 0) {
           schoolStaff = await db.select({
@@ -1292,6 +1348,7 @@ export async function registerRoutes(
             role: users.role,
             schoolId: users.schoolId,
             classSection: users.classSection,
+            region: users.region,
             district: users.district,
             block: users.block,
             isActive: users.isActive,
@@ -1303,12 +1360,15 @@ export async function registerRoutes(
             createdAt: users.createdAt,
           }).from(users).where(and(
             eq(users.approvalStatus, "Approved"),
+            eq(users.isActive, true),
             sql`${users.schoolId} IN (${sql.join(schoolIds.map(id => sql`${id}`), sql`, `)})`
           ));
+
+          console.log(`[Staff List] Found ${schoolStaff.length} school staff`);
         }
 
-        staff = [...headmasters, ...schoolStaff];
-        console.info(`Staff list: PO ${requester.id} requested staff for district ${poDistrict}. Found ${staff.length}`);
+        staff = [...filteredHeadmasters, ...schoolStaff];
+        console.log(`[Staff List] Total staff for PO: ${staff.length}`);
       } else if (requester.role === "Admin") {
         // Admin can view all approved staff
         staff = await db.select({
@@ -1319,6 +1379,7 @@ export async function registerRoutes(
           role: users.role,
           schoolId: users.schoolId,
           classSection: users.classSection,
+          region: users.region,
           district: users.district,
           block: users.block,
           isActive: users.isActive,
@@ -1760,8 +1821,22 @@ export async function registerRoutes(
       // If user is a PO, enforce strict district/school scoping
       if (effectiveReqUser && effectiveReqUser.role === "PO") {
         const poUser = await storage.getUser(effectiveReqUser.id);
+        const poRegion = poUser?.region ?? undefined;
         const poDistrict = poUser?.district ?? undefined;
 
+        // Primary filter: Region (if PO has a region assigned)
+        if (poRegion) {
+          const filteredSchools = (schools || []).filter(s => sameRegion(s.region, poRegion));
+          const filteredTotal = filteredSchools.length;
+          console.info(`Get schools (PO region filter applied: ${poRegion}) returned ${filteredSchools.length} schools`);
+          return res.json({
+            schools: filteredSchools,
+            totalPages: Math.ceil(filteredTotal / 100),
+            totalItems: filteredTotal,
+          });
+        }
+
+        // Fallback filter: District (for backward compatibility or if no region)
         if (poDistrict) {
           const filteredSchools = (schools || []).filter(s => sameDistrict(s.district, poDistrict));
           const filteredTotal = filteredSchools.length;
@@ -1773,7 +1848,7 @@ export async function registerRoutes(
           });
         }
 
-        // If PO has no district but is assigned to a specific school, only return that school
+        // If PO has no region/district but is assigned to a specific school, only return that school
         if (poUser?.schoolId) {
           const filteredSchools = (schools || []).filter(s => s.id === poUser.schoolId);
           const filteredTotal = filteredSchools.length;
@@ -1902,20 +1977,33 @@ export async function registerRoutes(
       let pending: any[] = [];
 
       if (requester.role === "PO") {
-        // PO can only see pending schools in their district
+        // PO can see pending schools in their region (primary) or district (fallback)
         const poUser = await storage.getUser(requester.id);
+        const poRegion = poUser?.region;
         const poDistrict = poUser?.district;
         
-        if (!poDistrict) {
-          return res.status(400).json({ message: "PO district not configured" });
+        if (!poRegion && !poDistrict) {
+          return res.status(400).json({ message: "PO region/district not configured" });
         }
 
-        pending = await db.select().from(schools).where(and(
-          eq(schools.approvalStatus, "Pending"),
-          eq(schools.district, poDistrict)
-        )).orderBy(desc(schools.createdAt));
+        // Primary: Filter by region
+        if (poRegion) {
+          pending = await db.select().from(schools).where(and(
+            eq(schools.approvalStatus, "Pending"),
+            eq(schools.region, poRegion)
+          )).orderBy(desc(schools.createdAt));
 
-        console.info(`PO ${requester.id} requested pending schools for district ${poDistrict}. Found ${pending.length}`);
+          console.info(`PO ${requester.id} requested pending schools for region ${poRegion}. Found ${pending.length}`);
+        } 
+        // Fallback: Filter by district
+        else if (poDistrict) {
+          pending = await db.select().from(schools).where(and(
+            eq(schools.approvalStatus, "Pending"),
+            eq(schools.district, poDistrict)
+          )).orderBy(desc(schools.createdAt));
+
+          console.info(`PO ${requester.id} requested pending schools for district ${poDistrict}. Found ${pending.length}`);
+        }
       } else if (requester.role === "Admin") {
         // Admin can see all pending schools
         pending = await db.select().from(schools).where(eq(schools.approvalStatus, "Pending")).orderBy(desc(schools.createdAt));
@@ -1939,16 +2027,22 @@ export async function registerRoutes(
       if (!schoolToApprove) return res.status(404).json({ message: "School not found" });
       if (schoolToApprove.approvalStatus !== "Pending") return res.status(400).json({ message: "School is not pending approval" });
 
-      // PO can only approve schools in their district
+      // PO can approve schools in their region (primary) or district (fallback)
       if (requester.role === "PO") {
         const poUser = await storage.getUser(requester.id);
+        const poRegion = poUser?.region;
         const poDistrict = poUser?.district;
         
-        if (!poDistrict) {
-          return res.status(400).json({ message: "PO district not configured" });
+        if (!poRegion && !poDistrict) {
+          return res.status(400).json({ message: "PO region/district not configured" });
         }
         
-        if (schoolToApprove.district !== poDistrict) {
+        // Primary: Check region match
+        if (poRegion && !sameRegion(schoolToApprove.region, poRegion)) {
+          return res.status(403).json({ message: "Cannot approve school from a different region" });
+        }
+        // Fallback: Check district match (if no region)
+        else if (!poRegion && poDistrict && !sameDistrict(schoolToApprove.district, poDistrict)) {
           return res.status(403).json({ message: "Cannot approve school from a different district" });
         }
       }
@@ -2022,16 +2116,22 @@ export async function registerRoutes(
       if (!schoolToReject) return res.status(404).json({ message: "School not found" });
       if (schoolToReject.approvalStatus !== "Pending") return res.status(400).json({ message: "School is not pending approval" });
 
-      // PO can only reject schools in their district
+      // PO can reject schools in their region (primary) or district (fallback)
       if (requester.role === "PO") {
         const poUser = await storage.getUser(requester.id);
+        const poRegion = poUser?.region;
         const poDistrict = poUser?.district;
         
-        if (!poDistrict) {
-          return res.status(400).json({ message: "PO district not configured" });
+        if (!poRegion && !poDistrict) {
+          return res.status(400).json({ message: "PO region/district not configured" });
         }
         
-        if (schoolToReject.district !== poDistrict) {
+        // Primary: Check region match
+        if (poRegion && !sameRegion(schoolToReject.region, poRegion)) {
+          return res.status(403).json({ message: "Cannot reject school from a different region" });
+        }
+        // Fallback: Check district match (if no region)
+        else if (!poRegion && poDistrict && !sameDistrict(schoolToReject.district, poDistrict)) {
           return res.status(403).json({ message: "Cannot reject school from a different district" });
         }
       }
@@ -2786,15 +2886,16 @@ export async function registerRoutes(
       }
 
       // For Headmaster viewing pending cards for approval, default to Pending status
+      // BUT: if studentId is provided, don't apply default status filter (allow fetching any status)
       let finalStatus = status;
-      if (req.user?.role === "Headmaster" && !status) {
+      const studentIdQuery = req.query.studentId as string | undefined;
+      if (req.user?.role === "Headmaster" && !status && !studentIdQuery) {
         finalStatus = "Pending";
       }
 
       // (No special createdBy fallback here.)
 
       try {
-        const studentIdQuery = req.query.studentId as string | undefined;
         console.info('[GET /api/annual-cards] params', { userRole: req.user?.role, schoolId, status: finalStatus, year, studentIdQuery, teacherClassSection });
         const { cards, total } = await storage.getAnnualHealthCards({
           studentId: studentIdQuery,
@@ -3097,10 +3198,15 @@ export async function registerRoutes(
       }
 
       res.json({ card: fullCard, student });
+    } catch (error: any) {
+      console.error("Get health card error:", error?.message || String(error));
+      res.status(500).json({ message: error?.message || "Failed to fetch health card" });
+    }
+  });
 
-      // Export referrals for a given health card (returns explicit referrals from referrals table
-      // or derives referral entries from the health card fields when no referrals exist)
-      app.get("/api/annual-cards/:id/referrals", authenticateToken, async (req: AuthRequest, res) => {
+  // Export referrals for a given health card (returns explicit referrals from referrals table
+  // or derives referral entries from the health card fields when no referrals exist)
+  app.get("/api/annual-cards/:id/referrals", authenticateToken, async (req: AuthRequest, res) => {
         try {
           // Lady Superintendent should not have access to health cards at all
           if (req.user?.role === "Lady Superintendent") {
@@ -3224,11 +3330,6 @@ export async function registerRoutes(
           console.error('Get card referrals error:', error?.message || String(error));
           res.status(500).json({ message: error?.message || 'Failed to fetch referrals for health card' });
         }
-      });
-    } catch (error: any) {
-      console.error("Get health card error:", error?.message || String(error));
-      res.status(500).json({ message: error?.message || "Failed to fetch health card" });
-    }
   });
 
   app.put("/api/annual-cards/:id", authenticateToken, authorizeRoles("Admin", "ClassTeacher"), async (req: AuthRequest, res) => {
@@ -3645,7 +3746,38 @@ export async function registerRoutes(
       const limit = parseInt(req.query.limit as string) || 10;
       const teamId = req.query.teamId as string;
       
-      const result = await storage.getMedicalEvents({ teamId, page, limit });
+      let result = await storage.getMedicalEvents({ teamId, page, limit });
+      
+      // For ClassTeacher, filter events to only show those from their school
+      if (req.user?.role === "ClassTeacher") {
+        const teacher = await storage.getUser(req.user.id);
+        if (teacher?.schoolId) {
+          // Filter events by checking if any associated checkups belong to students from teacher's school
+          const filteredEvents = await Promise.all(
+            result.events.map(async (event) => {
+              // Get a sample checkup from this event to determine school
+              const checkups = await storage.getStudentCheckups({ 
+                eventId: event.id, 
+                page: 1, 
+                limit: 1 
+              });
+              
+              if (checkups.checkups.length > 0) {
+                const student = await storage.getStudent(checkups.checkups[0].studentId);
+                return student?.schoolId === teacher.schoolId ? event : null;
+              }
+              return null;
+            })
+          );
+          
+          const filteredEventsList = filteredEvents.filter(e => e !== null);
+          result = {
+            events: filteredEventsList,
+            total: filteredEventsList.length
+          };
+        }
+      }
+      
       res.json(result);
     } catch (error: any) {
       console.error("Get medical events error:", error?.message || String(error));
@@ -3824,7 +3956,7 @@ export async function registerRoutes(
         teamId: event.teamId,
         checkupMonth: month,
         checkupYear: year,
-        status: "Not started" as const,
+        status: "In progress" as const,
         present: true,
         ...req.body
       };
@@ -4212,6 +4344,7 @@ export async function registerRoutes(
   });
 
   // Update referral status (ClassTeacher can update referrals for their class; HM/PO/Admin can update for their school)
+  // Supports all three referral types: health_card, monthly_checkup, period_tracker
   app.patch("/api/referrals/:id", authenticateToken, authorizeRoles("ClassTeacher", "Headmaster", "Admin"), async (req: AuthRequest, res) => {
     try {
       const referralId = req.params.id;
@@ -4221,39 +4354,111 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Status is required" });
       }
 
-      const existing = await storage.getReferral(referralId);
-      if (!existing) {
-        return res.status(404).json({ message: "Referral not found" });
+      // Determine referral source from ID prefix
+      let source: 'health_card' | 'monthly_checkup' | 'period_tracker' = 'health_card';
+      let actualId = referralId;
+      
+      if (referralId.startsWith('checkup-')) {
+        source = 'monthly_checkup';
+        actualId = referralId.replace('checkup-', '');
+      } else if (referralId.startsWith('period-')) {
+        source = 'period_tracker';
+        actualId = referralId.replace('period-', '');
       }
 
-      // Authorization: ClassTeacher can only update referrals for their class
-      if (req.user?.role === "ClassTeacher") {
-        const teacher = await storage.getUser(req.user.id);
-        const student = existing.studentId ? await storage.getStudent(existing.studentId) : null;
-        if (!student) {
-          return res.status(404).json({ message: "Associated student not found" });
+      // Handle different referral sources
+      if (source === 'health_card') {
+        // Original logic for health card referrals
+        const existing = await storage.getReferral(referralId);
+        if (!existing) {
+          return res.status(404).json({ message: "Referral not found" });
         }
-        if (teacher?.schoolId !== student.schoolId || teacher?.classSection !== student.classSection) {
-          return res.status(403).json({ message: "Insufficient permissions to update this referral" });
+
+        // Authorization: ClassTeacher can only update referrals for their class
+        if (req.user?.role === "ClassTeacher") {
+          const teacher = await storage.getUser(req.user.id);
+          const student = existing.studentId ? await storage.getStudent(existing.studentId) : null;
+          if (!student) {
+            return res.status(404).json({ message: "Associated student not found" });
+          }
+          if (teacher?.schoolId !== student.schoolId || teacher?.classSection !== student.classSection) {
+            return res.status(403).json({ message: "Insufficient permissions to update this referral" });
+          }
         }
+
+        // If marking as Completed and no completionDate provided, set to today
+        let completion = completionDate || null;
+        if (status === "Completed" && !completion) {
+          completion = new Date().toISOString().split("T")[0];
+        }
+
+        const updated = await storage.updateReferral(referralId, {
+          status,
+          completionDate: completion,
+          notes: notes ?? existing.notes,
+          updatedBy: req.user?.id,
+        });
+
+        res.json(updated);
+      } else if (source === 'monthly_checkup') {
+        // Handle monthly checkup referral status update
+        const checkup = await storage.getMonthlyCheckup(actualId);
+        if (!checkup) {
+          return res.status(404).json({ message: "Monthly checkup not found" });
+        }
+
+        // Authorization check
+        if (req.user?.role === "ClassTeacher") {
+          const teacher = await storage.getUser(req.user.id);
+          const student = await storage.getStudent(checkup.studentId);
+          if (!student || teacher?.schoolId !== student.schoolId || teacher?.classSection !== student.classSection) {
+            return res.status(403).json({ message: "Insufficient permissions" });
+          }
+        }
+
+        // Update the checkup with referral status
+        const updated = await storage.updateMonthlyCheckup(actualId, {
+          referralStatus: status,
+          referralCompletionDate: status === "Completed" ? (completionDate || new Date().toISOString().split("T")[0]) : null,
+          referralNotes: notes || checkup.referralNotes,
+        });
+
+        res.json({ 
+          id: referralId, 
+          status, 
+          completionDate: updated.referralCompletionDate,
+          source: 'monthly_checkup'
+        });
+      } else if (source === 'period_tracker') {
+        // Handle period tracker referral status update
+        const entry = await storage.getPeriodTrackerEntry(actualId);
+        if (!entry) {
+          return res.status(404).json({ message: "Period tracker entry not found" });
+        }
+
+        // Authorization check
+        if (req.user?.role === "ClassTeacher") {
+          const teacher = await storage.getUser(req.user.id);
+          const student = await storage.getStudent(entry.studentId);
+          if (!student || teacher?.schoolId !== student.schoolId || teacher?.classSection !== student.classSection) {
+            return res.status(403).json({ message: "Insufficient permissions" });
+          }
+        }
+
+        // Update the period tracker entry with referral status
+        const updated = await storage.updatePeriodTrackerEntry(actualId, {
+          referralStatus: status,
+          referralCompletionDate: status === "Completed" ? (completionDate || new Date().toISOString().split("T")[0]) : null,
+          referralNotes: notes || entry.referralNotes,
+        });
+
+        res.json({ 
+          id: referralId, 
+          status, 
+          completionDate: updated.referralCompletionDate,
+          source: 'period_tracker'
+        });
       }
-
-      // If marking as Completed and no completionDate provided, set to today
-      let completion = completionDate || null;
-      if (status === "Completed" && !completion) {
-        completion = new Date().toISOString().split("T")[0];
-      }
-
-      const updated = await storage.updateReferral(referralId, {
-        status,
-        completionDate: completion,
-        notes: notes ?? existing.notes,
-        updatedBy: req.user?.id,
-      });
-
-      // Invalidate or notify other systems (optionally create notifications)
-
-      res.json(updated);
     } catch (error: any) {
       console.error("Update referral error:", error?.message || String(error));
       res.status(500).json({ message: error?.message || "Failed to update referral" });
@@ -4344,14 +4549,17 @@ export async function registerRoutes(
       const requestedSchool = req.query.schoolId as string;
       const role = req.user?.role;
 
-      // Determine PO's district (if PO) to restrict access
+      // Determine PO's region/district (if PO) to restrict access
+      let poRegion: string | undefined;
       let poDistrict: string | undefined;
       let poSchoolId: string | undefined;
       let poUser: any = null;
       if (role === "PO") {
         poUser = await storage.getUser(req.user!.id);
+        poRegion = poUser?.region ?? undefined;
         poDistrict = poUser?.district ?? undefined;
         poSchoolId = poUser?.schoolId ?? undefined;
+        console.log(`[Hostel Attendance] PO ${req.user!.id} - Region: ${poRegion}, District: ${poDistrict}`);
       }
 
       // Determine which school(s) data to return based on role
@@ -4383,33 +4591,51 @@ export async function registerRoutes(
       } else if (role === "PO" || role === "Admin") {
         schoolId = requestedSchool; // PO can filter by school or see aggregated
 
-        // If PO requested a specific school, ensure it belongs to their district or is their assigned school
+        // If PO requested a specific school, ensure it belongs to their region/district or is their assigned school
         if (role === "PO" && requestedSchool) {
           const s = await storage.getSchool(requestedSchool);
           if (!s) return res.status(404).json({ message: "School not found" });
-          if (poDistrict && !sameDistrict(s.district, poDistrict)) {
-            return res.status(403).json({ message: "You can only access hostel attendance for schools in your district" });
+          
+          // Check region first (priority), then district
+          let hasAccess = false;
+          if (poRegion && s.region) {
+            hasAccess = sameRegion(s.region, poRegion);
+          } else if (poDistrict && s.district) {
+            hasAccess = sameDistrict(s.district, poDistrict);
+          } else if (poSchoolId && s.id === poSchoolId) {
+            hasAccess = true;
           }
-          if (!poDistrict && poSchoolId && s.id !== poSchoolId) {
-            return res.status(403).json({ message: "You can only access hostel attendance for your assigned school" });
+          
+          if (!hasAccess) {
+            return res.status(403).json({ message: "You can only access hostel attendance for schools in your region/district" });
           }
         }
       }
 
       // Fetch students for this school. Special-case PO aggregate requests (no specific school requested)
-      // so they only see students from their district (or assigned school when no district).
+      // so they only see students from their region/district (or assigned school when no region/district).
       let baseStudents: any[] = [];
 
       if (role === "PO" && !requestedSchool) {
-        // PO aggregate view: determine allowed schools
+        // PO aggregate view: determine allowed schools based on region/district
         let allowedSchoolIds: string[] = [];
-        if (poDistrict) {
+        
+        if (poRegion || poDistrict) {
           const { schools: allSchools } = await storage.getSchools(1, 1000);
-          allowedSchoolIds = (allSchools || []).filter(s => sameDistrict(s.district, poDistrict)).map(s => s.id);
+          allowedSchoolIds = (allSchools || []).filter(s => {
+            if (poRegion) {
+              return sameRegion(s.region, poRegion);
+            } else if (poDistrict) {
+              return sameDistrict(s.district, poDistrict);
+            }
+            return false;
+          }).map(s => s.id);
+          
+          console.log(`[Hostel Attendance] PO allowed schools: ${allowedSchoolIds.length}`);
         } else if (poSchoolId) {
           allowedSchoolIds = [poSchoolId];
         } else {
-          // PO has neither district nor assigned school — no students should be visible
+          // PO has neither region, district, nor assigned school — no students should be visible
           allowedSchoolIds = [];
         }
 
@@ -4418,19 +4644,33 @@ export async function registerRoutes(
         } else {
           const { students: allStudents } = await storage.getStudents({ limit: 1000 });
           baseStudents = (allStudents || []).filter(s => allowedSchoolIds.includes(s.schoolId));
+          console.log(`[Hostel Attendance] PO base students: ${baseStudents.length}`);
         }
       } else {
         const { students: schoolStudents } = await storage.getStudents({ schoolId, limit: 1000 });
         baseStudents = schoolStudents;
 
         // If no students found for the requested school, fall back to all students while respecting PO scoping
+        // IMPORTANT: Headmaster, ClassTeacher, LS, MS should NEVER see students from other schools
         if (!schoolStudents || schoolStudents.length === 0) {
-          const { students: allStudentsFallback } = await storage.getStudents({ limit: 1000 });
-          if (role === "PO") {
-            if (poDistrict) {
-              // Restrict fallback students to those whose school is in the PO's district
+          // Only allow fallback for roles that can legitimately see multiple schools
+          if (role === "Headmaster" || role === "ClassTeacher" || role === "Lady Superintendent" || role === "MealSuperintendent" || role === "HostelWarden") {
+            // These roles should ONLY see their assigned school - no fallback
+            baseStudents = [];
+          } else if (role === "PO") {
+            const { students: allStudentsFallback } = await storage.getStudents({ limit: 1000 });
+            
+            // Filter by region (priority) or district
+            if (poRegion || poDistrict) {
               const { schools: allSchools } = await storage.getSchools(1, 1000);
-              const allowedSchoolIds = (allSchools || []).filter(s => sameDistrict(s.district, poDistrict)).map(s => s.id);
+              const allowedSchoolIds = (allSchools || []).filter(s => {
+                if (poRegion) {
+                  return sameRegion(s.region, poRegion);
+                } else if (poDistrict) {
+                  return sameDistrict(s.district, poDistrict);
+                }
+                return false;
+              }).map(s => s.id);
               baseStudents = allStudentsFallback.filter(s => allowedSchoolIds.includes(s.schoolId));
             } else if (poSchoolId) {
               baseStudents = allStudentsFallback.filter(s => s.schoolId === poSchoolId);
@@ -4438,7 +4678,8 @@ export async function registerRoutes(
               baseStudents = [];
             }
           } else {
-            baseStudents = allStudentsFallback;
+            // For any other roles, no fallback
+            baseStudents = [];
           }
         }
       }
@@ -4692,6 +4933,13 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Student not found" });
       }
 
+      // School-based access control for Headmaster, ClassTeacher, and HostelWarden
+      if (req.user?.role === "Headmaster" || req.user?.role === "ClassTeacher" || req.user?.role === "HostelWarden") {
+        if (!req.user.schoolId || req.user.schoolId !== student.schoolId) {
+          return res.status(403).json({ message: "You can only manage students from your assigned school" });
+        }
+      }
+
       // Gender-based access control for LS and MS
       if (req.user?.role === "Lady Superintendent") {
         if (!req.user.schoolId || req.user.schoolId !== student.schoolId) {
@@ -4765,6 +5013,13 @@ export async function registerRoutes(
 
       if (!student) {
         return res.status(404).json({ message: "Student not found" });
+      }
+
+      // School-based access control for Headmaster, ClassTeacher, and HostelWarden
+      if (req.user?.role === "Headmaster" || req.user?.role === "ClassTeacher" || req.user?.role === "HostelWarden") {
+        if (!req.user.schoolId || req.user.schoolId !== student.schoolId) {
+          return res.status(403).json({ message: "You can only manage students from your assigned school" });
+        }
       }
 
       // Gender-based access control for LS and MS
@@ -4866,6 +5121,13 @@ export async function registerRoutes(
         }
       }
 
+      // If the caller is a HostelWarden, ensure they can only mark vacations for students in their school
+      if (req.user?.role === "HostelWarden") {
+        if (!req.user.schoolId || req.user.schoolId !== student.schoolId) {
+          return res.status(403).json({ message: "You can only mark vacations for students from your assigned school" });
+        }
+      }
+
       // If the caller is a Lady Superintendent, ensure they can only mark vacations for female students in their school
       if (req.user?.role === "Lady Superintendent") {
         if (!req.user.schoolId || req.user.schoolId !== student.schoolId) {
@@ -4921,6 +5183,37 @@ export async function registerRoutes(
       const year = parseInt(req.query.year as string) || new Date().getFullYear();
       const requestedSchool = req.query.schoolId as string;
       const role = req.user?.role;
+
+      // Determine PO's region/district (if PO) to restrict access
+      let poRegion: string | undefined;
+      let poDistrict: string | undefined;
+      let poSchoolId: string | undefined;
+      if (role === "PO") {
+        const poUser = await storage.getUser(req.user!.id);
+        poRegion = poUser?.region ?? undefined;
+        poDistrict = poUser?.district ?? undefined;
+        poSchoolId = poUser?.schoolId ?? undefined;
+        console.log(`[Hostel Monthly Report] PO ${req.user!.id} - Region: ${poRegion}, District: ${poDistrict}`);
+        
+        // If PO requested a specific school, verify access
+        if (requestedSchool) {
+          const s = await storage.getSchool(requestedSchool);
+          if (!s) return res.status(404).json({ message: "School not found" });
+          
+          let hasAccess = false;
+          if (poRegion && s.region) {
+            hasAccess = sameRegion(s.region, poRegion);
+          } else if (poDistrict && s.district) {
+            hasAccess = sameDistrict(s.district, poDistrict);
+          } else if (poSchoolId && s.id === poSchoolId) {
+            hasAccess = true;
+          }
+          
+          if (!hasAccess) {
+            return res.status(403).json({ message: "You can only access hostel reports for schools in your region/district" });
+          }
+        }
+      }
 
       // For ClassTeacher, get their assigned class
       let teacherClassSection: string | undefined;
@@ -5266,11 +5559,12 @@ async function getMenstrualHealthAnalytics(schools: any[], _selectedMonth: numbe
         return res.status(400).json({ message: "Invalid school type. Must be 'Government', 'Aided', or 'All'." });
       }
 
-      // Get PO's district to filter schools
+      // Get PO's region and district to filter schools
       const user = await storage.getUser(req.user!.id);
+      const poRegion: string | undefined = user?.region ?? undefined;
       const poDistrict: string | undefined = user?.district ?? undefined;
 
-      console.log('PO user district:', poDistrict);
+      console.log('PO user region:', poRegion, 'district:', poDistrict);
 
       if (!user) {
         return res.status(404).json({ message: "User not found" });
@@ -5282,12 +5576,18 @@ async function getMenstrualHealthAnalytics(schools: any[], _selectedMonth: numbe
         if (req.user?.role === "Admin") {
           const result = await storage.getSchools(1, 1000);
           schools = result.schools || [];
-        } else if (poDistrict) {
-          // For PO, filter by district first
+        } else if (poRegion) {
+          // Primary: For PO, filter by region first
           const allSchools = await storage.getSchools(1, 1000);
-          schools = (allSchools.schools || []).filter(s => s.district === poDistrict);
+          schools = (allSchools.schools || []).filter(s => sameRegion(s.region, poRegion));
+          console.log(`Filtered ${schools.length} schools by region: ${poRegion}`);
+        } else if (poDistrict) {
+          // Fallback: Filter by district if no region
+          const allSchools = await storage.getSchools(1, 1000);
+          schools = (allSchools.schools || []).filter(s => sameDistrict(s.district, poDistrict));
+          console.log(`Filtered ${schools.length} schools by district: ${poDistrict}`);
         } else {
-          console.warn('PO user has no district assigned, returning empty data');
+          console.warn('PO user has no region/district assigned, returning empty data');
           schools = [];
         }
       } catch (error) {
@@ -5361,7 +5661,7 @@ async function getMenstrualHealthAnalytics(schools: any[], _selectedMonth: numbe
       // Get dashboard metrics with error handling
       let metrics = {};
       try {
-        metrics = await storage.getDashboardMetrics("PO", req.user!.id, undefined, undefined, poDistrict);
+        metrics = await storage.getDashboardMetrics("PO", req.user!.id, undefined, undefined, poDistrict, poRegion);
       } catch (error) {
         console.error('Error fetching dashboard metrics:', error);
         metrics = {};
@@ -6261,22 +6561,116 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
       };
       console.log('Adolescent health metrics:', adolescentHealth);
 
-      // Calculate real referral management using the referrals table (fallback to health-card derived referrals if table empty)
+      // Calculate real referral management using ALL THREE SOURCES:
+      // 1. Health Card Referrals (referrals table)
+      // 2. Monthly Checkup Referrals (monthly_checkups table)
+      // 3. Period Tracker Referrals (period_tracker_entries table)
       // IMPORTANT: Fetch referrals ONLY for schools in the PO's district
-      console.log('Fetching referrals for', schools.length, 'schools in district:', poDistrict);
-      const allReferrals = await Promise.all(
+      console.log('Fetching referrals from ALL THREE SOURCES for', schools.length, 'schools in district:', poDistrict);
+      
+      const allReferralsData = await Promise.all(
         schools.map(async (school) => {
+          const schoolReferrals: any[] = [];
+          
+          // SOURCE 1: Health Card Referrals (explicit referrals table)
           try {
             const { referrals } = await storage.getReferrals({ schoolId: school.id, limit: 1000 });
-            return referrals;
+            referrals.forEach(r => {
+              schoolReferrals.push({
+                ...r,
+                source: 'health_card',
+                schoolName: school.name
+              });
+            });
           } catch (error) {
-            console.warn(`Referrals table not available for school ${school.id}:`, error);
-            return [];
+            console.warn(`Health card referrals not available for school ${school.id}:`, error);
           }
+          
+          // SOURCE 2: Monthly Checkup Referrals
+          try {
+            const checkups = await storage.getMonthlyCheckups({
+              schoolId: school.id,
+              year: selectedYear,
+              limit: 1000
+            });
+            
+            checkups.checkups
+              .filter(c => c.referredTo && c.referredTo.trim() !== '')
+              .forEach(checkup => {
+                schoolReferrals.push({
+                  id: `checkup-${checkup.id}`,
+                  studentId: checkup.studentId,
+                  schoolId: school.id,
+                  schoolName: school.name,
+                  referralDate: checkup.checkupDate,
+                  status: (checkup as any).referralStatus || 'Pending',
+                  issue: `Monthly checkup referral${checkup.symptoms && checkup.symptoms.length > 0 ? ': ' + checkup.symptoms.join(', ') : ''}`,
+                  referralType: 'medical',
+                  facility: checkup.referredTo,
+                  createdAt: checkup.createdAt || new Date(),
+                  source: 'monthly_checkup'
+                });
+              });
+          } catch (error) {
+            console.warn(`Monthly checkup referrals not available for school ${school.id}:`, error);
+          }
+          
+          // SOURCE 3: Period Tracker Referrals
+          try {
+            // First get all students from this school
+            const { students: schoolStudents } = await storage.getStudents({ 
+              schoolId: school.id, 
+              limit: 1000 
+            });
+            
+            // Then fetch period tracker entries for each student
+            for (const student of schoolStudents) {
+              try {
+                const startDate = `${selectedYear}-01-01`;
+                const endDate = `${selectedYear}-12-31`;
+                const { entries: periodEntries } = await storage.getPeriodTrackerEntries({
+                  studentId: student.id,
+                  startDate,
+                  endDate,
+                  limit: 100
+                });
+                
+                periodEntries
+                  .filter(entry => entry.isReferred && entry.referralFacility)
+                  .forEach(entry => {
+                    schoolReferrals.push({
+                      id: `period-${entry.id}`,
+                      studentId: entry.studentId,
+                      schoolId: school.id,
+                      schoolName: school.name,
+                      referralDate: entry.referredDate || entry.entryDate,
+                      status: (entry as any).referralStatus || 'Pending',
+                      issue: `Menstrual health referral${entry.symptoms && entry.symptoms.length > 0 ? ': ' + entry.symptoms.join(', ') : ''}`,
+                      referralType: 'adolescent',
+                      facility: entry.referralFacility,
+                      createdAt: entry.createdAt || new Date(),
+                      source: 'period_tracker'
+                    });
+                  });
+              } catch (error) {
+                // Skip individual student errors
+              }
+            }
+          } catch (error) {
+            console.warn(`Period tracker referrals not available for school ${school.id}:`, error);
+          }
+          
+          return schoolReferrals;
         })
       );
-      let flatReferrals = allReferrals.flat();
-      console.log('Total referrals found for PO district:', flatReferrals.length);
+      
+      let flatReferrals = allReferralsData.flat();
+      console.log('Total referrals found for PO district (ALL SOURCES):', flatReferrals.length);
+      console.log('Referral breakdown by source:', {
+        health_card: flatReferrals.filter(r => r.source === 'health_card').length,
+        monthly_checkup: flatReferrals.filter(r => r.source === 'monthly_checkup').length,
+        period_tracker: flatReferrals.filter(r => r.source === 'period_tracker').length
+      });
 
       // If there are no explicit referrals in DB, derive referrals from health-cards as a best-effort fallback
       if (!flatReferrals.length) {
@@ -6784,35 +7178,129 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
       const selectedYear = year ? parseInt(year as string) : new Date().getFullYear();
 
       const user = await storage.getUser(req.user!.id);
+      const poRegion = user?.region;
       const poDistrict = user?.district;
 
-      if (!poDistrict && req.user?.role !== "Admin") {
-        return res.status(403).json({ message: "No district assigned" });
+      if (!poRegion && !poDistrict && req.user?.role !== "Admin") {
+        return res.status(403).json({ message: "No region or district assigned" });
       }
 
-      // Get schools in district
+      // Get schools in region/district
       const allSchools = await storage.getSchools(1, 1000);
       let schools = req.user?.role === "Admin" 
         ? allSchools.schools 
-        : allSchools.schools.filter(s => s.district === poDistrict);
+        : allSchools.schools.filter(s => {
+            // Filter by region first (primary), then district (fallback)
+            if (poRegion) {
+              return sameRegion(s.region, poRegion);
+            } else if (poDistrict) {
+              return sameDistrict(s.district, poDistrict);
+            }
+            return false;
+          });
 
       if (schoolType && schoolType !== "All") {
         schools = schools.filter(s => s.schoolType === schoolType);
       }
 
-      // Get all referrals for these schools
-      const allReferrals = await Promise.all(
+      // Get all referrals from ALL THREE SOURCES for these schools
+      const allReferralsData = await Promise.all(
         schools.map(async (school) => {
+          const schoolReferrals: any[] = [];
+          
+          // SOURCE 1: Health Card Referrals
           try {
             const { referrals } = await storage.getReferrals({ schoolId: school.id, limit: 1000 });
-            return referrals.map(r => ({ ...r, schoolName: school.name }));
+            referrals.forEach(r => {
+              schoolReferrals.push({
+                ...r,
+                source: 'health_card',
+                schoolName: school.name
+              });
+            });
           } catch (error) {
-            return [];
+            console.warn(`Health card referrals not available for school ${school.id}`);
           }
+          
+          // SOURCE 2: Monthly Checkup Referrals
+          try {
+            const checkups = await storage.getMonthlyCheckups({
+              schoolId: school.id,
+              year: selectedYear,
+              limit: 1000
+            });
+            
+            checkups.checkups
+              .filter(c => c.referredTo && c.referredTo.trim() !== '')
+              .forEach(checkup => {
+                schoolReferrals.push({
+                  id: `checkup-${checkup.id}`,
+                  studentId: checkup.studentId,
+                  schoolId: school.id,
+                  schoolName: school.name,
+                  referralDate: checkup.checkupDate,
+                  status: (checkup as any).referralStatus || 'Pending',
+                  issue: `Monthly checkup referral${checkup.symptoms && checkup.symptoms.length > 0 ? ': ' + checkup.symptoms.join(', ') : ''}`,
+                  referralType: 'medical',
+                  facility: checkup.referredTo,
+                  createdAt: checkup.createdAt || new Date(),
+                  source: 'monthly_checkup'
+                });
+              });
+          } catch (error) {
+            console.warn(`Monthly checkup referrals not available for school ${school.id}`);
+          }
+          
+          // SOURCE 3: Period Tracker Referrals
+          try {
+            // First get all students from this school
+            const { students: schoolStudents } = await storage.getStudents({ 
+              schoolId: school.id, 
+              limit: 1000 
+            });
+            
+            // Then fetch period tracker entries for each student
+            for (const student of schoolStudents) {
+              try {
+                const startDate = `${selectedYear}-01-01`;
+                const endDate = `${selectedYear}-12-31`;
+                const { entries: periodEntries } = await storage.getPeriodTrackerEntries({
+                  studentId: student.id,
+                  startDate,
+                  endDate,
+                  limit: 100
+                });
+                
+                periodEntries
+                  .filter(entry => entry.isReferred && entry.referralFacility)
+                  .forEach(entry => {
+                    schoolReferrals.push({
+                      id: `period-${entry.id}`,
+                      studentId: entry.studentId,
+                      schoolId: school.id,
+                      schoolName: school.name,
+                      referralDate: entry.referredDate || entry.entryDate,
+                      status: (entry as any).referralStatus || 'Pending',
+                      issue: `Menstrual health referral${entry.symptoms && entry.symptoms.length > 0 ? ': ' + entry.symptoms.join(', ') : ''}`,
+                      referralType: 'adolescent',
+                      facility: entry.referralFacility,
+                      createdAt: entry.createdAt || new Date(),
+                      source: 'period_tracker'
+                    });
+                  });
+              } catch (error) {
+                // Skip individual student errors
+              }
+            }
+          } catch (error) {
+            console.warn(`Period tracker referrals not available for school ${school.id}`);
+          }
+          
+          return schoolReferrals;
         })
       );
 
-      const flatReferrals = allReferrals.flat();
+      const flatReferrals = allReferralsData.flat();
       const pendingReferrals = flatReferrals.filter(r => r.status === "Pending");
 
       // Enrich with student details
@@ -6833,6 +7321,7 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
             daysPending,
             status: referral.status,
             priority: daysPending > 30 ? "High" : daysPending > 14 ? "Medium" : "Normal",
+            source: referral.source, // Include source information
           };
         })
       );
@@ -6844,6 +7333,11 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
           month: selectedMonth,
           year: selectedYear,
           schoolType: schoolType || "All",
+          sources: {
+            health_card: flatReferrals.filter(r => r.source === 'health_card').length,
+            monthly_checkup: flatReferrals.filter(r => r.source === 'monthly_checkup').length,
+            period_tracker: flatReferrals.filter(r => r.source === 'period_tracker').length,
+          }
         }
       });
     } catch (error: any) {
@@ -6863,24 +7357,29 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
       console.log('Params:', { month: selectedMonth, year: selectedYear, schoolType, metric });
 
       const user = await storage.getUser(req.user!.id);
+      const poRegion = user?.region;
       const poDistrict = user?.district;
 
-      console.log('User district:', poDistrict);
+      console.log('User region:', poRegion, 'district:', poDistrict);
 
-      // Get schools in district
+      // Get schools in region/district
       const allSchools = await storage.getSchools(1, 1000);
       console.log('Total schools in system:', allSchools.schools?.length || 0);
       
       let schools = allSchools.schools || [];
       
-      // Filter by district only if user has a district assigned
-      if (poDistrict && req.user?.role === "PO") {
-        schools = schools.filter(s => s.district === poDistrict);
-        console.log('Schools in user district:', schools.length);
-      } else if (!poDistrict && req.user?.role === "PO") {
-        console.log('WARNING: PO user has no district - showing all schools for testing');
-        // For testing: show all schools if PO has no district
-        // In production, you might want to return an error instead
+      // Filter by region/district based on user assignment
+      if (req.user?.role === "PO") {
+        if (poRegion) {
+          schools = schools.filter(s => sameRegion(s.region, poRegion));
+          console.log('Schools in user region:', schools.length);
+        } else if (poDistrict) {
+          schools = schools.filter(s => sameDistrict(s.district, poDistrict));
+          console.log('Schools in user district:', schools.length);
+        } else {
+          console.log('WARNING: PO user has no region/district - returning empty');
+          schools = [];
+        }
       }
 
       if (schoolType && schoolType !== "All") {
@@ -6997,17 +7496,25 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
       const selectedYear = year ? parseInt(year as string) : new Date().getFullYear();
 
       const user = await storage.getUser(req.user!.id);
+      const poRegion = user?.region;
       const poDistrict = user?.district;
 
-      if (!poDistrict && req.user?.role !== "Admin") {
-        return res.status(403).json({ message: "No district assigned" });
+      if (!poRegion && !poDistrict && req.user?.role !== "Admin") {
+        return res.status(403).json({ message: "No region or district assigned" });
       }
 
-      // Get schools in district
+      // Get schools in region/district
       const allSchools = await storage.getSchools(1, 1000);
       let schools = req.user?.role === "Admin" 
         ? allSchools.schools 
-        : allSchools.schools.filter(s => s.district === poDistrict);
+        : allSchools.schools.filter(s => {
+            if (poRegion) {
+              return sameRegion(s.region, poRegion);
+            } else if (poDistrict) {
+              return sameDistrict(s.district, poDistrict);
+            }
+            return false;
+          });
 
       if (schoolType && schoolType !== "All") {
         schools = schools.filter(s => s.schoolType === schoolType);
@@ -7147,17 +7654,25 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
       const selectedYear = year ? parseInt(year as string) : new Date().getFullYear();
 
       const user = await storage.getUser(req.user!.id);
+      const poRegion = user?.region;
       const poDistrict = user?.district;
 
-      if (!poDistrict && req.user?.role !== "Admin") {
-        return res.status(403).json({ message: "No district assigned" });
+      if (!poRegion && !poDistrict && req.user?.role !== "Admin") {
+        return res.status(403).json({ message: "No region or district assigned" });
       }
 
-      // Get schools in district
+      // Get schools in region/district
       const allSchools = await storage.getSchools(1, 1000);
       let schools = req.user?.role === "Admin" 
         ? allSchools.schools 
-        : allSchools.schools.filter(s => s.district === poDistrict);
+        : allSchools.schools.filter(s => {
+            if (poRegion) {
+              return sameRegion(s.region, poRegion);
+            } else if (poDistrict) {
+              return sameDistrict(s.district, poDistrict);
+            }
+            return false;
+          });
 
       if (schoolType && schoolType !== "All") {
         schools = schools.filter(s => s.schoolType === schoolType);
@@ -7245,31 +7760,128 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
       const selectedYear = year ? parseInt(year as string) : new Date().getFullYear();
 
       const user = await storage.getUser(req.user!.id);
+      const poRegion = user?.region;
       const poDistrict = user?.district;
 
-      if (!poDistrict && req.user?.role !== "Admin") {
-        return res.status(403).json({ message: "No district assigned" });
+      if (!poRegion && !poDistrict && req.user?.role !== "Admin") {
+        return res.status(403).json({ message: "No region or district assigned" });
       }
 
-      // Get schools in district
+      // Get schools in region/district
       const allSchools = await storage.getSchools(1, 1000);
       let schools = req.user?.role === "Admin" 
         ? allSchools.schools 
-        : allSchools.schools.filter(s => s.district === poDistrict);
+        : allSchools.schools.filter(s => {
+            if (poRegion) {
+              return sameRegion(s.region, poRegion);
+            } else if (poDistrict) {
+              return sameDistrict(s.district, poDistrict);
+            }
+            return false;
+          });
 
       if (schoolType && schoolType !== "All") {
         schools = schools.filter(s => s.schoolType === schoolType);
       }
 
-      // Get all referrals
-      const allReferrals = await Promise.all(
+      // Get all referrals from ALL THREE SOURCES
+      const allReferralsData = await Promise.all(
         schools.map(async (school) => {
-          const { referrals } = await storage.getReferrals({ schoolId: school.id, limit: 1000 });
-          return referrals.map(r => ({ ...r, schoolName: school.name }));
+          const schoolReferrals: any[] = [];
+          
+          // SOURCE 1: Health Card Referrals
+          try {
+            const { referrals } = await storage.getReferrals({ schoolId: school.id, limit: 1000 });
+            referrals.forEach(r => {
+              schoolReferrals.push({
+                ...r,
+                source: 'health_card',
+                schoolName: school.name
+              });
+            });
+          } catch (error) {
+            console.warn(`Health card referrals not available for school ${school.id}`);
+          }
+          
+          // SOURCE 2: Monthly Checkup Referrals
+          try {
+            const checkups = await storage.getMonthlyCheckups({
+              schoolId: school.id,
+              year: selectedYear,
+              limit: 1000
+            });
+            
+            checkups.checkups
+              .filter(c => c.referredTo && c.referredTo.trim() !== '')
+              .forEach(checkup => {
+                schoolReferrals.push({
+                  id: `checkup-${checkup.id}`,
+                  studentId: checkup.studentId,
+                  schoolId: school.id,
+                  schoolName: school.name,
+                  referralDate: checkup.checkupDate,
+                  status: (checkup as any).referralStatus || 'Pending',
+                  issue: `Monthly checkup referral${checkup.symptoms && checkup.symptoms.length > 0 ? ': ' + checkup.symptoms.join(', ') : ''}`,
+                  referralType: 'medical',
+                  facility: checkup.referredTo,
+                  createdAt: checkup.createdAt || new Date(),
+                  source: 'monthly_checkup'
+                });
+              });
+          } catch (error) {
+            console.warn(`Monthly checkup referrals not available for school ${school.id}`);
+          }
+          
+          // SOURCE 3: Period Tracker Referrals
+          try {
+            // First get all students from this school
+            const { students: schoolStudents } = await storage.getStudents({ 
+              schoolId: school.id, 
+              limit: 1000 
+            });
+            
+            // Then fetch period tracker entries for each student
+            for (const student of schoolStudents) {
+              try {
+                const startDate = `${selectedYear}-01-01`;
+                const endDate = `${selectedYear}-12-31`;
+                const { entries: periodEntries } = await storage.getPeriodTrackerEntries({
+                  studentId: student.id,
+                  startDate,
+                  endDate,
+                  limit: 100
+                });
+                
+                periodEntries
+                  .filter(entry => entry.isReferred && entry.referralFacility)
+                  .forEach(entry => {
+                    schoolReferrals.push({
+                      id: `period-${entry.id}`,
+                      studentId: entry.studentId,
+                      schoolId: school.id,
+                      schoolName: school.name,
+                      referralDate: entry.referredDate || entry.entryDate,
+                      status: (entry as any).referralStatus || 'Pending',
+                      issue: `Menstrual health referral${entry.symptoms && entry.symptoms.length > 0 ? ': ' + entry.symptoms.join(', ') : ''}`,
+                      referralType: 'adolescent',
+                      facility: entry.referralFacility,
+                      createdAt: entry.createdAt || new Date(),
+                      source: 'period_tracker'
+                    });
+                  });
+              } catch (error) {
+                // Skip individual student errors
+              }
+            }
+          } catch (error) {
+            console.warn(`Period tracker referrals not available for school ${school.id}`);
+          }
+          
+          return schoolReferrals;
         })
       );
 
-      let flatReferrals = allReferrals.flat();
+      let flatReferrals = allReferralsData.flat();
 
       // Enrich with student details
       const enrichedReferrals = await Promise.all(
@@ -7284,11 +7896,12 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
             studentName: student?.fullName || "Unknown",
             schoolName: referral.schoolName,
             issue: referral.issue || "Health concern",
-            category: referral.notes || "General",
+            category: referral.referralType || "General",
             facility: referral.facility || "Not assigned",
             status: referral.status || "Pending",
             daysPending,
             priority: daysPending > 30 ? "High" : daysPending > 14 ? "Medium" : "Low",
+            source: referral.source, // Include source information
           };
         })
       );
@@ -7300,6 +7913,11 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
           month: selectedMonth,
           year: selectedYear,
           schoolType: schoolType || "All",
+          sources: {
+            health_card: flatReferrals.filter(r => r.source === 'health_card').length,
+            monthly_checkup: flatReferrals.filter(r => r.source === 'monthly_checkup').length,
+            period_tracker: flatReferrals.filter(r => r.source === 'period_tracker').length,
+          }
         }
       });
     } catch (error: any) {
@@ -7387,6 +8005,303 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
   });
 
   // ========================================
+  // MEAL ANALYTICS FOR PO DASHBOARD
+  // ========================================
+
+  // Get missing meal items by school
+  app.get("/api/po/meal-missing-items", authenticateToken, authorizeRoles("PO", "Admin"), async (req: AuthRequest, res) => {
+    try {
+      const { month, year, schoolType } = req.query;
+      const selectedMonth = month ? parseInt(month as string) : new Date().getMonth() + 1;
+      const selectedYear = year ? parseInt(year as string) : new Date().getFullYear();
+
+      const user = await storage.getUser(req.user!.id);
+      const poRegion = user?.region;
+      const poDistrict = user?.district;
+
+      if (!poRegion && !poDistrict && req.user?.role !== "Admin") {
+        return res.status(403).json({ message: "No region or district assigned" });
+      }
+
+      // Get schools in region/district
+      const allSchools = await storage.getSchools(1, 1000);
+      let schools = req.user?.role === "Admin" 
+        ? allSchools.schools 
+        : allSchools.schools.filter(s => {
+            if (poRegion) {
+              return sameRegion(s.region, poRegion);
+            } else if (poDistrict) {
+              return sameDistrict(s.district, poDistrict);
+            }
+            return false;
+          });
+
+      if (schoolType && schoolType.toString().toLowerCase() !== "all") {
+        schools = schools.filter(s => s.schoolType === schoolType);
+      }
+
+      // Calculate missing items for each school
+      const schoolMissingItems = await Promise.all(
+        schools.map(async (school) => {
+          try {
+            // Get all meal logs for the month
+            const startDate = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-01`;
+            const daysInMonth = new Date(selectedYear, selectedMonth, 0).getDate();
+            const endDate = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`;
+
+            const mealLogs = await storage.getMealLogs({ 
+              schoolId: school.id, 
+              startDate, 
+              endDate,
+              limit: 10000 
+            });
+
+            // Get expected students count
+            const { students } = await storage.getStudents({ schoolId: school.id, limit: 1000 });
+            const expectedStudents = students.length;
+
+            // Calculate missing items by meal type
+            const daysInMonthCount = new Date(selectedYear, selectedMonth, 0).getDate();
+            const expectedMealsPerType = expectedStudents * daysInMonthCount;
+
+            const breakfastLogs = mealLogs.filter(m => m.mealType === 'breakfast').length;
+            const lunchLogs = mealLogs.filter(m => m.mealType === 'lunch').length;
+            const dinnerLogs = mealLogs.filter(m => m.mealType === 'dinner').length;
+
+            const missingBreakfast = Math.max(0, expectedMealsPerType - breakfastLogs);
+            const missingLunch = Math.max(0, expectedMealsPerType - lunchLogs);
+            const missingDinner = Math.max(0, expectedMealsPerType - dinnerLogs);
+
+            const totalExpected = expectedMealsPerType * 3; // 3 meals per day
+            const totalLogged = breakfastLogs + lunchLogs + dinnerLogs;
+            const totalMissing = totalExpected - totalLogged;
+            const compliancePercent = totalExpected > 0 ? Math.round((totalLogged / totalExpected) * 100) : 0;
+
+            return {
+              schoolId: school.id,
+              schoolName: school.name,
+              schoolType: school.schoolType,
+              expectedStudents,
+              daysInMonth: daysInMonthCount,
+              missing: {
+                breakfast: missingBreakfast,
+                lunch: missingLunch,
+                dinner: missingDinner,
+                total: totalMissing
+              },
+              logged: {
+                breakfast: breakfastLogs,
+                lunch: lunchLogs,
+                dinner: dinnerLogs,
+                total: totalLogged
+              },
+              expected: {
+                breakfast: expectedMealsPerType,
+                lunch: expectedMealsPerType,
+                dinner: expectedMealsPerType,
+                total: totalExpected
+              },
+              compliancePercent,
+              status: compliancePercent >= 80 ? 'Good' : compliancePercent >= 60 ? 'Fair' : 'Poor'
+            };
+          } catch (error) {
+            console.error(`Error calculating missing items for school ${school.id}:`, error);
+            return {
+              schoolId: school.id,
+              schoolName: school.name,
+              schoolType: school.schoolType,
+              expectedStudents: 0,
+              daysInMonth: 0,
+              missing: { breakfast: 0, lunch: 0, dinner: 0, total: 0 },
+              logged: { breakfast: 0, lunch: 0, dinner: 0, total: 0 },
+              expected: { breakfast: 0, lunch: 0, dinner: 0, total: 0 },
+              compliancePercent: 0,
+              status: 'No Data'
+            };
+          }
+        })
+      );
+
+      // Sort by total missing (highest first)
+      schoolMissingItems.sort((a, b) => b.missing.total - a.missing.total);
+
+      res.json({
+        schools: schoolMissingItems,
+        total: schoolMissingItems.length,
+        metadata: {
+          month: selectedMonth,
+          year: selectedYear,
+          schoolType: schoolType || "All",
+          generatedAt: new Date().toISOString()
+        }
+      });
+    } catch (error: any) {
+      console.error("Meal missing items error:", error);
+      res.status(500).json({ message: error?.message || "Failed to fetch meal missing items" });
+    }
+  });
+
+  // Get meal compliance chart data for PO
+  app.get("/api/po/meal-compliance", authenticateToken, authorizeRoles("PO", "Admin"), async (req: AuthRequest, res) => {
+    try {
+      const { month, year, schoolType } = req.query;
+      const selectedMonth = month ? parseInt(month as string) : new Date().getMonth() + 1;
+      const selectedYear = year ? parseInt(year as string) : new Date().getFullYear();
+
+      const user = await storage.getUser(req.user!.id);
+      const poRegion = user?.region;
+      const poDistrict = user?.district;
+
+      if (!poRegion && !poDistrict && req.user?.role !== "Admin") {
+        return res.status(403).json({ message: "No region or district assigned" });
+      }
+
+      // Get schools in region/district
+      const allSchools = await storage.getSchools(1, 1000);
+      let schools = req.user?.role === "Admin" 
+        ? allSchools.schools 
+        : allSchools.schools.filter(s => {
+            if (poRegion) {
+              return sameRegion(s.region, poRegion);
+            } else if (poDistrict) {
+              return sameDistrict(s.district, poDistrict);
+            }
+            return false;
+          });
+
+      if (schoolType && schoolType.toString().toLowerCase() !== "all") {
+        schools = schools.filter(s => s.schoolType === schoolType);
+      }
+
+      // Calculate compliance for the selected month
+      const startDate = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-01`;
+      const daysInMonth = new Date(selectedYear, selectedMonth, 0).getDate();
+      const endDate = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`;
+
+      let totalExpectedMeals = 0;
+      let totalLoggedMeals = 0;
+      let totalStudents = 0;
+
+      const schoolCompliance = await Promise.all(
+        schools.map(async (school) => {
+          try {
+            const { students } = await storage.getStudents({ schoolId: school.id, limit: 1000 });
+            const studentCount = students.length;
+            totalStudents += studentCount;
+
+            const mealLogs = await storage.getMealLogs({ 
+              schoolId: school.id, 
+              startDate, 
+              endDate,
+              limit: 10000 
+            });
+
+            const expectedMeals = studentCount * daysInMonth * 3; // 3 meals per day
+            const loggedMeals = mealLogs.length;
+            const compliance = expectedMeals > 0 ? Math.round((loggedMeals / expectedMeals) * 100) : 0;
+
+            totalExpectedMeals += expectedMeals;
+            totalLoggedMeals += loggedMeals;
+
+            return {
+              schoolId: school.id,
+              schoolName: school.name,
+              schoolType: school.schoolType,
+              studentCount,
+              expectedMeals,
+              loggedMeals,
+              compliance
+            };
+          } catch (error) {
+            console.error(`Error calculating compliance for school ${school.id}:`, error);
+            return {
+              schoolId: school.id,
+              schoolName: school.name,
+              schoolType: school.schoolType,
+              studentCount: 0,
+              expectedMeals: 0,
+              loggedMeals: 0,
+              compliance: 0
+            };
+          }
+        })
+      );
+
+      // Calculate overall compliance
+      const overallCompliance = totalExpectedMeals > 0 
+        ? Math.round((totalLoggedMeals / totalExpectedMeals) * 100) 
+        : 0;
+
+      // Calculate monthly trend (last 6 months)
+      const monthlyTrend = await Promise.all(
+        Array.from({ length: 6 }, (_, i) => {
+          const trendMonth = selectedMonth - i;
+          const trendYear = trendMonth <= 0 ? selectedYear - 1 : selectedYear;
+          const adjustedMonth = trendMonth <= 0 ? 12 + trendMonth : trendMonth;
+          
+          return (async () => {
+            const trendStartDate = `${trendYear}-${String(adjustedMonth).padStart(2, '0')}-01`;
+            const trendDaysInMonth = new Date(trendYear, adjustedMonth, 0).getDate();
+            const trendEndDate = `${trendYear}-${String(adjustedMonth).padStart(2, '0')}-${String(trendDaysInMonth).padStart(2, '0')}`;
+
+            let monthExpected = 0;
+            let monthLogged = 0;
+
+            for (const school of schools) {
+              try {
+                const { students } = await storage.getStudents({ schoolId: school.id, limit: 1000 });
+                const mealLogs = await storage.getMealLogs({ 
+                  schoolId: school.id, 
+                  startDate: trendStartDate, 
+                  endDate: trendEndDate,
+                  limit: 10000 
+                });
+
+                monthExpected += students.length * trendDaysInMonth * 3;
+                monthLogged += mealLogs.length;
+              } catch (error) {
+                // Skip errors
+              }
+            }
+
+            const monthCompliance = monthExpected > 0 ? Math.round((monthLogged / monthExpected) * 100) : 0;
+
+            return {
+              month: new Date(trendYear, adjustedMonth - 1).toLocaleString('default', { month: 'short' }),
+              year: trendYear,
+              compliance: monthCompliance,
+              expected: monthExpected,
+              logged: monthLogged
+            };
+          })();
+        })
+      );
+
+      const resolvedMonthlyTrend = await Promise.all(monthlyTrend);
+      resolvedMonthlyTrend.reverse(); // Show oldest to newest
+
+      res.json({
+        overallCompliance,
+        totalStudents,
+        totalExpectedMeals,
+        totalLoggedMeals,
+        schoolCompliance: schoolCompliance.sort((a, b) => b.compliance - a.compliance),
+        monthlyTrend: resolvedMonthlyTrend,
+        metadata: {
+          month: selectedMonth,
+          year: selectedYear,
+          schoolType: schoolType || "All",
+          schoolsEvaluated: schools.length,
+          generatedAt: new Date().toISOString()
+        }
+      });
+    } catch (error: any) {
+      console.error("Meal compliance error:", error);
+      res.status(500).json({ message: error?.message || "Failed to fetch meal compliance" });
+    }
+  });
+
+  // ========================================
   // CRITICAL STUDENTS IDENTIFICATION API
   // ========================================
 
@@ -7396,39 +8311,84 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
       const { schoolType, minPriorityScore, limit } = req.query;
       
       const user = await storage.getUser(req.user!.id);
+      const poRegion = user?.region;
       const poDistrict = user?.district;
 
-      console.log(`[API] Critical students request from user: ${user?.fullName}, role: ${req.user?.role}, district: ${poDistrict}`);
+      console.log(`[API] Critical students request from user: ${user?.fullName}, role: ${req.user?.role}, region: ${poRegion}, district: ${poDistrict}`);
 
-      if (!poDistrict && req.user?.role !== "Admin") {
-        console.warn(`[API] PO user ${user?.fullName} has no district assigned`);
+      if (!poRegion && !poDistrict && req.user?.role !== "Admin") {
+        console.warn(`[API] PO user ${user?.fullName} has no region/district assigned`);
         return res.status(403).json({ 
-          message: "No district assigned to PO. Please contact administrator to assign a district.",
+          message: "No region or district assigned to PO. Please contact administrator.",
           userId: req.user!.id,
           username: user?.username
         });
       }
 
-      console.log(`[API] Fetching critical students for district: ${poDistrict}, schoolType: ${schoolType || 'All'}`);
+      // Get schools in region/district
+      const allSchools = await storage.getSchools(1, 1000);
+      let schools = req.user?.role === "Admin" 
+        ? allSchools.schools 
+        : allSchools.schools.filter(s => {
+            if (poRegion) {
+              return sameRegion(s.region, poRegion);
+            } else if (poDistrict) {
+              return sameDistrict(s.district, poDistrict);
+            }
+            return false;
+          });
 
-      const criticalStudents = await getCriticalStudentsForDistrict(
-        poDistrict || "All",
-        {
-          schoolType: (schoolType as any) || 'All',
-          minPriorityScore: minPriorityScore ? parseInt(minPriorityScore as string) : 0,
-          limit: limit ? parseInt(limit as string) : 100,
-        }
+      // Apply school type filter
+      if (schoolType && schoolType !== "All") {
+        schools = schools.filter(s => s.schoolType === schoolType);
+      }
+
+      console.log(`[API] Fetching critical students for ${schools.length} schools in region: ${poRegion || poDistrict}, schoolType: ${schoolType || 'All'}`);
+
+      // Get all students from these schools and evaluate them
+      const allStudents = await Promise.all(
+        schools.map(async (school) => {
+          const { students } = await storage.getStudents({ schoolId: school.id, limit: 1000 });
+          return students.map(s => ({ ...s, schoolName: school.name }));
+        })
       );
 
-      console.log(`[API] Returning ${criticalStudents.length} critical students`);
+      const flatStudents = allStudents.flat();
+      console.log(`[API] Evaluating ${flatStudents.length} students for critical status`);
+
+      // Evaluate each student
+      const criticalStudents: any[] = [];
+      const minScore = minPriorityScore ? parseInt(minPriorityScore as string) : 0;
+      const maxLimit = limit ? parseInt(limit as string) : 100;
+
+      for (const student of flatStudents.slice(0, maxLimit * 2)) {
+        try {
+          const evaluation = await evaluateStudent(student.id);
+          if (evaluation && evaluation.isCritical && evaluation.priorityScore >= minScore) {
+            criticalStudents.push(evaluation);
+          }
+        } catch (error) {
+          console.error(`Error evaluating student ${student.id}:`, error);
+        }
+      }
+
+      // Sort by priority and limit
+      const sortedCritical = criticalStudents
+        .sort((a, b) => b.priorityScore - a.priorityScore)
+        .slice(0, maxLimit);
+
+      console.log(`[API] Returning ${sortedCritical.length} critical students`);
 
       res.json({
-        criticalStudents,
-        total: criticalStudents.length,
+        criticalStudents: sortedCritical,
+        total: sortedCritical.length,
         metadata: {
+          region: poRegion,
           district: poDistrict,
           schoolType: schoolType || "All",
-          minPriorityScore: minPriorityScore || 0,
+          minPriorityScore: minScore,
+          schoolsEvaluated: schools.length,
+          studentsEvaluated: flatStudents.length,
           generatedAt: new Date().toISOString(),
         }
       });
@@ -7492,6 +8452,9 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
     }
   });
 
+  // DEPRECATED: First HM dashboard endpoint - replaced by the one below at line ~8439
+  // This endpoint is kept for reference but is not used (the second definition overrides it)
+  /*
   app.get("/api/headmaster/dashboard", authenticateToken, authorizeRoles("Headmaster", "Admin"), async (req: AuthRequest, res) => {
     try {
       const schoolId = req.user?.schoolId;
@@ -7568,7 +8531,10 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
         };
       }
 
-      // Get referral data for the school (fallback to health-card-derived referrals if referrals table empty)
+      // Get referral data for the school from ALL THREE SOURCES:
+      // 1. Health Card Referrals (referrals table)
+      // 2. Monthly Checkup Referrals (monthly_checkups table)
+      // 3. Period Tracker Referrals (period_tracker_entries table)
       let referralData = {
         totalReferrals: 0,
         pendingReferrals: 0,
@@ -7578,7 +8544,100 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
       };
 
       try {
-        let { referrals: allReferrals } = await storage.getReferrals({ schoolId, limit: 1000 });
+        const schoolReferrals: any[] = [];
+        
+        // SOURCE 1: Health Card Referrals (explicit referrals table)
+        try {
+          const { referrals } = await storage.getReferrals({ schoolId, limit: 1000 });
+          referrals.forEach(r => {
+            schoolReferrals.push({
+              ...r,
+              source: 'health_card'
+            });
+          });
+        } catch (error) {
+          console.warn(`Health card referrals not available for school ${schoolId}:`, error);
+        }
+        
+        // SOURCE 2: Monthly Checkup Referrals
+        try {
+          const checkups = await storage.getMonthlyCheckups({
+            schoolId,
+            year: currentYear,
+            limit: 1000
+          });
+          
+          checkups.checkups
+            .filter(c => c.referredTo && c.referredTo.trim() !== '')
+            .forEach(checkup => {
+              schoolReferrals.push({
+                id: `checkup-${checkup.id}`,
+                studentId: checkup.studentId,
+                schoolId,
+                referralDate: checkup.checkupDate,
+                status: (checkup as any).referralStatus || 'Pending',
+                issue: `Monthly checkup referral${checkup.symptoms && checkup.symptoms.length > 0 ? ': ' + checkup.symptoms.join(', ') : ''}`,
+                referralType: 'medical',
+                facility: checkup.referredTo,
+                createdAt: checkup.createdAt || new Date(),
+                source: 'monthly_checkup'
+              });
+            });
+        } catch (error) {
+          console.warn(`Monthly checkup referrals not available for school ${schoolId}:`, error);
+        }
+        
+        // SOURCE 3: Period Tracker Referrals
+        try {
+          // First get all students from this school
+          const { students: schoolStudents } = await storage.getStudents({ 
+            schoolId, 
+            limit: 1000 
+          });
+          
+          // Then fetch period tracker entries for each student
+          for (const student of schoolStudents) {
+            try {
+              const startDate = `${currentYear}-01-01`;
+              const endDate = `${currentYear}-12-31`;
+              const { entries: periodEntries } = await storage.getPeriodTrackerEntries({
+                studentId: student.id,
+                startDate,
+                endDate,
+                limit: 100
+              });
+              
+              periodEntries
+                .filter(entry => entry.isReferred && entry.referralFacility)
+                .forEach(entry => {
+                  schoolReferrals.push({
+                    id: `period-${entry.id}`,
+                    studentId: entry.studentId,
+                    schoolId,
+                    referralDate: entry.referredDate || entry.entryDate,
+                    status: (entry as any).referralStatus || 'Pending',
+                    issue: `Menstrual health referral${entry.symptoms && entry.symptoms.length > 0 ? ': ' + entry.symptoms.join(', ') : ''}`,
+                    referralType: 'adolescent',
+                    facility: entry.referralFacility,
+                    createdAt: entry.createdAt || new Date(),
+                    source: 'period_tracker'
+                  });
+                });
+            } catch (error) {
+              // Skip individual student errors
+            }
+          }
+        } catch (error) {
+          console.warn(`Period tracker referrals not available for school ${schoolId}:`, error);
+        }
+        
+        let allReferrals = schoolReferrals;
+        console.log(`HM Dashboard - Total referrals found (ALL SOURCES): ${allReferrals.length}`);
+        console.log('Referral breakdown by source:', {
+          health_card: allReferrals.filter(r => r.source === 'health_card').length,
+          monthly_checkup: allReferrals.filter(r => r.source === 'monthly_checkup').length,
+          period_tracker: allReferrals.filter(r => r.source === 'period_tracker').length
+        });
 
         // If no explicit referrals exist, derive from health cards as a fallback
         if (!allReferrals || allReferrals.length === 0) {
@@ -7601,6 +8660,7 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
               issue: issues.join(', ') || 'Referral Recommended',
               facility: c.referral_adolescent_facility || c.referral_disease_facility || c.referral_leprosy_facility || c.referral_tb_facility || null,
               createdAt: c.createdAt || new Date(),
+              source: 'health_card'
             };
           }).filter(Boolean) as any);
         }
@@ -7654,11 +8714,88 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
         console.warn("Referrals table not available for headmaster dashboard:", error?.message || String(error));
       }
 
-      // Fetch referrals for class analytics
+      // Fetch referrals for class analytics from ALL THREE SOURCES
       let allReferrals: any[] = [];
       try {
-        const { referrals } = await storage.getReferrals({ schoolId, limit: 1000 });
-        allReferrals = referrals;
+        const schoolReferrals: any[] = [];
+        
+        // SOURCE 1: Health Card Referrals
+        try {
+          const { referrals } = await storage.getReferrals({ schoolId, limit: 1000 });
+          schoolReferrals.push(...referrals.map(r => ({ ...r, source: 'health_card' })));
+        } catch (error) {
+          console.warn(`Health card referrals not available for class analytics:`, error);
+        }
+        
+        // SOURCE 2: Monthly Checkup Referrals
+        try {
+          const checkups = await storage.getMonthlyCheckups({
+            schoolId,
+            year: currentYear,
+            limit: 1000
+          });
+          
+          checkups.checkups
+            .filter(c => c.referredTo && c.referredTo.trim() !== '')
+            .forEach(checkup => {
+              schoolReferrals.push({
+                id: `checkup-${checkup.id}`,
+                studentId: checkup.studentId,
+                schoolId,
+                referralDate: checkup.checkupDate,
+                status: (checkup as any).referralStatus || 'Pending',
+                issue: `Monthly checkup referral`,
+                facility: checkup.referredTo,
+                createdAt: checkup.createdAt || new Date(),
+                source: 'monthly_checkup'
+              });
+            });
+        } catch (error) {
+          console.warn(`Monthly checkup referrals not available for class analytics:`, error);
+        }
+        
+        // SOURCE 3: Period Tracker Referrals
+        try {
+          const { students: schoolStudents } = await storage.getStudents({ 
+            schoolId, 
+            limit: 1000 
+          });
+          
+          for (const student of schoolStudents) {
+            try {
+              const startDate = `${currentYear}-01-01`;
+              const endDate = `${currentYear}-12-31`;
+              const { entries: periodEntries } = await storage.getPeriodTrackerEntries({
+                studentId: student.id,
+                startDate,
+                endDate,
+                limit: 100
+              });
+              
+              periodEntries
+                .filter(entry => entry.isReferred && entry.referralFacility)
+                .forEach(entry => {
+                  schoolReferrals.push({
+                    id: `period-${entry.id}`,
+                    studentId: entry.studentId,
+                    schoolId,
+                    referralDate: entry.referredDate || entry.entryDate,
+                    status: (entry as any).referralStatus || 'Pending',
+                    issue: `Menstrual health referral`,
+                    facility: entry.referralFacility,
+                    createdAt: entry.createdAt || new Date(),
+                    source: 'period_tracker'
+                  });
+                });
+            } catch (error) {
+              // Skip individual student errors
+            }
+          }
+        } catch (error) {
+          console.warn(`Period tracker referrals not available for class analytics:`, error);
+        }
+        
+        allReferrals = schoolReferrals;
       } catch (error: any) {
         console.warn("Referrals table not available for class analytics:", error?.message || String(error));
       }
@@ -7835,9 +8972,9 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
       res.status(500).json({ message: error?.message || "Failed to fetch dashboard data" });
     }
   });
+  */
 
-  // Duplicate endpoint removed - use the primary /api/po/dashboard at line 5299
-
+  // ACTIVE HM DASHBOARD ENDPOINT - This is the one being used (fetches from all 3 sources)
   app.get("/api/headmaster/dashboard", authenticateToken, authorizeRoles("Headmaster", "Admin"), async (req: AuthRequest, res) => {
     try {
       const schoolId = req.user?.role === "Admin" ? undefined : req.user?.schoolId;
@@ -7948,12 +9085,71 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
           const c7Cases = classCards.filter(card => card.c7_suspected).length;
           const c8Cases = classCards.filter(card => card.c8_suspected).length;
 
-          // Get referrals for this class
+          // Get referrals for this class from ALL THREE SOURCES
           let pendingReferrals = 0;
           let completedReferrals = 0;
           try {
-            const { referrals } = await storage.getReferrals({ schoolId, limit: 1000 });
-            const classReferrals = referrals.filter(r => studentIds.includes(r.studentId));
+            const classReferrals: any[] = [];
+            
+            // SOURCE 1: Health Card Referrals
+            try {
+              const { referrals } = await storage.getReferrals({ schoolId, limit: 1000 });
+              classReferrals.push(...referrals.filter(r => studentIds.includes(r.studentId)));
+            } catch (error) {
+              // Skip
+            }
+            
+            // SOURCE 2: Monthly Checkup Referrals
+            try {
+              const checkups = await storage.getMonthlyCheckups({
+                schoolId,
+                year: selectedYear,
+                limit: 1000
+              });
+              
+              checkups.checkups
+                .filter(c => studentIds.includes(c.studentId) && c.referredTo && c.referredTo.trim() !== '')
+                .forEach(checkup => {
+                  classReferrals.push({
+                    id: `checkup-${checkup.id}`,
+                    studentId: checkup.studentId,
+                    status: (checkup as any).referralStatus || 'Pending',
+                  });
+                });
+            } catch (error) {
+              // Skip
+            }
+            
+            // SOURCE 3: Period Tracker Referrals
+            try {
+              for (const studentId of studentIds) {
+                try {
+                  const startDate = `${selectedYear}-01-01`;
+                  const endDate = `${selectedYear}-12-31`;
+                  const { entries: periodEntries } = await storage.getPeriodTrackerEntries({
+                    studentId,
+                    startDate,
+                    endDate,
+                    limit: 100
+                  });
+                  
+                  periodEntries
+                    .filter(entry => entry.isReferred && entry.referralFacility)
+                    .forEach(entry => {
+                      classReferrals.push({
+                        id: `period-${entry.id}`,
+                        studentId: entry.studentId,
+                        status: (entry as any).referralStatus || 'Pending',
+                      });
+                    });
+                } catch (error) {
+                  // Skip individual student errors
+                }
+              }
+            } catch (error) {
+              // Skip
+            }
+            
             pendingReferrals = classReferrals.filter(r => r.status === "Pending").length;
             completedReferrals = classReferrals.filter(r => r.status === "Completed").length;
           } catch (error) {
@@ -7978,7 +9174,10 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
         })
       );
 
-      // Get referral data
+      // Get referral data from ALL THREE SOURCES:
+      // 1. Health Card Referrals (referrals table)
+      // 2. Monthly Checkup Referrals (monthly_checkups table)
+      // 3. Period Tracker Referrals (period_tracker_entries table)
       let referralData = {
         totalReferrals: 0,
         pendingReferrals: 0,
@@ -7988,41 +9187,129 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
       };
 
       try {
-        const { referrals } = await storage.getReferrals({ limit: 100 });
-        referralData.totalReferrals = referrals.length;
-        referralData.pendingReferrals = referrals.filter(r => r.status === "Pending").length;
-        referralData.completedReferrals = referrals.filter(r => r.status === "Completed").length;
+        const allReferrals: any[] = [];
+        
+        // SOURCE 1: Health Card Referrals
+        try {
+          const { referrals } = await storage.getReferrals({ schoolId, limit: 1000 });
+          referrals.forEach(r => {
+            allReferrals.push({
+              ...r,
+              source: 'health_card'
+            });
+          });
+        } catch (error) {
+          console.warn(`Health card referrals not available:`, error);
+        }
+        
+        // SOURCE 2: Monthly Checkup Referrals
+        try {
+          const checkups = await storage.getMonthlyCheckups({
+            schoolId,
+            year: selectedYear,
+            limit: 1000
+          });
+          
+          checkups.checkups
+            .filter(c => c.referredTo && c.referredTo.trim() !== '')
+            .forEach(checkup => {
+              allReferrals.push({
+                id: `checkup-${checkup.id}`,
+                studentId: checkup.studentId,
+                schoolId,
+                referralDate: checkup.checkupDate,
+                status: (checkup as any).referralStatus || 'Pending',
+                issue: `Monthly checkup referral${checkup.symptoms && checkup.symptoms.length > 0 ? ': ' + checkup.symptoms.join(', ') : ''}`,
+                referralType: 'medical',
+                facility: checkup.referredTo,
+                createdAt: checkup.createdAt || new Date(),
+                source: 'monthly_checkup'
+              });
+            });
+        } catch (error) {
+          console.warn(`Monthly checkup referrals not available:`, error);
+        }
+        
+        // SOURCE 3: Period Tracker Referrals
+        try {
+          for (const student of allStudents) {
+            try {
+              const startDate = `${selectedYear}-01-01`;
+              const endDate = `${selectedYear}-12-31`;
+              const { entries: periodEntries } = await storage.getPeriodTrackerEntries({
+                studentId: student.id,
+                startDate,
+                endDate,
+                limit: 100
+              });
+              
+              periodEntries
+                .filter(entry => entry.isReferred && entry.referralFacility)
+                .forEach(entry => {
+                  allReferrals.push({
+                    id: `period-${entry.id}`,
+                    studentId: entry.studentId,
+                    schoolId,
+                    referralDate: entry.referredDate || entry.entryDate,
+                    status: (entry as any).referralStatus || 'Pending',
+                    issue: `Menstrual health referral${entry.symptoms && entry.symptoms.length > 0 ? ': ' + entry.symptoms.join(', ') : ''}`,
+                    referralType: 'adolescent',
+                    facility: entry.referralFacility,
+                    createdAt: entry.createdAt || new Date(),
+                    source: 'period_tracker'
+                  });
+                });
+            } catch (error) {
+              // Skip individual student errors
+            }
+          }
+        } catch (error) {
+          console.warn(`Period tracker referrals not available:`, error);
+        }
+        
+        console.log(`HM Dashboard (ACTIVE) - Total referrals found (ALL SOURCES): ${allReferrals.length}`);
+        console.log('Referral breakdown by source:', {
+          health_card: allReferrals.filter(r => r.source === 'health_card').length,
+          monthly_checkup: allReferrals.filter(r => r.source === 'monthly_checkup').length,
+          period_tracker: allReferrals.filter(r => r.source === 'period_tracker').length
+        });
+        
+        referralData.totalReferrals = allReferrals.length;
+        referralData.pendingReferrals = allReferrals.filter(r => r.status === "Pending").length;
+        referralData.completedReferrals = allReferrals.filter(r => r.status === "Completed").length;
 
         // Group by class
-        const classReferrals = referrals.reduce((acc, referral) => {
+        const classReferrals = allReferrals.reduce((acc, referral) => {
           const student = allStudents.find(s => s.id === referral.studentId);
           const cls = student?.classSection || "Unknown";
           if (!acc[cls]) acc[cls] = { classSection: cls, total: 0, pending: 0, completed: 0 };
           acc[cls].total++;
           if (referral.status === "Pending") acc[cls].pending++;
-          if (referral.status === "Approved") acc[cls].completed++;
+          if (referral.status === "Completed" || referral.status === "Approved") acc[cls].completed++;
           return acc;
         }, {} as Record<string, any>);
 
         referralData.referralsByClass = Object.values(classReferrals) as any[];
 
-        // Recent referrals
+        // Recent referrals - show all referrals (sorted by most recent)
         referralData.recentReferrals = await Promise.all(
-          referrals.slice(0, 10).map(async (referral) => {
-            const student = allStudents.find(s => s.id === referral.studentId);
-            return {
-              id: referral.id,
-              studentName: student?.fullName || "Unknown",
-              classSection: student?.classSection || "N/A",
-              issue: referral.issue,
-              facility: referral.facility,
-              status: referral.status,
-              referralDate: referral.referralDate,
-            };
-          })
+          allReferrals
+            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+            .map(async (referral) => {
+              const student = allStudents.find(s => s.id === referral.studentId);
+              return {
+                id: referral.id,
+                studentName: student?.fullName || "Unknown",
+                classSection: student?.classSection || "N/A",
+                issue: referral.issue,
+                facility: referral.facility,
+                status: referral.status,
+                referralDate: referral.referralDate,
+              };
+            })
         );
       } catch (error) {
-        // Referrals table might not exist
+        console.error("Error fetching referrals:", error);
       }
 
       // Get checkups by class
@@ -9254,7 +10541,7 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
                   type: 'medical',
                   facility: checkup.referredTo,
                   issue: `Monthly checkup referral${checkup.symptoms && checkup.symptoms.length > 0 ? ': ' + checkup.symptoms.join(', ') : ''}`,
-                  status: 'Pending', // Monthly checkups don't have status tracking
+                  status: (checkup as any).referralStatus || 'Pending', // Use stored status or default to Pending
                   date: checkup.checkupDate,
                   followUpRequired: true,
                   source: 'monthly_checkup'
@@ -9286,7 +10573,7 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
                   type: 'adolescent',
                   facility: entry.referralFacility,
                   issue: `Menstrual health referral${entry.symptoms && entry.symptoms.length > 0 ? ': ' + entry.symptoms.join(', ') : ''}`,
-                  status: 'Pending', // Period tracker doesn't have status tracking
+                  status: (entry as any).referralStatus || 'Pending', // Use stored status or default to Pending
                   date: entry.referredDate || entry.entryDate,
                   followUpRequired: true,
                   source: 'period_tracker'
@@ -9303,15 +10590,20 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
       // Sort by date (most recent first)
       referrals.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-      // Calculate summary
+      // Calculate summary with proper overdue logic
+      const now = new Date();
       const summary = {
         total: referrals.length,
         pending: referrals.filter(r => r.status === "Pending").length,
         inProgress: referrals.filter(r => r.status === "In Progress").length,
         completed: referrals.filter(r => r.status === "Completed").length,
         overdue: referrals.filter(r => {
-          if (r.status !== "Pending") return false;
-          const daysSinceReferral = Math.floor((new Date().getTime() - new Date(r.date).getTime()) / (1000 * 60 * 60 * 24));
+          // Count if explicitly marked as Overdue
+          if (r.status === "Overdue") return true;
+          // Or if Pending/In Progress and more than 30 days old
+          if (r.status !== "Pending" && r.status !== "In Progress") return false;
+          const referralDate = new Date(r.date);
+          const daysSinceReferral = Math.floor((now.getTime() - referralDate.getTime()) / (1000 * 60 * 60 * 24));
           return daysSinceReferral > 30;
         }).length
       };

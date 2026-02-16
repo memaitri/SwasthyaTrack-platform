@@ -263,7 +263,7 @@ function EventCheckups() {
   const checkupForm = useForm<EventCheckupForm>({
     resolver: zodResolver(eventCheckupFormSchema),
     defaultValues: {
-      status: "Not started",
+      status: "In progress",
       present: true,
       checkupMonth: getCurrentMonth(),
       checkupYear: getCurrentYear(),
@@ -956,34 +956,6 @@ function EventCheckups() {
                       </div>
                     )}
 
-                    {/* Status */}
-                    <FormField
-                      control={checkupForm.control}
-                      name="status"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Status</FormLabel>
-                          <Select 
-                            onValueChange={field.onChange} 
-                            defaultValue={field.value}
-                            disabled={isReadOnly}
-                          >
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select status" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              <SelectItem value="Not started">Not Started</SelectItem>
-                              <SelectItem value="In progress">In Progress</SelectItem>
-                              <SelectItem value="Completed">Completed</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
                     {/* Month and Year */}
                     <div className="grid grid-cols-2 gap-4">
                       <FormField
@@ -1397,6 +1369,39 @@ function EventCheckups() {
                       )}
                     />
 
+                    {/* Status - Moved to bottom */}
+                    <div className="border-t pt-4">
+                      <FormField
+                        control={checkupForm.control}
+                        name="status"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Checkup Status</FormLabel>
+                            <Select 
+                              onValueChange={field.onChange} 
+                              defaultValue={field.value}
+                              disabled={isReadOnly}
+                            >
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select status" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="Not started">Not Started</SelectItem>
+                                <SelectItem value="In progress">In Progress</SelectItem>
+                                <SelectItem value="Completed">Completed</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <FormDescription>
+                              Once marked as "Completed", this checkup will become read-only and cannot be edited.
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+
                     <div className="flex justify-end gap-2">
                       <Button
                         type="button"
@@ -1657,7 +1662,76 @@ function CheckupForm() {
     },
   });
 
+  // CRITICAL: Initialize form hook BEFORE any conditional returns to avoid React hooks error
+  const form = useForm<CheckupFormData>({
+    resolver: zodResolver(checkupFormSchema),
+    defaultValues: {
+      studentId: preselectedStudentId || "",
+      checkupDate: new Date().toISOString().split("T")[0],
+      heightCm: "",
+      weightKg: "",
+      present: true,
+      symptoms: "",
+      suggestedMedicines: "",
+      treatmentType: "Primary",
+      referredTo: "",
+      notes: "",
+    },
+  });
+
   const students = studentsData?.students || [];
+
+  const watchWeight = form.watch("weightKg");
+  const watchHeight = form.watch("heightCm");
+  const watchTreatmentType = form.watch("treatmentType");
+
+  const calculatedBMI = (() => {
+    const weight = parseFloat(watchWeight || "0");
+    const height = parseFloat(watchHeight || "0");
+    if (weight > 0 && height > 0) {
+      const heightM = height / 100;
+      return (weight / (heightM * heightM)).toFixed(1);
+    }
+    return null;
+  })();
+
+  const createMutation = useMutation({
+    mutationFn: async (data: CheckupFormData) => {
+      const payload = {
+        ...data,
+        heightCm: data.heightCm ? parseFloat(data.heightCm) : null,
+        weightKg: data.weightKg ? parseFloat(data.weightKg) : null,
+        symptoms: data.symptoms ? data.symptoms.split(",").map(s => s.trim()) : [],
+        suggestedMedicines: data.suggestedMedicines ? data.suggestedMedicines.split(",").map(s => s.trim()) : [],
+      };
+      return apiRequest("POST", "/api/monthly-checkups", payload);
+    },
+    onSuccess: () => {
+      toast({
+        title: "Checkup recorded",
+        description: "Monthly checkup has been saved successfully.",
+      });
+      // Invalidate all related queries across all views with partial matching
+      queryClient.invalidateQueries({ queryKey: ["/api/monthly-checkups"], exact: false });
+      queryClient.invalidateQueries({ queryKey: ["/api/teacher/dashboard"], exact: false });
+      queryClient.invalidateQueries({ queryKey: ["/api/medical/dashboard"], exact: false });
+      queryClient.invalidateQueries({ queryKey: ["/api/headmaster/dashboard"], exact: false });
+      queryClient.invalidateQueries({ queryKey: ["/api/po/dashboard"], exact: false });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/dashboard"], exact: false });
+      setLocation("/checkups");
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to record checkup",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const onSubmit = (data: CheckupFormData) => {
+    createMutation.mutate(data);
+  };
 
   // Show loading state while students are being fetched
   if (studentsLoading) {
@@ -1751,74 +1825,6 @@ function CheckupForm() {
       </div>
     );
   }
-
-  const form = useForm<CheckupFormData>({
-    resolver: zodResolver(checkupFormSchema),
-    defaultValues: {
-      studentId: preselectedStudentId || "",
-      checkupDate: new Date().toISOString().split("T")[0],
-      heightCm: "",
-      weightKg: "",
-      present: true,
-      symptoms: "",
-      suggestedMedicines: "",
-      treatmentType: "Primary",
-      referredTo: "",
-      notes: "",
-    },
-  });
-
-  const watchWeight = form.watch("weightKg");
-  const watchHeight = form.watch("heightCm");
-  const watchTreatmentType = form.watch("treatmentType");
-
-  const calculatedBMI = (() => {
-    const weight = parseFloat(watchWeight || "0");
-    const height = parseFloat(watchHeight || "0");
-    if (weight > 0 && height > 0) {
-      const heightM = height / 100;
-      return (weight / (heightM * heightM)).toFixed(1);
-    }
-    return null;
-  })();
-
-  const createMutation = useMutation({
-    mutationFn: async (data: CheckupFormData) => {
-      const payload = {
-        ...data,
-        heightCm: data.heightCm ? parseFloat(data.heightCm) : null,
-        weightKg: data.weightKg ? parseFloat(data.weightKg) : null,
-        symptoms: data.symptoms ? data.symptoms.split(",").map(s => s.trim()) : [],
-        suggestedMedicines: data.suggestedMedicines ? data.suggestedMedicines.split(",").map(s => s.trim()) : [],
-      };
-      return apiRequest("POST", "/api/monthly-checkups", payload);
-    },
-    onSuccess: () => {
-      toast({
-        title: "Checkup recorded",
-        description: "Monthly checkup has been saved successfully.",
-      });
-      // Invalidate all related queries across all views with partial matching
-      queryClient.invalidateQueries({ queryKey: ["/api/monthly-checkups"], exact: false });
-      queryClient.invalidateQueries({ queryKey: ["/api/teacher/dashboard"], exact: false });
-      queryClient.invalidateQueries({ queryKey: ["/api/medical/dashboard"], exact: false });
-      queryClient.invalidateQueries({ queryKey: ["/api/headmaster/dashboard"], exact: false });
-      queryClient.invalidateQueries({ queryKey: ["/api/po/dashboard"], exact: false });
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/dashboard"], exact: false });
-      setLocation("/checkups");
-    },
-    onError: (error: any) => {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to record checkup",
-        variant: "destructive",
-      });
-    },
-  });
-
-  const onSubmit = (data: CheckupFormData) => {
-    createMutation.mutate(data);
-  };
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">

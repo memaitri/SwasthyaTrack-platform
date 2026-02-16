@@ -196,11 +196,39 @@ export default function ClassTeacherDashboard() {
       const key = ["/api/teacher/referral-tracking", selectedMonth, selectedYear, selectedAgeGroup, selectedHealthCategory, { class_id: user?.classSection ?? undefined }];
       await queryClient.cancelQueries({ queryKey: key });
       const previous = queryClient.getQueryData(key);
+      
+      // Optimistically update the data with recalculated summary
       queryClient.setQueryData(key, (old: any) => {
         if (!old) return old;
+        
+        // Update the referral status
+        const updatedReferrals = old.referrals.map((r: any) => 
+          r.id === variables.id ? { ...r, status: variables.status } : r
+        );
+        
+        // Recalculate summary counts
+        const now = new Date();
+        const newSummary = {
+          total: updatedReferrals.length,
+          pending: updatedReferrals.filter((r: any) => r.status === "Pending").length,
+          inProgress: updatedReferrals.filter((r: any) => r.status === "In Progress").length,
+          completed: updatedReferrals.filter((r: any) => r.status === "Completed").length,
+          overdue: updatedReferrals.filter((r: any) => {
+            if (r.status !== "Pending" && r.status !== "In Progress" && r.status !== "Overdue") return false;
+            const referralDate = new Date(r.date);
+            const daysSinceReferral = Math.floor((now.getTime() - referralDate.getTime()) / (1000 * 60 * 60 * 24));
+            return daysSinceReferral > 30 || r.status === "Overdue";
+          }).length
+        };
+        
         return {
           ...old,
-          referrals: old.referrals.map((r: any) => (r.id === variables.id ? { ...r, status: variables.status } : r))};
+          referrals: updatedReferrals,
+          summary: newSummary,
+          pendingCount: newSummary.pending,
+          inProgressCount: newSummary.inProgress,
+          completedCount: newSummary.completed
+        };
       });
       return { previous };
     },
@@ -716,40 +744,60 @@ export default function ClassTeacherDashboard() {
                   </div>
 
                   <div className="space-y-3">
-                    {referralData?.referrals?.slice(0, 5).map((referral: any) => (
-                      <div key={referral.id} className="flex items-center justify-between p-3 border rounded-lg">
-                        <div>
-                          <p className="font-semibold">{referral.studentName}</p>
-                          <p className="text-sm text-muted-foreground">
-                            {referral.type} • {referral.facility} • {referral.date}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Select
-                            value={referral.status || "Pending"}
-                            onValueChange={(val) => {
-                              if (!val || val === referral.status) return;
-                              const completionDate = val === "Completed" ? new Date().toISOString().split('T')[0] : undefined;
-                              updateReferralMutation.mutate({ id: referral.id, status: val, completionDate });
-                            }}
-                            disabled={updatingReferralId === referral.id}
-                          >
-                            <SelectTrigger className="w-40" data-testid={`referral-status-${referral.id}`}>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {allowedStatuses.map((s) => (
-                                <SelectItem key={s} value={s}>{s}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-
-                          {referral.followUpRequired && (
-                            <Badge variant="outline">Follow-up Needed</Badge>
-                          )}
-                        </div>
+                    {!referralData?.referrals || referralData.referrals.length === 0 ? (
+                      <div className="text-center py-8 text-muted-foreground">
+                        <CheckCircle2 className="h-12 w-12 mx-auto mb-3 text-emerald-500" />
+                        <p>No referrals found for the selected period</p>
                       </div>
-                    ))}
+                    ) : (
+                      <>
+                        <div className="text-sm text-muted-foreground mb-2">
+                          Showing all {referralData.referrals.length} referral{referralData.referrals.length !== 1 ? 's' : ''}
+                        </div>
+                        {referralData.referrals.map((referral: any) => (
+                          <div key={referral.id} className="flex items-center justify-between p-3 border rounded-lg">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2">
+                                <p className="font-semibold">{referral.studentName}</p>
+                                <Badge variant="outline" className="text-xs">
+                                  {referral.source === 'health_card' ? 'Health Card' : 
+                                   referral.source === 'monthly_checkup' ? 'Monthly Checkup' : 
+                                   'Period Tracker'}
+                                </Badge>
+                              </div>
+                              <p className="text-sm text-muted-foreground">
+                                {referral.type} • {referral.facility} • {new Date(referral.date).toLocaleDateString()}
+                              </p>
+                              <p className="text-xs text-muted-foreground mt-1">{referral.issue}</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Select
+                                value={referral.status || "Pending"}
+                                onValueChange={(val) => {
+                                  if (!val || val === referral.status) return;
+                                  const completionDate = val === "Completed" ? new Date().toISOString().split('T')[0] : undefined;
+                                  updateReferralMutation.mutate({ id: referral.id, status: val, completionDate });
+                                }}
+                                disabled={updatingReferralId === referral.id}
+                              >
+                                <SelectTrigger className="w-40" data-testid={`referral-status-${referral.id}`}>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {allowedStatuses.map((s) => (
+                                    <SelectItem key={s} value={s}>{s}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+
+                              {referral.followUpRequired && (
+                                <Badge variant="outline">Follow-up Needed</Badge>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </>
+                    )}
                   </div>
                 </div>
               </CardContent>

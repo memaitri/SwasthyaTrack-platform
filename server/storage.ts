@@ -110,6 +110,7 @@ export interface IStorage {
     limit?: number;
   }): Promise<{ checkups: MonthlyCheckup[]; total: number }>;
   createMonthlyCheckup(checkup: InsertMonthlyCheckup): Promise<MonthlyCheckup>;
+  updateMonthlyCheckup(id: string, data: Partial<InsertMonthlyCheckup>): Promise<MonthlyCheckup | undefined>;
 
   // Medical Teams
   getMedicalTeam(id: string): Promise<MedicalTeam | undefined>;
@@ -178,7 +179,7 @@ export interface IStorage {
   deleteRefreshToken(token: string): Promise<void>;
   deleteRefreshTokensByUserId(userId: string): Promise<void>;
 
-  getDashboardMetrics(role: string, userId: string, schoolId?: string, classSection?: string, district?: string, month?: number, year?: number): Promise<any>;
+  getDashboardMetrics(role: string, userId: string, schoolId?: string, classSection?: string, district?: string, region?: string, month?: number, year?: number): Promise<any>;
 
   // Referral methods
   getReferral(id: string): Promise<Referral | undefined>;
@@ -263,6 +264,7 @@ export class DatabaseStorage implements IStorage {
       role: users.role,
       schoolId: users.schoolId,
       classSection: users.classSection,
+      region: users.region,
       district: users.district,
       block: users.block,
       isActive: users.isActive,
@@ -291,6 +293,7 @@ export class DatabaseStorage implements IStorage {
       role: users.role,
       schoolId: users.schoolId,
       classSection: users.classSection,
+      region: users.region,
       district: users.district,
       block: users.block,
       isActive: users.isActive,
@@ -662,6 +665,12 @@ export class DatabaseStorage implements IStorage {
   async createMonthlyCheckup(checkup: InsertMonthlyCheckup): Promise<MonthlyCheckup> {
     const [newCheckup] = await db.insert(monthlyCheckups).values(checkup as any).returning();
     return newCheckup;
+  }
+
+  async updateMonthlyCheckup(id: string, data: Partial<InsertMonthlyCheckup>): Promise<MonthlyCheckup | undefined> {
+    const updateData: any = { ...data, updatedAt: new Date() };
+    const [updated] = await db.update(monthlyCheckups).set(updateData).where(eq(monthlyCheckups.id, id)).returning();
+    return updated;
   }
 
   async getMealLog(id: string): Promise<MealLog | undefined> {
@@ -1060,7 +1069,7 @@ export class DatabaseStorage implements IStorage {
     return referral;
   }
 
-  async getDashboardMetrics(role: string, userId: string, schoolId?: string, classSection?: string, district?: string, month?: number, year?: number): Promise<any> {
+  async getDashboardMetrics(role: string, userId: string, schoolId?: string, classSection?: string, district?: string, region?: string, month?: number, year?: number): Promise<any> {
     const selectedYear = year || new Date().getFullYear();
     const selectedMonth = month || new Date().getMonth() + 1;
 
@@ -2455,7 +2464,7 @@ export class DatabaseStorage implements IStorage {
       teamId,
       checkupMonth: currentMonth,
       checkupYear: currentYear,
-      status: "Not started" as const,
+      status: "In progress" as const,
       present: true,
     }));
 
