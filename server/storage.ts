@@ -54,6 +54,20 @@ import {
 } from "../shared/schema.js";
 import { eq, and, like, or, desc, gte, lte, sql, count, inArray, isNull } from "drizzle-orm";
 import { predictMenstrualCycle, type CycleEntry } from "../lib/menstrualCyclePrediction.js";
+import { randomUUID } from "crypto";
+
+// MySQL does not support .returning(). Use these helpers instead.
+async function insertAndFetch<T extends { id: string }>(table: any, values: any): Promise<T> {
+  const id = values.id ?? randomUUID();
+  await db.insert(table).values({ ...values, id });
+  const [row] = await db.select().from(table).where(eq(table.id, id));
+  return row as T;
+}
+async function updateAndFetch<T>(table: any, id: string, data: any): Promise<T | undefined> {
+  await db.update(table).set(data).where(eq(table.id, id));
+  const [row] = await db.select().from(table).where(eq(table.id, id));
+  return row as T | undefined;
+}
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -139,6 +153,7 @@ export interface IStorage {
   getStudentCheckups(params?: {
     eventId?: string;
     studentId?: string;
+    schoolId?: string;
     status?: string;
     month?: number;
     year?: number;
@@ -317,17 +332,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    const [user] = await db.insert(users).values(insertUser as any).returning();
-    return user;
+    return insertAndFetch<User>(users, insertUser);
   }
 
   async updateUser(id: string, data: Partial<InsertUser>): Promise<User | undefined> {
-    const [user] = await db
-      .update(users)
-      .set({ ...data as any, updatedAt: new Date() })
-      .where(eq(users.id, id))
-      .returning();
-    return user;
+    return updateAndFetch<User>(users, id, { ...data as any, updatedAt: new Date() });
   }
 
   async deleteUser(id: string): Promise<void> {
@@ -398,23 +407,16 @@ export class DatabaseStorage implements IStorage {
       insert.isActive = true;
     }
 
-    const [newSchool] = await db.insert(schools).values(insert as any).returning();
+    const newSchool = await insertAndFetch<School>(schools, insert);
     return newSchool;
   }
 
   async updateSchool(id: string, data: Partial<InsertSchool>): Promise<School | undefined> {
     const updateData: any = { ...data, updatedAt: new Date() };
-    // Ensure schoolType is properly typed
     if (updateData.schoolType && typeof updateData.schoolType === 'string') {
       updateData.schoolType = updateData.schoolType as "Government" | "Aided";
     }
-    
-    const [school] = await db
-      .update(schools)
-      .set(updateData)
-      .where(eq(schools.id, id))
-      .returning();
-    return school;
+    return updateAndFetch<School>(schools, id, updateData);
   }
 
   async getStudent(id: string): Promise<Student | undefined> {
@@ -484,44 +486,32 @@ export class DatabaseStorage implements IStorage {
     // Drizzle expects date columns to be strings in 'YYYY-MM-DD' format for inserts.
     const insertData: any = { ...student };
     if (student.dateOfBirth) {
-      const dateOfBirth = typeof student.dateOfBirth === 'string' ? new Date(student.dateOfBirth) : student.dateOfBirth as Date;
-      insertData.dateOfBirth = dateOfBirth.toISOString().split('T')[0];
+      insertData.dateOfBirth = typeof student.dateOfBirth === 'string' ? student.dateOfBirth : this.toLocalDateStr(student.dateOfBirth);
     }
     if (student.enrollmentDate) {
-      const enrollmentDate = typeof student.enrollmentDate === 'string' ? new Date(student.enrollmentDate) : student.enrollmentDate as Date;
-      insertData.enrollmentDate = enrollmentDate.toISOString().split('T')[0];
+      insertData.enrollmentDate = typeof student.enrollmentDate === 'string' ? student.enrollmentDate : this.toLocalDateStr(student.enrollmentDate);
     }
     if (student.schoolAdmissionDate) {
-      const schoolAdmissionDate = typeof student.schoolAdmissionDate === 'string' ? new Date(student.schoolAdmissionDate) : student.schoolAdmissionDate as Date;
-      insertData.schoolAdmissionDate = schoolAdmissionDate.toISOString().split('T')[0];
+      insertData.schoolAdmissionDate = typeof student.schoolAdmissionDate === 'string' ? student.schoolAdmissionDate : this.toLocalDateStr(student.schoolAdmissionDate);
     }
 
-    const [newStudent] = await db.insert(students).values(insertData).returning();
+    const newStudent = await insertAndFetch<Student>(students, insertData);
     return newStudent;
   }
 
   async updateStudent(id: string, data: Partial<InsertStudent>): Promise<Student | undefined> {
     const updateData: { [key: string]: any } = { ...data, updatedAt: new Date() };
 
-    // Drizzle expects date columns to be strings in 'YYYY-MM-DD' format for updates.
     if (data.dateOfBirth) {
-      const dateOfBirth = typeof data.dateOfBirth === 'string' ? new Date(data.dateOfBirth) : data.dateOfBirth as Date;
-      updateData.dateOfBirth = dateOfBirth.toISOString().split('T')[0];
+      updateData.dateOfBirth = typeof data.dateOfBirth === 'string' ? data.dateOfBirth : this.toLocalDateStr(data.dateOfBirth);
     }
     if (data.enrollmentDate) {
-      const enrollmentDate = typeof data.enrollmentDate === 'string' ? new Date(data.enrollmentDate) : data.enrollmentDate as Date;
-      updateData.enrollmentDate = enrollmentDate.toISOString().split('T')[0];
+      updateData.enrollmentDate = typeof data.enrollmentDate === 'string' ? data.enrollmentDate : this.toLocalDateStr(data.enrollmentDate);
     }
     if (data.schoolAdmissionDate) {
-      const schoolAdmissionDate = typeof data.schoolAdmissionDate === 'string' ? new Date(data.schoolAdmissionDate) : data.schoolAdmissionDate as Date;
-      updateData.schoolAdmissionDate = schoolAdmissionDate.toISOString().split('T')[0];
+      updateData.schoolAdmissionDate = typeof data.schoolAdmissionDate === 'string' ? data.schoolAdmissionDate : this.toLocalDateStr(data.schoolAdmissionDate);
     }
-    const [student] = await db
-      .update(students)
-      .set(updateData)
-      .where(eq(students.id, id))
-      .returning();
-    return student;
+    return updateAndFetch<Student>(students, id, updateData);
   }
 
   async getAnnualHealthCard(id: string): Promise<AnnualHealthCard | undefined> {
@@ -577,36 +567,21 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createAnnualHealthCard(card: InsertAnnualHealthCard): Promise<AnnualHealthCard> {
-    const [newCard] = await db.insert(annualHealthCards).values(card as any).returning();
-    return newCard;
+    return insertAndFetch<AnnualHealthCard>(annualHealthCards, card);
   }
 
   async updateAnnualHealthCard(id: string, data: Partial<InsertAnnualHealthCard>): Promise<AnnualHealthCard | undefined> {
-    // Sanitize data: convert any string dates to Date objects
     const sanitizedData: any = {};
-    
     for (const [key, value] of Object.entries(data)) {
       if (value === null || value === undefined) {
         sanitizedData[key] = value;
       } else if (typeof value === 'string' && (key.includes('date') || key.includes('Date'))) {
-        // Convert date strings to Date objects
-        try {
-          sanitizedData[key] = new Date(value);
-        } catch (e) {
-          console.warn(`Failed to parse date field ${key}:`, value);
-          sanitizedData[key] = value; // Keep original if parsing fails
-        }
+        try { sanitizedData[key] = new Date(value); } catch (e) { sanitizedData[key] = value; }
       } else {
         sanitizedData[key] = value;
       }
     }
-    
-    const [card] = await db
-      .update(annualHealthCards)
-      .set({ ...sanitizedData, updatedAt: new Date() })
-      .where(eq(annualHealthCards.id, id))
-      .returning();
-    return card;
+    return updateAndFetch<AnnualHealthCard>(annualHealthCards, id, { ...sanitizedData, updatedAt: new Date() });
   }
 
   async getMonthlyCheckup(id: string): Promise<MonthlyCheckup | undefined> {
@@ -663,14 +638,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createMonthlyCheckup(checkup: InsertMonthlyCheckup): Promise<MonthlyCheckup> {
-    const [newCheckup] = await db.insert(monthlyCheckups).values(checkup as any).returning();
-    return newCheckup;
+    return insertAndFetch<MonthlyCheckup>(monthlyCheckups, checkup);
   }
 
   async updateMonthlyCheckup(id: string, data: Partial<InsertMonthlyCheckup>): Promise<MonthlyCheckup | undefined> {
-    const updateData: any = { ...data, updatedAt: new Date() };
-    const [updated] = await db.update(monthlyCheckups).set(updateData).where(eq(monthlyCheckups.id, id)).returning();
-    return updated;
+    return updateAndFetch<MonthlyCheckup>(monthlyCheckups, id, { ...data, updatedAt: new Date() });
   }
 
   async getMealLog(id: string): Promise<MealLog | undefined> {
@@ -694,9 +666,9 @@ export class DatabaseStorage implements IStorage {
     if (!schoolId && schoolIds && schoolIds.length > 0) {
       conditions.push(inArray(mealLogs.schoolId, schoolIds));
     }
-    if (date) conditions.push(eq(mealLogs.date, date));
-    if (startDate) conditions.push(gte(mealLogs.date, startDate));
-    if (endDate) conditions.push(lte(mealLogs.date, endDate));
+    if (date) conditions.push(sql`DATE(${mealLogs.date}) = ${date}`);
+    if (startDate) conditions.push(sql`DATE(${mealLogs.date}) >= ${startDate}`);
+    if (endDate) conditions.push(sql`DATE(${mealLogs.date}) <= ${endDate}`);
     if (mealType) conditions.push(eq(mealLogs.mealType, mealType as any));
 
     let query = db.select().from(mealLogs);
@@ -730,14 +702,13 @@ export class DatabaseStorage implements IStorage {
       insert.nutritionBreakdown = nutrition.itemBreakdown;
     }
 
-    const [newLog] = await db.insert(mealLogs).values(insert).returning();
+    const newLog = await insertAndFetch<MealLog>(mealLogs, insert);
     return newLog;
   }
 
   async updateMealLog(id: string, data: Partial<InsertMealLog>): Promise<MealLog | undefined> {
     const updateData = { ...data as any };
     
-    // Calculate nutrition if menuItems are being updated
     if (updateData.menuItems && Array.isArray(updateData.menuItems)) {
       const { calculateMealNutrition } = await import("../lib/nutritionData.js");
       const nutrition = calculateMealNutrition(updateData.menuItems);
@@ -750,16 +721,39 @@ export class DatabaseStorage implements IStorage {
       updateData.nutritionBreakdown = nutrition.itemBreakdown;
     }
 
-    const [updatedLog] = await db
-      .update(mealLogs)
-      .set(updateData)
-      .where(eq(mealLogs.id, id))
-      .returning();
-    return updatedLog;
+    return updateAndFetch<MealLog>(mealLogs, id, updateData);
   }
 
   async deleteMealLog(id: string): Promise<void> {
     await db.delete(mealLogs).where(eq(mealLogs.id, id));
+  }
+
+  // Convert a DB date value to "YYYY-MM-DD" string.
+  // With dateStrings:true in mysql2, DATE columns come back as "YYYY-MM-DD" or "YYYY-MM-DD HH:MM:SS" strings.
+  // This helper normalizes both formats.
+  private toLocalDateStr(v: any): any {
+    if (!v) return v;
+    if (typeof v === 'string') {
+      // Already a string — just take the date part
+      return v.split('T')[0].split(' ')[0];
+    }
+    if (v instanceof Date) {
+      // Fallback: use local date parts to avoid UTC offset shift
+      const yyyy = v.getFullYear();
+      const mm = String(v.getMonth() + 1).padStart(2, "0");
+      const dd = String(v.getDate()).padStart(2, "0");
+      return `${yyyy}-${mm}-${dd}`;
+    }
+    return v;
+  }
+
+  private normalizeHostelAttendance(r: any): any {
+    return {
+      ...r,
+      date: this.toLocalDateStr(r.date),
+      vacationStartDate: this.toLocalDateStr(r.vacationStartDate),
+      vacationEndDate: this.toLocalDateStr(r.vacationEndDate),
+    };
   }
 
   async getHostelAttendance(params: {
@@ -769,29 +763,27 @@ export class DatabaseStorage implements IStorage {
   }): Promise<HostelAttendance[]> {
     const { schoolId, studentId, date } = params;
 
-    const conditions = [eq(hostelAttendance.date, date)];
+    // Use DATE() cast to compare only the date part, avoiding timezone mismatch
+    const conditions: any[] = [sql`DATE(${hostelAttendance.date}) = ${date}`];
     if (schoolId) conditions.push(eq(hostelAttendance.schoolId, schoolId));
     if (studentId) conditions.push(eq(hostelAttendance.studentId, studentId));
 
-    return await db
+    const rows = await db
       .select()
       .from(hostelAttendance)
       .where(and(...conditions))
       .orderBy(desc(hostelAttendance.createdAt));
+    return rows.map(r => this.normalizeHostelAttendance(r));
   }
 
   async createHostelAttendance(attendance: InsertHostelAttendance): Promise<HostelAttendance> {
-    const [newAttendance] = await db.insert(hostelAttendance).values(attendance as any).returning();
-    return newAttendance;
+    const result = await insertAndFetch<HostelAttendance>(hostelAttendance, attendance);
+    return this.normalizeHostelAttendance(result);
   }
 
   async updateHostelAttendance(id: string, data: Partial<InsertHostelAttendance>): Promise<HostelAttendance | undefined> {
-    const [attendance] = await db
-      .update(hostelAttendance)
-      .set(data as any)
-      .where(eq(hostelAttendance.id, id))
-      .returning();
-    return attendance;
+    const result = await updateAndFetch<HostelAttendance>(hostelAttendance, id, data);
+    return result ? this.normalizeHostelAttendance(result) : undefined;
   }
 
   async getHostelMonthlyStats(params: {
@@ -817,8 +809,8 @@ export class DatabaseStorage implements IStorage {
       .where(
         and(
           schoolId ? eq(hostelAttendance.schoolId, schoolId) : undefined as any,
-          gte(hostelAttendance.date, monthStart),
-          lte(hostelAttendance.date, monthEnd)
+          sql`DATE(${hostelAttendance.date}) >= ${monthStart}`,
+          sql`DATE(${hostelAttendance.date}) <= ${monthEnd}`
         )
       );
 
@@ -864,12 +856,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createAuditLog(log: InsertAuditLog): Promise<AuditLog> {
-    const auditData = {
-      ...log as any,
-      details: log.details as Record<string, unknown>
-    };
-    const [newLog] = await db.insert(auditLogs).values(auditData).returning();
-    return newLog;
+    const auditData = { ...log as any, details: log.details as Record<string, unknown> };
+    return insertAndFetch<AuditLog>(auditLogs, auditData);
   }
 
   async saveRefreshToken(userId: string, token: string, expiresAt: Date): Promise<void> {
@@ -1056,17 +1044,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createReferral(referral: InsertReferral): Promise<Referral> {
-    const [newReferral] = await db.insert(referrals).values(referral as any).returning();
-    return newReferral;
+    return insertAndFetch<Referral>(referrals, referral);
   }
 
   async updateReferral(id: string, data: Partial<InsertReferral>): Promise<Referral | undefined> {
-    const [referral] = await db
-      .update(referrals)
-      .set({ ...data as any, updatedAt: new Date() })
-      .where(eq(referrals.id, id))
-      .returning();
-    return referral;
+    return updateAndFetch<Referral>(referrals, id, { ...data as any, updatedAt: new Date() });
   }
 
   async getDashboardMetrics(role: string, userId: string, schoolId?: string, classSection?: string, district?: string, region?: string, month?: number, year?: number): Promise<any> {
@@ -1219,8 +1201,8 @@ export class DatabaseStorage implements IStorage {
       .where(
         and(
           schoolId ? eq(mealLogs.schoolId, schoolId) : undefined as any,
-          gte(mealLogs.date, monthStart),
-          lte(mealLogs.date, monthEnd)
+          sql`DATE(${mealLogs.date}) >= ${monthStart}`,
+          sql`DATE(${mealLogs.date}) <= ${monthEnd}`
         )
       );
 
@@ -1340,8 +1322,7 @@ export class DatabaseStorage implements IStorage {
 
   // Notification methods
   async createNotification(notification: InsertNotification): Promise<Notification> {
-    const [newNotification] = await db.insert(notifications).values(notification as any).returning();
-    return newNotification;
+    return insertAndFetch<Notification>(notifications, notification);
   }
 
   async getNotifications(params?: {
@@ -1399,12 +1380,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async markNotificationAsRead(id: string, userId: string): Promise<Notification | undefined> {
-    const [notification] = await db
-      .update(notifications)
-      .set({ isRead: true, readAt: new Date() } as any)
-      .where(eq(notifications.id, id))
-      .returning();
-    return notification;
+    return updateAndFetch<Notification>(notifications, id, { isRead: true, readAt: new Date() });
   }
 
   async markAllNotificationsAsRead(userId: string, role: string, schoolId?: string, classSection?: string): Promise<number> {
@@ -1426,13 +1402,12 @@ export class DatabaseStorage implements IStorage {
       ) as any);
     }
 
-    const result = await db
+    const [result] = await db
       .update(notifications)
       .set({ isRead: true, readAt: new Date() } as any)
-      .where(and(...conditions))
-      .returning({ id: notifications.id });
+      .where(and(...conditions));
 
-    return result.length;
+    return (result as any).affectedRows ?? 0;
   }
 
   async getUnreadNotificationCount(userId: string, role: string, schoolId?: string, classSection?: string): Promise<number> {
@@ -1639,6 +1614,16 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Period Tracker Methods
+  private normalizePeriodEntry(e: any): any {
+    if (!e) return e;
+    return {
+      ...e,
+      entryDate: this.toLocalDateStr(e.entryDate),
+      referredDate: e.referredDate ? this.toLocalDateStr(e.referredDate) : null,
+      referralCompletionDate: e.referralCompletionDate ? this.toLocalDateStr(e.referralCompletionDate) : null,
+    };
+  }
+
   async getPeriodTrackerEntry(id: string): Promise<PeriodTrackerEntry | undefined> {
     const [entry] = await db.select().from(periodTrackerEntries).where(eq(periodTrackerEntries.id, id));
     return entry;
@@ -1657,10 +1642,10 @@ export class DatabaseStorage implements IStorage {
     const conditions = [eq(periodTrackerEntries.studentId, studentId)];
     
     if (startDate) {
-      conditions.push(gte(periodTrackerEntries.entryDate, startDate));
+      conditions.push(sql`DATE(${periodTrackerEntries.entryDate}) >= ${startDate}` as any);
     }
     if (endDate) {
-      conditions.push(lte(periodTrackerEntries.entryDate, endDate));
+      conditions.push(sql`DATE(${periodTrackerEntries.entryDate}) <= ${endDate}` as any);
     }
 
     let query = db.select().from(periodTrackerEntries).where(and(...conditions));
@@ -1676,7 +1661,10 @@ export class DatabaseStorage implements IStorage {
       .limit(limit)
       .offset(offset);
 
-    return { entries, total: totalResult?.count || 0 };
+    // MySQL date columns return Date objects — normalize to YYYY-MM-DD strings
+    const normalizedEntries = entries.map((e: any) => this.normalizePeriodEntry(e));
+
+    return { entries: normalizedEntries, total: totalResult?.count || 0 };
   }
 
   async createPeriodTrackerEntry(entry: InsertPeriodTrackerEntry): Promise<PeriodTrackerEntry> {
@@ -1692,58 +1680,33 @@ export class DatabaseStorage implements IStorage {
       insertData.referredDate = (entry.referredDate as Date).toISOString().split('T')[0];
     }
 
-    const [newEntry] = await db.insert(periodTrackerEntries).values(insertData).returning();
-    return newEntry;
+    const newEntry = await insertAndFetch<PeriodTrackerEntry>(periodTrackerEntries, insertData);
+    return this.normalizePeriodEntry(newEntry);
   }
 
   async upsertPeriodTrackerEntry(entry: InsertPeriodTrackerEntry): Promise<PeriodTrackerEntry> {
     const insertData: any = { ...entry };
-    
-    // Convert date to string format if needed
-    if (entry.entryDate instanceof Date) {
-      insertData.entryDate = entry.entryDate.toISOString().split('T')[0];
-    }
-    
-    // Convert referral date to string format if needed
-    if (entry.referredDate && typeof entry.referredDate !== 'string') {
-      insertData.referredDate = (entry.referredDate as Date).toISOString().split('T')[0];
-    }
+    if (entry.entryDate instanceof Date) insertData.entryDate = entry.entryDate.toISOString().split('T')[0];
+    if (entry.referredDate && typeof entry.referredDate !== 'string') insertData.referredDate = (entry.referredDate as Date).toISOString().split('T')[0];
 
     console.log(`[UPSERT] Attempting upsert for student ${entry.studentId} on date ${insertData.entryDate}`);
-
     try {
-      // First, try to find existing entry for this student and date
-      const existingEntry = await db
-        .select()
-        .from(periodTrackerEntries)
-        .where(
-          and(
-            eq(periodTrackerEntries.studentId, entry.studentId),
-            eq(periodTrackerEntries.entryDate, insertData.entryDate)
-          )
-        )
-        .limit(1);
+      const existingEntry = await db.select().from(periodTrackerEntries).where(
+        and(eq(periodTrackerEntries.studentId, entry.studentId), sql`DATE(${periodTrackerEntries.entryDate}) = ${insertData.entryDate}`)
+      ).limit(1);
 
       if (existingEntry.length > 0) {
         console.log(`[UPSERT] Found existing entry ${existingEntry[0].id}, updating...`);
-        // Update existing entry
         const updateData = { ...insertData, updatedAt: new Date() };
-        delete updateData.id; // Remove id from update data
-        
-        const [updatedEntry] = await db
-          .update(periodTrackerEntries)
-          .set(updateData)
-          .where(eq(periodTrackerEntries.id, existingEntry[0].id))
-          .returning();
-        
-        console.log(`[UPSERT] Successfully updated entry ${updatedEntry.id}`);
-        return updatedEntry;
+        delete updateData.id;
+        const updated = await updateAndFetch<PeriodTrackerEntry>(periodTrackerEntries, existingEntry[0].id, updateData);
+        console.log(`[UPSERT] Successfully updated entry ${updated!.id}`);
+        return this.normalizePeriodEntry(updated!);
       } else {
         console.log(`[UPSERT] No existing entry found, creating new...`);
-        // Create new entry
-        const [newEntry] = await db.insert(periodTrackerEntries).values(insertData).returning();
+        const newEntry = await insertAndFetch<PeriodTrackerEntry>(periodTrackerEntries, insertData);
         console.log(`[UPSERT] Successfully created new entry ${newEntry.id}`);
-        return newEntry;
+        return this.normalizePeriodEntry(newEntry);
       }
     } catch (error: any) {
       console.error(`[UPSERT] Error during upsert:`, error);
@@ -1753,24 +1716,10 @@ export class DatabaseStorage implements IStorage {
 
   async updatePeriodTrackerEntry(id: string, data: Partial<InsertPeriodTrackerEntry>): Promise<PeriodTrackerEntry | undefined> {
     const updateData: any = { ...data, updatedAt: new Date() };
-
-    // Convert date to string format if needed
-    if (data.entryDate instanceof Date) {
-      updateData.entryDate = data.entryDate.toISOString().split('T')[0];
-    }
-    
-    // Convert referral date to string format if needed
-    if (data.referredDate && typeof data.referredDate !== 'string') {
-      updateData.referredDate = (data.referredDate as Date).toISOString().split('T')[0];
-    }
-
-    const [entry] = await db
-      .update(periodTrackerEntries)
-      .set(updateData)
-      .where(eq(periodTrackerEntries.id, id))
-      .returning();
-    
-    return entry;
+    if (data.entryDate instanceof Date) updateData.entryDate = data.entryDate.toISOString().split('T')[0];
+    if (data.referredDate && typeof data.referredDate !== 'string') updateData.referredDate = (data.referredDate as Date).toISOString().split('T')[0];
+    const result = await updateAndFetch<PeriodTrackerEntry>(periodTrackerEntries, id, updateData);
+    return this.normalizePeriodEntry(result);
   }
 
   async deletePeriodTrackerEntry(id: string): Promise<void> {
@@ -1788,7 +1737,7 @@ export class DatabaseStorage implements IStorage {
       .where(
         and(
           eq(periodTrackerEntries.studentId, studentId),
-          gte(periodTrackerEntries.entryDate, startDateStr)
+          sql`DATE(${periodTrackerEntries.entryDate}) >= ${startDateStr}`
         )
       )
       .orderBy(desc(periodTrackerEntries.entryDate));
@@ -1856,7 +1805,7 @@ export class DatabaseStorage implements IStorage {
       .where(
         and(
           eq(periodTrackerEntries.studentId, studentId),
-          gte(periodTrackerEntries.entryDate, startDateStr)
+          sql`DATE(${periodTrackerEntries.entryDate}) >= ${startDateStr}`
         )
       )
       .orderBy(periodTrackerEntries.entryDate);
@@ -2259,14 +2208,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createMedicalTeam(team: InsertMedicalTeam): Promise<MedicalTeam> {
-    const [newTeam] = await db.insert(medicalTeams).values(team as any).returning();
-    return newTeam;
+    return insertAndFetch<MedicalTeam>(medicalTeams, team);
   }
 
   async updateMedicalTeam(id: string, data: Partial<InsertMedicalTeam>): Promise<MedicalTeam | undefined> {
     const updateData: any = { ...data, updatedAt: new Date() };
-    const [updatedTeam] = await db.update(medicalTeams).set(updateData).where(eq(medicalTeams.id, id)).returning();
-    return updatedTeam;
+    return updateAndFetch<MedicalTeam>(medicalTeams, id, updateData);
   }
 
   // Medical Team Members
@@ -2275,19 +2222,15 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createMedicalTeamMember(member: InsertMedicalTeamMember): Promise<MedicalTeamMember> {
-    const [newMember] = await db.insert(medicalTeamMembers).values(member as any).returning();
-    return newMember;
+    return insertAndFetch<MedicalTeamMember>(medicalTeamMembers, member);
   }
 
   async updateMedicalTeamMember(id: string, data: Partial<InsertMedicalTeamMember>): Promise<MedicalTeamMember | undefined> {
-    // Convert Date to string for database storage
     const updateData: any = { ...data };
     if (updateData.licenseExpiry instanceof Date) {
       updateData.licenseExpiry = updateData.licenseExpiry.toISOString().split('T')[0];
     }
-    
-    const [updatedMember] = await db.update(medicalTeamMembers).set(updateData).where(eq(medicalTeamMembers.id, id)).returning();
-    return updatedMember;
+    return updateAndFetch<MedicalTeamMember>(medicalTeamMembers, id, updateData);
   }
 
   async deleteMedicalTeamMember(id: string): Promise<void> {
@@ -2326,19 +2269,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createMedicalEvent(event: InsertMedicalEvent): Promise<MedicalEvent> {
-    const [newEvent] = await db.insert(medicalEvents).values(event as any).returning();
-    return newEvent;
+    return insertAndFetch<MedicalEvent>(medicalEvents, event);
   }
 
   async updateMedicalEvent(id: string, data: Partial<InsertMedicalEvent>): Promise<MedicalEvent | undefined> {
-    // Convert Date to string for database storage
     const updateData: any = { ...data };
-    if (updateData.eventDate instanceof Date) {
-      updateData.eventDate = updateData.eventDate.toISOString().split('T')[0];
-    }
-    
-    const [updatedEvent] = await db.update(medicalEvents).set(updateData).where(eq(medicalEvents.id, id)).returning();
-    return updatedEvent;
+    if (updateData.eventDate instanceof Date) updateData.eventDate = updateData.eventDate.toISOString().split('T')[0];
+    return updateAndFetch<MedicalEvent>(medicalEvents, id, updateData);
   }
 
   // Student Checkups
@@ -2350,13 +2287,14 @@ export class DatabaseStorage implements IStorage {
   async getStudentCheckups(params?: {
     eventId?: string;
     studentId?: string;
+    schoolId?: string;
     status?: string;
     month?: number;
     year?: number;
     page?: number;
     limit?: number;
   }): Promise<{ checkups: StudentCheckup[]; total: number }> {
-    const { eventId, studentId, status, month, year, page = 1, limit = 10 } = params || {};
+    const { eventId, studentId, schoolId, status, month, year, page = 1, limit = 10 } = params || {};
     const offset = (page - 1) * limit;
 
     const conditions = [];
@@ -2365,6 +2303,24 @@ export class DatabaseStorage implements IStorage {
     if (status) conditions.push(eq(studentCheckups.status, status as any));
     if (month) conditions.push(eq(studentCheckups.checkupMonth, month));
     if (year) conditions.push(eq(studentCheckups.checkupYear, year));
+
+    if (schoolId) {
+      conditions.push(eq(students.schoolId, schoolId));
+      const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+      const baseQuery = db.select({ checkup: studentCheckups })
+        .from(studentCheckups)
+        .innerJoin(students, eq(studentCheckups.studentId, students.id));
+      const countBaseQuery = db.select({ count: count() })
+        .from(studentCheckups)
+        .innerJoin(students, eq(studentCheckups.studentId, students.id));
+
+      const finalQuery = whereClause ? baseQuery.where(whereClause) : baseQuery;
+      const finalCountQuery = whereClause ? countBaseQuery.where(whereClause) : countBaseQuery;
+
+      const [totalResult] = await finalCountQuery;
+      const rows = await (finalQuery as any).orderBy(desc(studentCheckups.createdAt)).limit(limit).offset(offset);
+      return { checkups: rows.map((r: any) => r.checkup), total: totalResult?.count || 0 };
+    }
 
     let query = db.select().from(studentCheckups);
     let countQuery = db.select({ count: count() }).from(studentCheckups);
@@ -2381,8 +2337,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createStudentCheckup(checkup: InsertStudentCheckup): Promise<StudentCheckup> {
-    const [newCheckup] = await db.insert(studentCheckups).values(checkup as any).returning();
-    return newCheckup;
+    return insertAndFetch<StudentCheckup>(studentCheckups, checkup);
   }
 
   async getStudentCheckupByMonthYear(studentId: string, eventId: string, month: number, year: number): Promise<StudentCheckup | undefined> {
@@ -2415,9 +2370,7 @@ export class DatabaseStorage implements IStorage {
     }
     
     updateData.updatedAt = new Date();
-
-    const [updatedCheckup] = await db.update(studentCheckups).set(updateData).where(eq(studentCheckups.id, id)).returning();
-    return updatedCheckup;
+    return updateAndFetch<StudentCheckup>(studentCheckups, id, updateData);
   }
 
   async createStudentCheckupsForEvent(eventId: string, teamId: string, userContext?: { role: string; schoolId?: string; classSection?: string }, month?: number, year?: number): Promise<{ createdCount: number }> {
@@ -2475,3 +2428,4 @@ export class DatabaseStorage implements IStorage {
 }
 
 export const storage = new DatabaseStorage();
+

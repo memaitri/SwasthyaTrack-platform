@@ -1,17 +1,16 @@
-// 1️⃣ Load .env variables at the very top
-import 'dotenv/config';  // <-- this will load your .env
-
-import { Pool, neonConfig } from '@neondatabase/serverless';
-import { drizzle } from 'drizzle-orm/neon-serverless';
-import ws from "ws";
+import 'dotenv/config';
+import mysql from 'mysql2/promise';
+import { drizzle } from 'drizzle-orm/mysql2';
 import * as schema from "../shared/schema.js";
-
-// Configure WebSocket for Neon
-neonConfig.webSocketConstructor = ws;
 
 if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL environment variable is required");
 }
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-export const db = drizzle(pool, { schema });
+// dateStrings: true prevents mysql2 from converting DATE/DATETIME columns to JS Date objects,
+// which avoids UTC timezone shifting (e.g. 2026-03-19 stored as 2026-03-18T18:30:00Z in IST).
+const pool = mysql.createPool({
+  uri: process.env.DATABASE_URL,
+  dateStrings: true,
+});
+export const db = drizzle(pool, { schema, mode: 'default' });

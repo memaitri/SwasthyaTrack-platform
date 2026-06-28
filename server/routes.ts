@@ -28,89 +28,18 @@ function normalizeStatus(s?: string) {
   if (v === "absent") return "Absent";
   return s;
 }
-import { createClient } from "@supabase/supabase-js";
 import { isC7ReferralNeeded, isC8ReferralNeeded, isC9ReferralNeeded, generateC7ReferralIssue, generateC8ReferralIssue, getC9ReferralDescription } from "./referralLogic.js";
 import { getBMIClassification } from "../lib/bmiColors.js";
 
-// Initialize Supabase client (graceful fallback when env vars are missing)
-let supabase: any;
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-if (supabaseUrl && supabaseServiceKey) {
-  supabase = createClient(supabaseUrl, supabaseServiceKey);
-} else {
-  console.warn('SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set; continuing without Supabase. Upload features will be no-ops.');
-  // Minimal noop client to avoid runtime crashes when Supabase is not configured
-  supabase = {
-    storage: {
-      from: (_bucket: string) => ({
-        list: async () => ({ data: [], error: null }),
-        upload: async () => ({ data: null, error: { message: 'Supabase not configured' } }),
-        getPublicUrl: (_path: string) => ({ data: { publicUrl: null } }),
-      }),
-      createBucket: async (_name: string) => ({ data: null, error: null }),
-    },
-  } as any;
-}
-
-// Default bucket for file uploads (set via env). Will attempt to create the bucket automatically if missing.
-const SUPABASE_UPLOAD_BUCKET = process.env.SUPABASE_UPLOAD_BUCKET || "uploads";
-if (!process.env.SUPABASE_UPLOAD_BUCKET) {
-  console.warn(`SUPABASE_UPLOAD_BUCKET env not set; defaulting to "${SUPABASE_UPLOAD_BUCKET}". The server will attempt to create this bucket if it does not exist.`);
-}
-
-// Helper to upload a local file to Supabase storage and return a public URL
-async function uploadFileToSupabase(localFilePath: string, remotePathPrefix = "meals") {
+// Helper to save an uploaded file to local disk and return a public URL path
+async function uploadFileToLocal(localFilePath: string, remotePathPrefix = "meals"): Promise<string> {
   const fileName = path.basename(localFilePath);
-  const remotePath = `${remotePathPrefix}/${Date.now()}-${fileName}`;
-
-  const fileBuffer = fs.readFileSync(localFilePath);
-
-  // Helper to attempt upload
-  async function attemptUpload() {
-    const { data, error } = await supabase.storage
-      .from(SUPABASE_UPLOAD_BUCKET)
-      .upload(remotePath, fileBuffer, { contentType: undefined });
-    if (error) throw error;
-    return data;
-  }
-
-  try {
-    try {
-      await attemptUpload();
-    } catch (uploadErr: any) {
-      const msg = (uploadErr && (uploadErr.message || uploadErr.error_description || uploadErr.details)) || String(uploadErr || 'Unknown error');
-      console.warn('Initial Supabase upload failed:', msg);
-
-      // If the error indicates the bucket is missing, try to create it (requires service role key)
-      if (msg && /bucket not found|Bucket not found|404|no such bucket/i.test(msg)) {
-        console.log(`Bucket "${SUPABASE_UPLOAD_BUCKET}" not found. Attempting to create it...`);
-        const { error: createErr } = await supabase.storage.createBucket(SUPABASE_UPLOAD_BUCKET, { public: true });
-        if (createErr) {
-          console.error('Failed to create Supabase bucket:', createErr.message || createErr);
-          throw createErr;
-        }
-        console.log(`Bucket "${SUPABASE_UPLOAD_BUCKET}" created successfully.`);
-
-        // Retry upload once
-        await attemptUpload();
-      } else {
-        throw uploadErr;
-      }
-    }
-
-    // Get public URL
-    const { data: publicData } = supabase.storage
-      .from(SUPABASE_UPLOAD_BUCKET)
-      .getPublicUrl(remotePath);
-
-    const publicUrl = publicData?.publicUrl || null;
-    if (!publicUrl) throw new Error('Failed to obtain public URL from Supabase after upload');
-    return publicUrl;
-  } catch (err) {
-    console.error("uploadFileToSupabase failed:", (err as any)?.message || err);
-    throw err;
-  }
+  const destDir = path.join("uploads", remotePathPrefix);
+  if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
+  const destName = `${Date.now()}-${fileName}`;
+  const destPath = path.join(destDir, destName);
+  fs.copyFileSync(localFilePath, destPath);
+  return `/uploads/${remotePathPrefix}/${destName}`;
 }
 
 // Helper function to generate CSV from data (currently unused, kept for future use)
@@ -730,18 +659,8 @@ export async function registerRoutes(
   });
 
   // Ensure new hostel attendance columns exist (for older databases without latest schema)
-  try {
-    await db.execute(sql`
-      ALTER TABLE hostel_attendance
-      ADD COLUMN IF NOT EXISTS recorder_role text,
-      ADD COLUMN IF NOT EXISTS event_index integer DEFAULT 0,
-      ADD COLUMN IF NOT EXISTS status text DEFAULT 'Present',
-      ADD COLUMN IF NOT EXISTS morning_roll_call boolean,
-      ADD COLUMN IF NOT EXISTS night_roll_call boolean
-    `);
-  } catch (migrationError) {
-    console.error("Failed to ensure hostel_attendance columns:", migrationError);
-  }
+  // MySQL does not support ADD COLUMN IF NOT EXISTS in a multi-column ALTER — columns already
+  // created by drizzle db:push, so this block is intentionally skipped.
 
   // Note: /api/auth/login is handled by auth.ts router mounted in index.ts
   // This route is kept as a fallback but auth.ts takes precedence
@@ -2332,26 +2251,6 @@ export async function registerRoutes(
         total = result.total;
       }
 
-      // Helper: check Supabase storage for an existing health-card file for a student
-      const supabaseHasHealthCardForStudent = async (stu: any) => {
-        if (!supabase) return false;
-        const candidates = [
-          `health-cards/${stu.id}`,
-          `health-cards/${stu.uniqueId}`,
-          `health_cards/${stu.id}`,
-          `health_cards/${stu.uniqueId}`,
-        ];
-        try {
-          for (const pathPrefix of candidates) {
-            const { data, error } = await supabase.storage.from(SUPABASE_UPLOAD_BUCKET).list(pathPrefix, { limit: 1 });
-            if (!error && data && data.length > 0) return true;
-          }
-        } catch (e) {
-          console.warn('Supabase health-card check failed for', stu.id, (e as any)?.message || e);
-        }
-        return false;
-      };
-
       const studentsWithHealthStatus = await Promise.all(
         students.map(async (student) => {
           const { cards } = await storage.getAnnualHealthCards({
@@ -2359,27 +2258,6 @@ export async function registerRoutes(
             year: new Date().getFullYear(),
             limit: 1,
           });
-
-          // If no DB card found but a file exists in Supabase storage, create an Approved placeholder
-          if ((!cards || cards.length === 0) && await supabaseHasHealthCardForStudent(student)) {
-            try {
-              const payload = buildHealthCardPayload(student, student.schoolId || '', {}, req.user?.id);
-              // Minimal required fields
-              const createPayload = {
-                ...payload,
-                status: 'Approved',
-                approvalBy: req.user?.id ?? null,
-                approvalDate: new Date(),
-                dataEntryBy: req.user?.id ?? null,
-              } as any;
-
-              const newCard = await storage.createAnnualHealthCard(createPayload);
-              (cards as any[]).unshift(newCard);
-              console.info(`Auto-created Approved health card from Supabase asset for student ${student.id} (${newCard.id})`);
-            } catch (e) {
-              console.warn('Failed to auto-create health card for student', student.id, (e as any)?.message || e);
-            }
-          }
 
           const rawStatus = cards[0]?.status as string | undefined;
           return {
@@ -4777,149 +4655,42 @@ export async function registerRoutes(
     }
   });
 
-  // Image upload endpoint for check-in (stores in Supabase if available, else falls back to local uploads)
+  // Image upload endpoint for check-in (local disk storage)
   app.post("/api/upload/checkin-image", upload.single("image"), async (req: any, res) => {
     try {
-      // Check auth header manually for file upload (after multer processes)
       const authHeader = req.headers["authorization"];
       const token = authHeader && authHeader.split(" ")[1];
-      if (!token) {
-        return res.status(401).json({ message: "Authentication required" });
-      }
-
+      if (!token) return res.status(401).json({ message: "Authentication required" });
       const decoded = jwt.verify(token, JWT_SECRET) as any;
-      if (!decoded || !decoded.id) {
-        return res.status(401).json({ message: "Invalid authentication" });
-      }
-
+      if (!decoded?.id) return res.status(401).json({ message: "Invalid authentication" });
       const user = await storage.getUser(decoded.id);
-      if (!user || !user.isActive) {
-        return res.status(401).json({ message: "User not found or inactive" });
-      }
+      if (!user || !user.isActive) return res.status(401).json({ message: "User not found or inactive" });
+      if (!req.file) return res.status(400).json({ message: "No image file provided" });
 
-      if (!req.file) {
-        return res.status(400).json({ message: "No image file provided" });
-      }
-
-      const localPath = req.file.path;
-      let publicUrl: string | null = null;
-      
-      // Try Supabase first, fallback to local storage
-      try {
-        if (supabaseUrl && supabaseServiceKey) {
-          publicUrl = await uploadFileToSupabase(localPath, "checkins");
-          if (!publicUrl) throw new Error('Supabase upload did not return a public URL');
-        } else {
-          throw new Error('Supabase not configured');
-        }
-      } catch (err: any) {
-        console.warn("Supabase upload failed, using local storage:", err?.message || err);
-        
-        // Fallback to local storage - move file to uploads directory
-        const uploadsDir = path.join(process.cwd(), 'uploads');
-        if (!fs.existsSync(uploadsDir)) {
-          fs.mkdirSync(uploadsDir, { recursive: true });
-        }
-        
-        const fileName = `checkin-${Date.now()}-${path.basename(req.file.originalname)}`;
-        const finalPath = path.join(uploadsDir, fileName);
-        
-        try {
-          fs.copyFileSync(localPath, finalPath);
-          publicUrl = `/uploads/${fileName}`;
-          console.log(`Check-in image saved locally: ${publicUrl}`);
-        } catch (localErr: any) {
-          console.error("Local storage fallback failed:", localErr?.message || localErr);
-          // Cleanup local file before returning
-          try { if (fs.existsSync(localPath)) fs.unlinkSync(localPath); } catch (e) { console.warn('Failed to delete temp upload file:', e); }
-          return res.status(500).json({ message: "Both Supabase and local storage failed", details: localErr?.message || String(localErr) });
-        }
-      }
-
-      // Cleanup temp file after success
-      try {
-        if (fs.existsSync(localPath)) fs.unlinkSync(localPath);
-      } catch (e) {
-        console.warn("Failed to delete temp upload file:", e);
-      }
-
-      // Return public URL from Supabase
+      const publicUrl = await uploadFileToLocal(req.file.path, "checkins");
+      try { fs.unlinkSync(req.file.path); } catch (_) {}
       res.json({ imageUrl: publicUrl });
     } catch (error: any) {
-      console.error("Upload error:", error?.message || String(error));
       res.status(500).json({ message: error?.message || "Failed to upload image" });
     }
   });
 
-  // General image upload endpoint used by client (meals and others). Fallback to local storage if Supabase fails.
+  // General image upload endpoint (local disk storage)
   app.post("/api/upload/image", upload.single("image"), async (req: any, res) => {
     try {
       const authHeader = req.headers["authorization"];
       const token = authHeader && authHeader.split(" ")[1];
-      if (!token) {
-        return res.status(401).json({ message: "Authentication required" });
-      }
-
+      if (!token) return res.status(401).json({ message: "Authentication required" });
       const decoded = jwt.verify(token, JWT_SECRET) as any;
-      if (!decoded || !decoded.id) {
-        return res.status(401).json({ message: "Invalid authentication" });
-      }
-
+      if (!decoded?.id) return res.status(401).json({ message: "Invalid authentication" });
       const user = await storage.getUser(decoded.id);
-      if (!user || !user.isActive) {
-        return res.status(401).json({ message: "User not found or inactive" });
-      }
+      if (!user || !user.isActive) return res.status(401).json({ message: "User not found or inactive" });
+      if (!req.file) return res.status(400).json({ message: "No image file provided" });
 
-      if (!req.file) {
-        return res.status(400).json({ message: "No image file provided" });
-      }
-
-      const localPath = req.file.path;
-      let publicUrl: string | null = null;
-      
-      // Try Supabase first, fallback to local storage
-      try {
-        if (supabaseUrl && supabaseServiceKey) {
-          publicUrl = await uploadFileToSupabase(localPath, "meals");
-          if (!publicUrl) throw new Error('Supabase upload did not return a public URL');
-        } else {
-          throw new Error('Supabase not configured');
-        }
-      } catch (err: any) {
-        console.warn("Supabase upload failed, using local storage:", err?.message || err);
-        
-        // Fallback to local storage - move file to uploads directory
-        const uploadsDir = path.join(process.cwd(), 'uploads');
-        if (!fs.existsSync(uploadsDir)) {
-          fs.mkdirSync(uploadsDir, { recursive: true });
-        }
-        
-        const fileName = `meal-${Date.now()}-${path.basename(req.file.originalname)}`;
-        const finalPath = path.join(uploadsDir, fileName);
-        
-        try {
-          fs.copyFileSync(localPath, finalPath);
-          publicUrl = `/uploads/${fileName}`;
-          console.log(`Image saved locally: ${publicUrl}`);
-        } catch (localErr: any) {
-          console.error("Local storage fallback failed:", localErr?.message || localErr);
-          // Cleanup local file before returning
-          try { if (fs.existsSync(localPath)) fs.unlinkSync(localPath); } catch (e) { console.warn('Failed to delete temp upload file:', e); }
-          return res.status(500).json({ message: "Both Supabase and local storage failed", details: localErr?.message || String(localErr) });
-        }
-      }
-
-      // Cleanup temp file after success
-      try {
-        if (fs.existsSync(localPath)) fs.unlinkSync(localPath);
-      } catch (e) {
-        console.warn("Failed to delete temp upload file:", e);
-      }
-
-      // Return public URL (either from Supabase or local)
+      const publicUrl = await uploadFileToLocal(req.file.path, "meals");
+      try { fs.unlinkSync(req.file.path); } catch (_) {}
       res.json({ imageUrl: publicUrl });
     } catch (error: any) {
-      console.error("Upload error:", error?.message || String(error));
       res.status(500).json({ message: error?.message || "Failed to upload image" });
     }
   });
@@ -9002,8 +8773,8 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
         })
       );
 
-      // Get recent checkups
-      const { checkups: recentCheckups } = await storage.getMonthlyCheckups({
+      // Get recent checkups from student_checkups (medical event checkups)
+      const { checkups: recentCheckups } = await storage.getStudentCheckups({
         schoolId,
         month: selectedMonth,
         year: selectedYear,
@@ -9017,9 +8788,9 @@ const convulsiveCases = flatCards.filter(c => isTruthy(c.c1_convulsive));
             id: checkup.id,
             studentName: student?.fullName || "Unknown",
             classSection: student?.classSection || "N/A",
-            checkupDate: checkup.checkupDate,
+            checkupDate: checkup.referralDate || `${checkup.checkupYear}-${String(checkup.checkupMonth).padStart(2, '0')}`,
             bmi: checkup.bmi,
-            treatmentType: checkup.treatmentType,
+            treatmentType: checkup.diagnosis || checkup.status || "Primary",
             present: checkup.present,
           };
         })
